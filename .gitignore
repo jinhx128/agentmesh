@@ -24,6 +24,7 @@ dist/
 # Node build and dependency outputs
 node_modules/
 dist-node/
+dist-release/
 *.tsbuildinfo
 
 # Tauri build outputs
