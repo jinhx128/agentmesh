@@ -1,0 +1,26 @@
+# Private Review Gate skills do not need to migrate; they may read or sync this
+# current packet recipe metadata. Built-in recipe sources are alignment artifacts,
+# not local agent assignment files.
+
+schema_version = 1
+workflow_recipe_version = 1
+compatible_packet_schema_versions = [1]
+name = "Review Gate"
+stages = ["review", "decide"]
+description = "Collect code or plan reviews from one or more read-only reviewers, then have a decider merge, verify, and classify findings."
+when_to_use = [
+  "A code diff, plan, or deliverable needs reviewer evidence before a decision.",
+  "Multiple reviewers should be preserved as evidence without treating model agreement as truth.",
+]
+packet_artifacts = [
+  "request.md",
+  "assignment.toml",
+  "reviews/<reviewer>.md",
+  "findings.md",
+  "decision.md",
+]
+quality_gates = [
+  "Reviewer outputs are read-only inputs until the decider checks them against facts.",
+  "findings.md groups items as accepted, rejected, or needs decision.",
+  "A Must Fix gate only applies to findings the decider has accepted.",
+]

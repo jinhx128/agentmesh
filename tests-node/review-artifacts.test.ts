@@ -1,0 +1,187 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import { loadArtifacts, type PacketStatus } from "../packages/runtime/src/packet/io.js";
+import { buildReleaseEvidenceSummary } from "../packages/runtime/src/release/check.js";
+import {
+  findingsWithRawReviews,
+  rawReviewOutputsMarkdown,
+  recordReviewAgentFailure,
+  recordRawReviewOutputArtifact,
+  refreshFindingsRawReviews,
+  reviewOutputPath,
+} from "../packages/runtime/src/review/artifacts.js";
+
+function makeRunDir(): string {
+  const runDir = mkdtempSync(path.join(tmpdir(), "agentmesh-review-artifacts-"));
+  writeFileSync(path.join(runDir, "events.jsonl"), "");
+  writeFileSync(path.join(runDir, "artifacts.toml"), "schema_version = 1\n");
+  return runDir;
+}
+
+test("review artifact helpers record raw output and refresh controller findings", () => {
+  const runDir = makeRunDir();
+  test.after(() => rmSync(runDir, { recursive: true, force: true }));
+  const reviewPath = reviewOutputPath(runDir, "Gemini 3.1 Pro");
+  mkdirSync(path.dirname(reviewPath), { recursive: true });
+  writeFileSync(reviewPath, "[Must Fix] src/app.ts:1 - Example finding.\n");
+
+  recordRawReviewOutputArtifact(runDir, "Gemini 3.1 Pro", reviewPath);
+  assert.deepEqual(loadArtifacts(runDir).review_Gemini_3_1_Pro, {
+    path: "reviews/Gemini_3_1_Pro.md",
+    kind: "review-output",
+    stage: "review",
+    agent: "Gemini 3.1 Pro",
+  });
+
+  const raw = rawReviewOutputsMarkdown(runDir);
+  assert.match(raw, /## Raw Review Outputs/);
+  assert.match(raw, /### Gemini_3_1_Pro/);
+  assert.match(raw, /Example finding/);
+
+  refreshFindingsRawReviews(runDir);
+  refreshFindingsRawReviews(runDir);
+  const findings = readFileSync(path.join(runDir, "findings.md"), "utf-8");
+  assert.equal(findings.match(/## Raw Review Outputs/g)?.length, 1);
+  assert.doesNotMatch(findings, /\n\n\n## Raw Review Outputs/);
+  assert.match(findings, /## Accepted/);
+  assert.match(findings, /Example finding/);
+});
+
+test("review artifact helpers combine failure notes with partial raw outputs", () => {
+  const runDir = makeRunDir();
+  test.after(() => rmSync(runDir, { recursive: true, force: true }));
+  const reviewPath = reviewOutputPath(runDir, "reviewer_a");
+  mkdirSync(path.dirname(reviewPath), { recursive: true });
+  writeFileSync(reviewPath, "reviewer_a partial evidence.\n");
+
+  recordRawReviewOutputArtifact(runDir, "reviewer_a", reviewPath);
+  recordReviewAgentFailure(runDir, "reviewer_b", 7);
+
+  const findings = readFileSync(path.join(runDir, "findings.md"), "utf-8");
+  assert.match(findings, /Reviewer reviewer_b failed during review dispatch \(exit 7\)/);
+  assert.match(findings, /## Raw Review Outputs/);
+  assert.match(findings, /reviewer_a partial evidence/);
+});
+
+test("review artifact helpers strip only standalone raw review heading", () => {
+  const findings = [
+    "# Findings",
+    "",
+    "## Accepted",
+    "",
+    "- Keep this note mentioning ## Raw Review Outputs as literal text.",
+    "",
+    "## Raw Review Outputs",
+    "",
+    "### stale",
+    "",
+    "STALE_RAW_REVIEW_SHOULD_BE_REMOVED",
+    "",
+  ].join("\n");
+  const rawReviews = [
+    "## Raw Review Outputs",
+    "",
+    "### fresh",
+    "",
+    "Fresh bounded review output.",
+    "",
+  ].join("\n");
+
+  const merged = findingsWithRawReviews(findings, rawReviews);
+
+  assert.match(merged, /Keep this note mentioning ## Raw Review Outputs as literal text/);
+  assert.doesNotMatch(merged, /STALE_RAW_REVIEW_SHOULD_BE_REMOVED/);
+  assert.match(merged, /Fresh bounded review output/);
+  assert.equal(merged.match(/^## Raw Review Outputs$/gm)?.length, 1);
+});
+
+test("release summary reads the unified raw review output section", () => {
+  const runDir = makeRunDir();
+  test.after(() => rmSync(runDir, { recursive: true, force: true }));
+  const reviewPath = reviewOutputPath(runDir, "mimo");
+  mkdirSync(path.dirname(reviewPath), { recursive: true });
+  writeFileSync(reviewPath, "No release blockers from mimo.\n");
+  writeFileSync(
+    path.join(runDir, "findings.md"),
+    [
+      "# Findings",
+      "",
+      "## Accepted",
+      "",
+      "- No release blocker.",
+      "",
+      "## Needs Decision",
+      "",
+      "- TBD",
+      "",
+    ].join("\n"),
+  );
+  const status: PacketStatus = {
+    schema_version: 1,
+    run_id: "review-artifact-summary",
+    created_at: "2026-05-14T00:00:00.000Z",
+    updated_at: "2026-05-14T00:00:00.000Z",
+    status: "review_completed",
+    stages: ["review", "decide"],
+    stage_nodes: [
+      { id: "review", type: "review", occurrence: 1 },
+      { id: "decide", type: "decide", occurrence: 1 },
+    ],
+    stage_assignments: {
+      review: ["mimo"],
+      decide: ["current"],
+    },
+    stage_invocations: {
+      review: [{ lane_id: "review:mimo", kind: "primary", agent: "mimo", timeout_seconds: 900 }],
+      decide: [{ lane_id: "decide:current", kind: "current", agent: "current", timeout_seconds: null }],
+    },
+    stage_failure_policies: {
+      review: { mode: "allow", max_fallback_agents: 1 },
+      decide: { mode: "allow", max_fallback_agents: 1 },
+    },
+    stage_fallbacks: {
+      review: { agents: [], max_attempts_per_agent: 1 },
+      decide: { agents: [], max_attempts_per_agent: 1 },
+    },
+    stage_attempts: {
+      review: [],
+      decide: [],
+    },
+    assignment_provenance: {
+      review: "test",
+      decide: "test",
+    },
+    fallback_provenance: {
+      review: "none",
+      decide: "none",
+    },
+    timeout_provenance: {
+      review: {},
+      decide: {},
+    },
+    completed_stages: ["review"],
+    stage_timing: {
+      review: {
+        started_at: "2026-05-14T00:00:00.000Z",
+        completed_at: "2026-05-14T00:00:01.000Z",
+        duration_ms: 1000,
+        attempt_count: 1,
+      },
+      decide: { attempt_count: 0 },
+    },
+    agent_timing: {},
+    user_gate: false,
+    workflow: "w-67ef1b1f",
+  };
+
+  const summary = buildReleaseEvidenceSummary(runDir, status);
+
+  assert.match(summary, /Review outputs: present/);
+  assert.match(summary, /## Raw Review Outputs/);
+  assert.match(summary, /### mimo/);
+  assert.match(summary, /No release blockers from mimo/);
+});

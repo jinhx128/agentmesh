@@ -1,0 +1,17 @@
+{
+  "name": "@agentmesh/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local AgentMesh runtime for packet IO, workflows, release gates, and readiness probes.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "@agentmesh/core": "0.1.0"
+  }
+}

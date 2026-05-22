@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "run_id": "valid-basic",
+  "created_at": "2026-05-13T00:00:00.000Z",
+  "updated_at": "2026-05-13T00:00:04.000Z",
+  "status": "completed",
+  "stages": ["plan", "execute", "review", "decide"],
+  "stage_nodes": [
+    { "id": "plan", "type": "plan", "occurrence": 1 },
+    { "id": "execute", "type": "execute", "occurrence": 1 },
+    { "id": "review", "type": "review", "occurrence": 1 },
+    { "id": "decide", "type": "decide", "occurrence": 1 }
+  ],
+  "stage_assignments": {
+    "plan": ["current"],
+    "execute": ["current"],
+    "review": ["current"],
+    "decide": ["current"]
+  },
+  "stage_invocations": {
+    "plan": [
+      {
+        "lane_id": "plan:current",
+        "kind": "current",
+        "agent": "current",
+        "timeout_seconds": null
+      }
+    ],
+    "execute": [
+      {
+        "lane_id": "execute:current",
+        "kind": "current",
+        "agent": "current",
+        "timeout_seconds": null
+      }
+    ],
+    "review": [
+      {
+        "lane_id": "review:current",
+        "kind": "current",
+        "agent": "current",
+        "timeout_seconds": null
+      }
+    ],
+    "decide": [
+      {
+        "lane_id": "decide:current",
+        "kind": "current",
+        "agent": "current",
+        "timeout_seconds": null
+      }
+    ]
+  },
+  "stage_failure_policies": {
+    "plan": { "mode": "allow", "max_fallback_agents": 1 },
+    "execute": { "mode": "allow", "max_fallback_agents": 1 },
+    "review": { "mode": "allow", "max_fallback_agents": 1 },
+    "decide": { "mode": "allow", "max_fallback_agents": 1 }
+  },
+  "stage_fallbacks": {
+    "plan": { "agents": [], "max_attempts_per_agent": 1 },
+    "execute": { "agents": [], "max_attempts_per_agent": 1 },
+    "review": { "agents": [], "max_attempts_per_agent": 1 },
+    "decide": { "agents": [], "max_attempts_per_agent": 1 }
+  },
+  "stage_attempts": {
+    "plan": [],
+    "execute": [],
+    "review": [],
+    "decide": []
+  },
+  "assignment_provenance": {
+    "plan": "fixture",
+    "execute": "fixture",
+    "review": "fixture",
+    "decide": "fixture"
+  },
+  "fallback_provenance": {
+    "plan": "none",
+    "execute": "none",
+    "review": "none",
+    "decide": "none"
+  },
+  "timeout_provenance": {
+    "plan": {},
+    "execute": {},
+    "review": {},
+    "decide": {}
+  },
+  "completed_stages": ["plan", "execute", "review", "decide"],
+  "stage_state": {
+    "plan": "completed",
+    "execute": "completed",
+    "review": "completed",
+    "decide": "completed"
+  },
+  "stage_timing": {
+    "plan": {
+      "started_at": "2026-05-13T00:00:00.000Z",
+      "completed_at": "2026-05-13T00:00:01.000Z",
+      "duration_ms": 1000,
+      "attempt_count": 1
+    },
+    "execute": {
+      "started_at": "2026-05-13T00:00:01.000Z",
+      "completed_at": "2026-05-13T00:00:02.000Z",
+      "duration_ms": 1000,
+      "attempt_count": 1
+    },
+    "review": {
+      "started_at": "2026-05-13T00:00:02.000Z",
+      "completed_at": "2026-05-13T00:00:03.000Z",
+      "duration_ms": 1000,
+      "attempt_count": 1
+    },
+    "decide": {
+      "started_at": "2026-05-13T00:00:03.000Z",
+      "completed_at": "2026-05-13T00:00:04.000Z",
+      "duration_ms": 1000,
+      "attempt_count": 1
+    }
+  },
+  "agent_timing": {
+    "plan": {
+      "current": {
+        "started_at": "2026-05-13T00:00:00.000Z",
+        "completed_at": "2026-05-13T00:00:01.000Z",
+        "duration_ms": 1000,
+        "attempt_count": 1
+      }
+    }
+  },
+  "user_gate": false,
+  "release_verdict": {
+    "value": "ready",
+    "diagnostic": null
+  }
+}

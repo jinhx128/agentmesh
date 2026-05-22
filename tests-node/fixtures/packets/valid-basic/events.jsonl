@@ -1,0 +1,3 @@
+{"schema_version":1,"timestamp":"2026-05-14T00:00:00.000Z","event":"run.created","run_id":"valid-basic"}
+{"schema_version":1,"timestamp":"2026-05-14T00:01:00.000Z","event":"stage.completed","stage":"plan"}
+{"schema_version":1,"timestamp":"2026-05-14T00:02:00.000Z","event":"release.verdict.recorded","verdict":"ready"}

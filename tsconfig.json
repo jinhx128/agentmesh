@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "ESNext.Collection"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "declaration": true,
+    "outDir": "dist-node",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests-node/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist-node",
+    "apps/studio-desktop/src-tauri/gen",
+    "apps/studio-desktop/src-tauri/target"
+  ]
+}

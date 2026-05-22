@@ -1,0 +1,11 @@
+schema_version = 1
+
+[agents.reviewer]
+label = "Example Reviewer"
+adapter = "command"
+command = "examples/fake-agent.sh"
+args = []
+aliases = ["reviewer"]
+capabilities = ["plan", "execute", "verify", "review", "decide"]
+prompt_file_arg = "--prompt-file"
+output_file_arg = "--output-file"

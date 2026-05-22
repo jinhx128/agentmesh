@@ -1,0 +1,18 @@
+{
+  "name": "@agentmesh/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only AgentMesh SDK for stable local state discovery.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./src/*": "./src/*"
+  },
+  "dependencies": {
+    "@agentmesh/core": "0.1.0",
+    "smol-toml": "^1.6.1"
+  }
+}

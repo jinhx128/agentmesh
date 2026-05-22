@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AgentMesh",
+  "version": "0.1.0",
+  "identifier": "dev.agentmesh.studio",
+  "build": {
+    "frontendDist": "../shell"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AgentMesh Studio",
+        "width": 1280,
+        "height": 900,
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "externalBin": ["../../../dist-node/apps/studio-desktop/sidecar/agentmesh-studio-sidecar"],
+    "resources": {
+      "../../../dist-node/apps/studio-desktop/sidecar": "dist-node/apps/studio-desktop/sidecar",
+      "../../../dist-node/apps/studio-desktop/src": "dist-node/apps/studio-desktop/src",
+      "../../../dist-node/apps/studio-web/frontend": "dist-node/apps/studio-web/frontend",
+      "../../../dist-node/packages/app-server": "dist-node/packages/app-server",
+      "../../../dist-node/packages/cli": "dist-node/packages/cli",
+      "../../../dist-node/packages/core": "dist-node/packages/core",
+      "../../../dist-node/packages/runtime": "dist-node/packages/runtime",
+      "../../../dist-node/packages/sdk": "dist-node/packages/sdk",
+      "../../../dist-node/packages/skills": "dist-node/packages/skills",
+      "../../../dist-node/apps/studio-desktop/runtime-node_modules": "dist-node/node_modules",
+      "../../../package.json": "package.json",
+      "../../../packages/skills/agentmesh-skill": "packages/skills/agentmesh-skill"
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "entitlements": "Entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/agentmesh/agentmesh/releases/download/studio-stable/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"
+    }
+  }
+}

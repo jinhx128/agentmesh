@@ -1,0 +1,169 @@
+import type { StudioApiClient } from "./client.js";
+
+export interface StudioRunsPayload {
+  runs: StudioRunSummary[];
+}
+
+export interface StudioRunSummary {
+  run_id: string;
+  status: string;
+  workflow?: string;
+  latest_event?: string;
+  latest_event_timestamp?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface StudioRunDetail {
+  summary: StudioRunDetailSummary;
+  status?: Record<string, unknown>;
+  events: StudioRunEvent[];
+  events_page?: StudioEventPage;
+  artifacts: StudioArtifactSummary[];
+  review_release: StudioReviewReleaseView;
+}
+
+export interface StudioRunDetailSummary extends StudioRunSummary {
+  run_dir?: string;
+  stages: string[];
+  stage_nodes?: StudioStageNodeSummary[];
+  completed_stages: string[];
+  stage_timing: StudioStageTimingSummary[];
+  current_stage?: string;
+  resolved_context_policy?: Record<string, unknown>;
+  resolved_execution_policy?: Record<string, unknown>;
+}
+
+export interface StudioStageNodeSummary {
+  id: string;
+  type: string;
+  occurrence: number;
+}
+
+export interface StudioStageTimingSummary {
+  stage: string;
+  attempt_count: number;
+  started_at?: string;
+  completed_at?: string;
+  failed_at?: string;
+  duration_ms?: number;
+  exit_code?: number | null;
+}
+
+export interface StudioRunEvent {
+  event?: string;
+  timestamp?: string;
+  stage?: string;
+  agent?: string;
+  [key: string]: unknown;
+}
+
+export interface StudioArtifactSummary {
+  name: string;
+  path: string;
+  kind: string;
+  stage: string;
+  agent?: string;
+  written_at?: string;
+  created_at?: string;
+  timestamp?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface StudioArtifactPreview extends StudioArtifactSummary {
+  content: string;
+  truncated: boolean;
+}
+
+export interface StudioEventPage {
+  offset: number;
+  limit: number;
+  total: number;
+}
+
+export interface StudioReviewReleaseView {
+  release_verdict?: StudioReleaseVerdictView;
+  findings: StudioReviewFindingsView;
+  raw_reviews: StudioRawReviewView[];
+  release_summary: StudioReleaseSummaryView;
+  skipped_checks: string[];
+  residual_risk: string[];
+}
+
+export interface StudioReleaseVerdictView {
+  value: string | null;
+  diagnostic: string | null;
+}
+
+export interface StudioReviewFindingsView {
+  present: boolean;
+  accepted: string[];
+  rejected: string[];
+  needs_decision: string[];
+}
+
+export interface StudioRawReviewView {
+  reviewer: string;
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+export interface StudioReleaseSummaryView {
+  present: boolean;
+  path: string;
+  truncated: boolean;
+  sections: StudioMarkdownSectionView[];
+}
+
+export interface StudioMarkdownSectionView {
+  heading: string;
+  content: string;
+  items: string[];
+}
+
+export interface StudioRunDetailOptions {
+  eventOffset?: number;
+  eventLimit?: number;
+}
+
+export function loadStudioRuns(client: StudioApiClient): Promise<StudioRunsPayload> {
+  return client.getJson<StudioRunsPayload>("/api/runs");
+}
+
+export function loadStudioRunDetail(
+  client: StudioApiClient,
+  runId: string,
+  options: StudioRunDetailOptions = {},
+): Promise<StudioRunDetail> {
+  const params = new URLSearchParams();
+  if (options.eventOffset !== undefined) {
+    params.set("event_offset", String(options.eventOffset));
+  }
+  if (options.eventLimit !== undefined) {
+    params.set("event_limit", String(options.eventLimit));
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return client.getJson<StudioRunDetail>(`/api/runs/${encodeURIComponent(runId)}${query}`);
+}
+
+export function loadStudioArtifactPreview(
+  client: StudioApiClient,
+  runId: string,
+  artifactName: string,
+): Promise<StudioArtifactPreview> {
+  return client.getJson<StudioArtifactPreview>(
+    `/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactName)}`,
+  );
+}
+
+export function nextSelectedRunId(
+  runs: StudioRunSummary[],
+  currentRunId: string | undefined,
+): string | undefined {
+  if (currentRunId && runs.some((run) => run.run_id === currentRunId)) {
+    return currentRunId;
+  }
+  return runs[0]?.run_id;
+}

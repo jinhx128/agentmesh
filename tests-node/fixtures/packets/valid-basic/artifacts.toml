@@ -1,0 +1,36 @@
+schema_version = 1
+
+[artifacts.request]
+path = "request.md"
+kind = "request"
+stage = "run"
+
+[artifacts.context]
+path = "context.md"
+kind = "context"
+stage = "run"
+
+[artifacts.plan]
+path = "plan.md"
+kind = "markdown"
+stage = "plan"
+
+[artifacts.handoff]
+path = "handoff.md"
+kind = "markdown"
+stage = "execute"
+
+[artifacts.findings]
+path = "findings.md"
+kind = "markdown"
+stage = "review"
+
+[artifacts.decision]
+path = "decision.md"
+kind = "markdown"
+stage = "decide"
+
+[artifacts.release_summary]
+path = "release-summary.md"
+kind = "release-summary"
+stage = "decide"

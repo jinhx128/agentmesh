@@ -1,0 +1,44 @@
+schema_version = 1
+risks = []
+
+[project]
+id = "agentmesh"
+name = "AgentMesh"
+description = "Local-first AI coding workflow CLI for traceable agent collaboration."
+
+[[key_commands]]
+id = "test"
+command = "npm test"
+description = "Build TypeScript and run the Node test suite."
+
+[[key_commands]]
+id = "check"
+command = "npm run check"
+description = "Run the full validation suite alias."
+
+[[constraints]]
+id = "local-first-packets"
+statement = ".agentmesh/runs/<run-id>/ remains the durable source of truth for runs."
+scope = "packet"
+owner = "AgentMesh maintainers"
+
+[[constraints]]
+id = "node-runtime"
+statement = "TypeScript on Node is the only target runtime; Python remains decommissioned."
+scope = "runtime"
+owner = "AgentMesh maintainers"
+
+[freshness]
+updated_at = "2026-05-14"
+freshness = "fresh"
+max_age_days = 30
+
+[owner]
+owner = "AgentMesh maintainers"
+contact = "README.md"
+
+[validation]
+validation_state = "ok"
+checked_at = "2026-05-14"
+command = "npm test"
+message = "148 passed"

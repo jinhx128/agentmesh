@@ -1,0 +1,920 @@
+import {
+  Alert,
+  AppShell,
+  Box,
+  Button,
+  Group,
+  Paper,
+  SegmentedControl,
+  Stack,
+  Tabs,
+  Text,
+  Title,
+} from "@mantine/core";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useStudioCopy, type StudioCopyKey } from "./copy.js";
+import {
+  bootstrapStudio,
+  type StudioBootstrapPayload,
+} from "../api/bootstrap.js";
+import {
+  loadStudioAdvancedSettings,
+  updateStudioAdvancedSettings,
+  type StudioAdvancedSettingsPayload,
+  type StudioAdvancedSettingsUpdateRequest,
+} from "../api/advanced-settings.js";
+import {
+  loadStudioAgentModels,
+  loadStudioAgents,
+  submitStudioAgentLifecycleOperation,
+  type StudioAgentCreateRequest,
+  type StudioAgentLifecycleOperation,
+  type StudioAgentLifecycleSubmit,
+  type StudioAgentModelListPayload,
+} from "../api/agents.js";
+import {
+  loadStudioCatalog,
+} from "../api/catalog.js";
+import {
+  submitStudioWorkflowCreate,
+  submitStudioWorkflowDelete,
+  submitStudioWorkflowUpdate,
+  type StudioWorkflowCreateRequest,
+  type StudioWorkflowLifecycleResponse,
+  type StudioWorkflowUpdateRequest,
+} from "../api/workflows.js";
+import {
+  submitStudioPresetCreate,
+  submitStudioPresetDelete,
+  submitStudioPresetUpdate,
+  type StudioPresetCreateRequest,
+  type StudioPresetLifecycleResponse,
+  type StudioPresetUpdateRequest,
+} from "../api/presets.js";
+import {
+  loadStudioCompatibility,
+} from "../api/compatibility.js";
+import {
+  installAgentSkills,
+  installCommandLineTool,
+  loadStudioIntegrations,
+  type AgentMeshSkillTarget,
+} from "../api/integrations.js";
+import {
+  normalizeStudioApiError,
+  type StudioApiClient,
+  type StudioApiError,
+} from "../api/client.js";
+import {
+  submitStudioMutation,
+  type StudioMutationRequest,
+  type StudioMutationResponse,
+} from "../api/mutations.js";
+import {
+  loadStudioArtifactPreview,
+  loadStudioRunDetail,
+  loadStudioRuns,
+  nextSelectedRunId,
+} from "../api/runs.js";
+import {
+  loadStudioCallDetail,
+  loadStudioCalls,
+  nextSelectedCallId,
+  submitStudioCallAdoption,
+  type StudioCallAdoptionRequest,
+  type StudioCallAdoptionResponse,
+} from "../api/calls.js";
+import {
+  ArtifactPreviewPanel,
+  sortStudioArtifacts,
+  type ArtifactPreviewState,
+} from "../features/artifacts/ArtifactPreviewPanel.js";
+import {
+  type CatalogViewState,
+} from "../features/catalog/CatalogView.js";
+import {
+  SafeActionsPanel,
+} from "../features/actions/SafeActionsPanel.js";
+import {
+  type AgentLifecycleState,
+} from "../features/agents/AgentLifecyclePanel.js";
+import {
+  type SettingsAboutState,
+} from "../features/settings/SettingsAboutPanel.js";
+import {
+  type AgentIntegrationsState,
+} from "../features/settings/AgentIntegrationsPanel.js";
+import {
+  type AdvancedSettingsState,
+} from "../features/settings/AdvancedSettingsPanel.js";
+import {
+  SettingsView,
+} from "../features/settings/SettingsView.js";
+import {
+  ManualView,
+} from "../features/manual/ManualView.js";
+import {
+  ReviewReleaseView,
+} from "../features/review-release/ReviewReleaseView.js";
+import {
+  EventLogView,
+} from "../features/runs/EventLogView.js";
+import {
+  RunOverview,
+  type RunOverviewState,
+} from "../features/runs/RunOverview.js";
+import {
+  RunNavigator,
+  type RunNavigatorState,
+} from "../features/runs/RunNavigator.js";
+import {
+  type AutoRefreshSeconds,
+} from "../features/navigation/AutoRefreshSelect.js";
+import {
+  CallNavigator,
+  type CallNavigatorState,
+} from "../features/calls/CallNavigator.js";
+import {
+  CallDetailView,
+  type CallDetailState,
+} from "../features/calls/CallDetailView.js";
+
+type BootstrapViewState =
+  | { status: "loading" }
+  | { status: "ready"; bootstrap: StudioBootstrapPayload }
+  | { status: "error"; error: StudioApiError };
+
+type WorkspaceView = "runs" | "calls" | "settings" | "definitions";
+export type RunDetailTab = "details" | "actions" | "release" | "artifacts" | "events" | "diagnostics";
+
+const RUN_DETAIL_TABS: Array<{
+  id: RunDetailTab;
+  labelKey: StudioCopyKey;
+}> = [
+  { id: "details", labelKey: "details" },
+  { id: "actions", labelKey: "action" },
+  { id: "release", labelKey: "reviewPublish" },
+  { id: "artifacts", labelKey: "artifacts" },
+  { id: "events", labelKey: "logEvents" },
+  { id: "diagnostics", labelKey: "diagnostics" },
+];
+
+const EVENT_PAGE_LIMIT = 50;
+
+interface NavigatorLoadOptions {
+  showLoading?: boolean;
+}
+
+export function App(): ReactElement {
+  const { t } = useStudioCopy();
+  const [bootstrapState, setBootstrapState] = useState<BootstrapViewState>({ status: "loading" });
+  const [catalogState, setCatalogState] = useState<CatalogViewState>({ status: "loading" });
+  const [settingsAboutState, setSettingsAboutState] = useState<SettingsAboutState>({ status: "loading" });
+  const [advancedSettingsState, setAdvancedSettingsState] = useState<AdvancedSettingsState>({ status: "loading" });
+  const [agentIntegrationsState, setAgentIntegrationsState] = useState<AgentIntegrationsState>({ status: "loading" });
+  const [agentLifecycleState, setAgentLifecycleState] = useState<AgentLifecycleState>({ status: "loading" });
+  const [runsState, setRunsState] = useState<RunNavigatorState>({ status: "loading" });
+  const [runDetailState, setRunDetailState] = useState<RunOverviewState>({ status: "empty" });
+  const [callsState, setCallsState] = useState<CallNavigatorState>({ status: "loading" });
+  const [callDetailState, setCallDetailState] = useState<CallDetailState>({ status: "empty" });
+  const [selectedArtifactName, setSelectedArtifactName] = useState<string | undefined>(undefined);
+  const [artifactPreviewState, setArtifactPreviewState] = useState<ArtifactPreviewState>({ status: "idle" });
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
+  const [selectedCallId, setSelectedCallId] = useState<string | undefined>(undefined);
+  const [eventOffset, setEventOffset] = useState<number | undefined>(undefined);
+  const [runQuery, setRunQuery] = useState("");
+  const [callQuery, setCallQuery] = useState("");
+  const [apiClient, setApiClient] = useState<StudioApiClient | undefined>(undefined);
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("runs");
+  const [navigatorView, setNavigatorView] = useState<"runs" | "calls">("runs");
+  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState<AutoRefreshSeconds>(15);
+  const [runDetailTab, setRunDetailTab] = useState<RunDetailTab>("details");
+  const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
+  const previousSelectedRunIdRef = useRef<string | undefined>(undefined);
+
+  function loadRunsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
+    if (options.showLoading !== false) {
+      setRunsState({ status: "loading" });
+    }
+    void loadStudioRuns(client)
+      .then(({ runs }) => {
+        setRunsState({ status: "ready", runs });
+        setSelectedRunId((current) => nextSelectedRunId(runs, current));
+      })
+      .catch((error: unknown) => {
+        setRunsState({ status: "error", message: normalizeStudioApiError(error).message });
+        setSelectedRunId(undefined);
+      });
+  }
+
+  function loadCallsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
+    if (options.showLoading !== false) {
+      setCallsState({ status: "loading" });
+    }
+    void loadStudioCalls(client)
+      .then(({ calls }) => {
+        setCallsState({ status: "ready", calls });
+        setSelectedCallId((current) => nextSelectedCallId(calls, current));
+      })
+      .catch((error: unknown) => {
+        setCallsState({ status: "error", message: normalizeStudioApiError(error).message });
+        setSelectedCallId(undefined);
+      });
+  }
+
+  function loadAgentLifecycleWithClient(
+    client: StudioApiClient,
+    lastOperation?: StudioAgentLifecycleOperation,
+  ): void {
+    setAgentLifecycleState({ status: "loading" });
+    void loadStudioAgents(client)
+      .then(({ agents }) => {
+        setAgentLifecycleState({
+          status: "ready",
+          agents,
+          ...(lastOperation ? { lastOperation } : {}),
+        });
+      })
+      .catch((error: unknown) => {
+        setAgentLifecycleState({ status: "error", message: normalizeStudioApiError(error).message });
+      });
+  }
+
+  function loadCompatibilityWithClient(client: StudioApiClient): void {
+    setSettingsAboutState({ status: "loading" });
+    void loadStudioCompatibility(client)
+      .then((compatibility) => {
+        setSettingsAboutState({ status: "ready", compatibility });
+      })
+      .catch((error: unknown) => {
+        setSettingsAboutState({ status: "error", message: normalizeStudioApiError(error).message });
+      });
+  }
+
+  function loadAgentIntegrationsWithClient(client: StudioApiClient): void {
+    setAgentIntegrationsState({ status: "loading" });
+    void loadStudioIntegrations(client)
+      .then((report) => {
+        setAgentIntegrationsState({ status: "ready", report });
+      })
+      .catch((error: unknown) => {
+        setAgentIntegrationsState({ status: "error", message: normalizeStudioApiError(error).message });
+      });
+  }
+
+  function loadAdvancedSettingsWithClient(client: StudioApiClient): void {
+    setAdvancedSettingsState({ status: "loading" });
+    void loadStudioAdvancedSettings(client)
+      .then((settings) => {
+        setAdvancedSettingsState({ status: "ready", settings });
+      })
+      .catch((error: unknown) => {
+        setAdvancedSettingsState({ status: "error", message: normalizeStudioApiError(error).message });
+      });
+  }
+
+  useEffect(() => {
+    let active = true;
+    void bootstrapStudio()
+      .then(({ bootstrap, client }) => {
+        if (active) {
+          setBootstrapState({ status: "ready", bootstrap });
+          setApiClient(client);
+          loadRunsWithClient(client);
+          loadCallsWithClient(client);
+          loadAgentLifecycleWithClient(client);
+          loadCompatibilityWithClient(client);
+          loadAdvancedSettingsWithClient(client);
+          loadAgentIntegrationsWithClient(client);
+        }
+        return loadStudioCatalog(client);
+      })
+      .then((catalog) => {
+        if (active) {
+          setCatalogState({ status: "ready", catalog });
+        }
+      })
+      .catch((error: unknown) => {
+        const apiError = normalizeStudioApiError(error);
+        if (active) {
+          setBootstrapState({ status: "error", error: apiError });
+          setCatalogState({ status: "error", message: apiError.message });
+          setSettingsAboutState({ status: "error", message: apiError.message });
+          setAdvancedSettingsState({ status: "error", message: apiError.message });
+          setAgentIntegrationsState({ status: "error", message: apiError.message });
+          setAgentLifecycleState({ status: "error", message: apiError.message });
+          setRunsState({ status: "error", message: apiError.message });
+          setRunDetailState({ status: "error", message: apiError.message });
+          setCallsState({ status: "error", message: apiError.message });
+          setCallDetailState({ status: "error", message: apiError.message });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!apiClient || autoRefreshSeconds === 0) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      if (navigatorView === "calls") {
+        loadCallsWithClient(apiClient, { showLoading: false });
+        return;
+      }
+      loadRunsWithClient(apiClient, { showLoading: false });
+    }, autoRefreshSeconds * 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [apiClient, autoRefreshSeconds, navigatorView]);
+
+  useEffect(() => {
+    const previousRunId = previousSelectedRunIdRef.current;
+    previousSelectedRunIdRef.current = selectedRunId;
+    setRunDetailTab((current) => runDetailTabAfterRunSelection(previousRunId, selectedRunId, current));
+  }, [selectedRunId]);
+
+  useEffect(() => {
+    if (!apiClient || !selectedRunId) {
+      setRunDetailState({ status: "empty" });
+      return;
+    }
+    let active = true;
+    setRunDetailState({ status: "loading" });
+    void loadStudioRunDetail(apiClient, selectedRunId, {
+      ...(eventOffset !== undefined ? { eventOffset } : {}),
+      eventLimit: EVENT_PAGE_LIMIT,
+    })
+      .then((detail) => {
+        if (active) {
+          setRunDetailState({ status: "ready", detail });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setRunDetailState({ status: "error", message: normalizeStudioApiError(error).message });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiClient, selectedRunId, eventOffset, runDetailReloadKey]);
+
+  useEffect(() => {
+    if (!apiClient || !selectedCallId) {
+      setCallDetailState({ status: "empty" });
+      return;
+    }
+    let active = true;
+    setCallDetailState({ status: "loading" });
+    void loadStudioCallDetail(apiClient, selectedCallId)
+      .then((detail) => {
+        if (active) {
+          setCallDetailState({ status: "ready", detail });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setCallDetailState({ status: "error", message: normalizeStudioApiError(error).message });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiClient, selectedCallId]);
+
+  const selectedDetail = runDetailState.status === "ready" ? runDetailState.detail : undefined;
+  const selectedDetailRunId = selectedDetail?.summary.run_id;
+  const artifactNamesKey = useMemo(() => {
+    return selectedDetail
+      ? sortStudioArtifacts(selectedDetail).map((artifact) => artifact.name).join("\0")
+      : "";
+  }, [selectedDetail]);
+
+  useEffect(() => {
+    if (!selectedDetail) {
+      setSelectedArtifactName(undefined);
+      setArtifactPreviewState({ status: "idle" });
+      return;
+    }
+    const artifacts = sortStudioArtifacts(selectedDetail);
+    setSelectedArtifactName((current) =>
+      current && artifacts.some((artifact) => artifact.name === current)
+        ? current
+        : artifacts[0]?.name,
+    );
+  }, [selectedDetailRunId, artifactNamesKey]);
+
+  useEffect(() => {
+    if (!apiClient || !selectedDetailRunId || !selectedArtifactName) {
+      setArtifactPreviewState({ status: "idle" });
+      return;
+    }
+    let active = true;
+    setArtifactPreviewState({ status: "loading", artifactName: selectedArtifactName });
+    void loadStudioArtifactPreview(apiClient, selectedDetailRunId, selectedArtifactName)
+      .then((preview) => {
+        if (active) {
+          setArtifactPreviewState({ status: "ready", preview });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setArtifactPreviewState({
+            status: "error",
+            artifactName: selectedArtifactName,
+            message: normalizeStudioApiError(error).message,
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiClient, selectedDetailRunId, selectedArtifactName]);
+
+  const overviewState: RunOverviewState = bootstrapState.status === "loading"
+    ? { status: "loading" }
+    : runDetailState;
+
+  async function submitSafeAction(request: StudioMutationRequest): Promise<StudioMutationResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    return submitStudioMutation(apiClient, request);
+  }
+
+  function refreshAfterMutation(): void {
+    if (apiClient) {
+      loadRunsWithClient(apiClient);
+      setRunDetailReloadKey((current) => current + 1);
+    }
+  }
+
+  async function createAgent(request: StudioAgentCreateRequest): Promise<void> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioAgentLifecycleOperation(apiClient, {
+      action: "create",
+      request,
+    });
+    loadAgentLifecycleWithClient(apiClient, response.payload);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+  }
+
+  async function submitAgentLifecycle(request: StudioAgentLifecycleSubmit): Promise<void> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioAgentLifecycleOperation(apiClient, request);
+    loadAgentLifecycleWithClient(apiClient, response.payload);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+  }
+
+  async function loadAgentModels(adapter: string): Promise<StudioAgentModelListPayload> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    return loadStudioAgentModels(apiClient, adapter);
+  }
+
+  async function createWorkflow(request: StudioWorkflowCreateRequest): Promise<StudioWorkflowLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioWorkflowCreate(apiClient, request);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function updateWorkflow(
+    workflowId: string,
+    request: StudioWorkflowUpdateRequest,
+  ): Promise<StudioWorkflowLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioWorkflowUpdate(apiClient, workflowId, request);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function deleteWorkflow(workflowId: string): Promise<StudioWorkflowLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioWorkflowDelete(apiClient, workflowId);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function createPreset(request: StudioPresetCreateRequest): Promise<StudioPresetLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioPresetCreate(apiClient, request);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function updatePreset(
+    presetId: string,
+    request: StudioPresetUpdateRequest,
+  ): Promise<StudioPresetLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioPresetUpdate(apiClient, presetId, request);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function deletePreset(presetId: string): Promise<StudioPresetLifecycleResponse> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioPresetDelete(apiClient, presetId);
+    void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
+    return response;
+  }
+
+  async function submitCallAdoption(
+    request: StudioCallAdoptionRequest,
+  ): Promise<StudioCallAdoptionResponse> {
+    if (!apiClient || !selectedCallId) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await submitStudioCallAdoption(apiClient, selectedCallId, request);
+    if (response.ok && "call" in response.payload) {
+      setCallDetailState({ status: "ready", detail: response.payload });
+      loadCallsWithClient(apiClient);
+    }
+    return response;
+  }
+
+  async function submitCommandLineToolInstall(request: {
+    bin_dir: string;
+    confirm_existing: boolean;
+  }): Promise<void> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await installCommandLineTool(apiClient, request);
+    if (response.ok && "command_line_tool" in response.payload) {
+      setAgentIntegrationsState({
+        status: "ready",
+        report: response.payload,
+        commandResult: response.payload,
+      });
+      return;
+    }
+    setAgentIntegrationsState((current) => current.status === "ready"
+      ? { ...current, commandResult: response.payload }
+      : current);
+  }
+
+  async function submitAgentSkillInstall(request: {
+    targets: AgentMeshSkillTarget[];
+    force: boolean;
+  }): Promise<void> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const response = await installAgentSkills(apiClient, request);
+    if (response.ok && "skills" in response.payload) {
+      setAgentIntegrationsState({
+        status: "ready",
+        report: response.payload,
+        skillResult: response.payload,
+      });
+      return;
+    }
+    setAgentIntegrationsState((current) => current.status === "ready"
+      ? { ...current, skillResult: response.payload }
+      : current);
+  }
+
+  async function saveAdvancedSettings(
+    request: StudioAdvancedSettingsUpdateRequest,
+  ): Promise<StudioAdvancedSettingsPayload> {
+    if (!apiClient) {
+      throw new Error("Studio API is not ready.");
+    }
+    const settings = await updateStudioAdvancedSettings(apiClient, request);
+    setAdvancedSettingsState({ status: "ready", settings });
+    return settings;
+  }
+
+  const workspaceTitle = workspaceLabel(workspaceView, t);
+  const advancedAgentOptions = agentLifecycleState.status === "ready" ? agentLifecycleState.agents : [];
+
+  const navigatorToolbar = (
+    <SegmentedControl
+      className="studio-data-switch"
+      fullWidth
+      aria-label={`${t("runs")} / ${t("calls")}`}
+      data-studio-section="navigator-data-switch"
+      value={navigatorView}
+      data={[
+        { value: "runs", label: t("runs") },
+        { value: "calls", label: t("calls") },
+      ]}
+      onChange={(value) => {
+        const nextView = value === "calls" ? "calls" : "runs";
+        setNavigatorView(nextView);
+        setWorkspaceView(nextView);
+      }}
+    />
+  );
+
+  return (
+    <AppShell
+      className="studio-shell"
+      data-studio-section="react-baseline"
+      navbar={{ width: 344, breakpoint: "xs" }}
+      padding={0}
+    >
+      <AppShell.Navbar className="studio-navbar" data-studio-section="run-navigator">
+        <Stack gap="sm" h="100%" p="md">
+          <Paper className="studio-brand-panel" withBorder p="md" radius="md" data-studio-section="workspace-brand">
+            <Stack gap={10}>
+              <Box ta="center">
+                <Title order={1} size="h2">AgentMesh</Title>
+                <Text size="xs" c="dimmed" fw={700}>Studio</Text>
+              </Box>
+              <Group grow gap="xs" component="nav" aria-label={t("viewNavigation")}>
+                <Button
+                  variant={workspaceView === "settings" ? "filled" : "light"}
+                  size="xs"
+                  aria-pressed={workspaceView === "settings"}
+                  onClick={() => setWorkspaceView("settings")}
+                >
+                  {t("settings")}
+                </Button>
+                <Button
+                  variant={workspaceView === "definitions" ? "filled" : "light"}
+                  size="xs"
+                  aria-pressed={workspaceView === "definitions"}
+                  onClick={() => setWorkspaceView("definitions")}
+                >
+                  {t("definitions")}
+                </Button>
+              </Group>
+            </Stack>
+          </Paper>
+          <Box className="studio-navigator-list">
+            {navigatorView === "calls" ? (
+              <CallNavigator
+                state={callsState}
+                selectedCallId={workspaceView === "calls" ? selectedCallId : undefined}
+                query={callQuery}
+                toolbar={navigatorToolbar}
+                autoRefreshSeconds={autoRefreshSeconds}
+                onQueryChange={setCallQuery}
+                onAutoRefreshSecondsChange={setAutoRefreshSeconds}
+                onRefresh={() => {
+                  if (apiClient) {
+                    loadCallsWithClient(apiClient);
+                  }
+                }}
+                onSelectCall={(callId) => {
+                  setSelectedCallId(callId);
+                  setNavigatorView("calls");
+                  setWorkspaceView("calls");
+                }}
+              />
+            ) : (
+              <RunNavigator
+                state={runsState}
+                selectedRunId={workspaceView === "runs" ? selectedRunId : undefined}
+                query={runQuery}
+                toolbar={navigatorToolbar}
+                autoRefreshSeconds={autoRefreshSeconds}
+                onQueryChange={setRunQuery}
+                onAutoRefreshSecondsChange={setAutoRefreshSeconds}
+                onRefresh={() => {
+                  if (apiClient) {
+                    loadRunsWithClient(apiClient);
+                  }
+                }}
+                onSelectRun={(runId) => {
+                  setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunId, runId, current));
+                  setSelectedRunId(runId);
+                  setEventOffset(undefined);
+                  setNavigatorView("runs");
+                  setWorkspaceView("runs");
+                }}
+              />
+            )}
+          </Box>
+        </Stack>
+      </AppShell.Navbar>
+      <AppShell.Main className="studio-main">
+        <Stack className="studio-workspace-shell" gap="md">
+          <Paper className="studio-topbar" withBorder radius="md" p="md">
+            <Group justify="space-between" align="center" gap="md">
+              <Box>
+                <Title order={2} size="h3">{workspaceTitle}</Title>
+                <Text size="sm" c="dimmed">{workspaceSubtitle(workspaceView, t)}</Text>
+              </Box>
+            </Group>
+          </Paper>
+
+          <Box className="studio-workspace-scroll">
+            <Stack data-studio-section="run-workspace" hidden={workspaceView !== "runs"} gap="md">
+              <Tabs
+                value={runDetailTab}
+                onChange={(value) => setRunDetailTab(isRunDetailTab(value) ? value : "details")}
+                data-studio-section="run-detail-tabs"
+              >
+                <Tabs.List aria-label={t("runsSubtitle")} grow>
+                  {RUN_DETAIL_TABS.map((tab) => (
+                    <Tabs.Tab
+                      value={tab.id}
+                      key={tab.id}
+                      onKeyDown={(event) => selectRelativeRunDetailTab(event, tab.id, setRunDetailTab)}
+                    >
+                      {t(tab.labelKey)}
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+                <Tabs.Panel value="details" pt="md">
+                  <RunOverview state={overviewState} view="details" />
+                </Tabs.Panel>
+                <Tabs.Panel value="actions" pt="md">
+                  <SafeActionsPanel
+                    selectedRunId={selectedRunId}
+                    onSubmit={submitSafeAction}
+                    onSettled={refreshAfterMutation}
+                  />
+                </Tabs.Panel>
+                <Tabs.Panel value="release" pt="md">
+                  {runDetailState.status === "ready"
+                    ? <ReviewReleaseView view={runDetailState.detail.review_release} />
+                    : <RunDetailPlaceholder state={runDetailState} />}
+                </Tabs.Panel>
+                <Tabs.Panel value="artifacts" pt="md">
+                  {runDetailState.status === "ready" ? (
+                    <ArtifactPreviewPanel
+                      detail={runDetailState.detail}
+                      selectedArtifactName={selectedArtifactName}
+                      previewState={artifactPreviewState}
+                      onSelectArtifact={setSelectedArtifactName}
+                    />
+                  ) : <RunDetailPlaceholder state={runDetailState} />}
+                </Tabs.Panel>
+                <Tabs.Panel value="events" pt="md">
+                  {runDetailState.status === "ready" ? (
+                    <EventLogView
+                      detail={runDetailState.detail}
+                      onSelectEventOffset={setEventOffset}
+                    />
+                  ) : <RunDetailPlaceholder state={runDetailState} />}
+                </Tabs.Panel>
+                <Tabs.Panel value="diagnostics" pt="md">
+                  <RunOverview state={overviewState} view="diagnostics" />
+                </Tabs.Panel>
+              </Tabs>
+            </Stack>
+
+            <Stack data-studio-section="calls-workspace" hidden={workspaceView !== "calls"} gap="md">
+              <CallDetailView state={callDetailState} onSubmitAdoption={submitCallAdoption} />
+            </Stack>
+
+            <Stack data-studio-section="settings-workspace" hidden={workspaceView !== "settings"} gap="md">
+              <SettingsView
+                resources={{
+                  state: catalogState,
+                  agentLifecycle: {
+                    state: agentLifecycleState,
+                    onCreateAgent: createAgent,
+                    onAgentAction: submitAgentLifecycle,
+                    onLoadAgentModels: loadAgentModels,
+                  },
+                  onCreateWorkflow: createWorkflow,
+                  onUpdateWorkflow: updateWorkflow,
+                  onDeleteWorkflow: deleteWorkflow,
+                  onCreatePreset: createPreset,
+                  onUpdatePreset: updatePreset,
+                  onDeletePreset: deletePreset,
+                }}
+                environment={{
+                  state: agentIntegrationsState,
+                  onInstallCommandLineTool: submitCommandLineToolInstall,
+                  onInstallAgentSkills: submitAgentSkillInstall,
+                }}
+                advanced={{
+                  state: advancedSettingsState,
+                  agents: advancedAgentOptions,
+                  onSaveAdvancedSettings: saveAdvancedSettings,
+                }}
+                about={{
+                  state: settingsAboutState,
+                }}
+              />
+            </Stack>
+
+            <Stack data-studio-section="system-definitions" hidden={workspaceView !== "definitions"} gap="md">
+              <ManualView />
+            </Stack>
+          </Box>
+        </Stack>
+      </AppShell.Main>
+    </AppShell>
+  );
+}
+
+function RunDetailPlaceholder({ state }: { state: RunOverviewState }): ReactElement {
+  const { t } = useStudioCopy();
+  return (
+    <Alert color={state.status === "error" ? "red" : "gray"} variant="light">
+      {runDetailPlaceholderMessage(state, t)}
+    </Alert>
+  );
+}
+
+function runDetailPlaceholderMessage(
+  state: RunOverviewState,
+  t: (key: StudioCopyKey) => string,
+): string {
+  switch (state.status) {
+    case "loading":
+      return t("loadingRunDetails");
+    case "error":
+      return `${t("runDetailsFailed")}: ${state.message}`;
+    case "ready":
+      return "";
+    case "empty":
+      return t("selectRun");
+  }
+}
+
+function isRunDetailTab(value: string | null): value is RunDetailTab {
+  return RUN_DETAIL_TABS.some((tab) => tab.id === value);
+}
+
+export function runDetailTabAfterRunSelection(
+  previousRunId: string | undefined,
+  nextRunId: string | undefined,
+  currentTab: RunDetailTab,
+): RunDetailTab {
+  return previousRunId === nextRunId ? currentTab : "details";
+}
+
+function workspaceLabel(workspace: WorkspaceView, t: (key: StudioCopyKey) => string): string {
+  return {
+    runs: t("runs"),
+    calls: t("calls"),
+    settings: t("settings"),
+    definitions: t("definitions"),
+  }[workspace];
+}
+
+function workspaceSubtitle(workspace: WorkspaceView, t: (key: StudioCopyKey) => string): string {
+  return {
+    runs: t("runsSubtitle"),
+    calls: t("callsSubtitle"),
+    settings: t("settingsSubtitle"),
+    definitions: t("definitionsSubtitle"),
+  }[workspace];
+}
+
+function selectRelativeRunDetailTab(
+  event: KeyboardEvent<HTMLButtonElement>,
+  currentTab: RunDetailTab,
+  onSelect: (tab: RunDetailTab) => void,
+): void {
+  const currentIndex = RUN_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
+  if (currentIndex < 0) {
+    return;
+  }
+  const nextIndex = relativeRunDetailTabIndex(event.key, currentIndex, RUN_DETAIL_TABS.length);
+  if (nextIndex === undefined) {
+    return;
+  }
+  event.preventDefault();
+  onSelect(RUN_DETAIL_TABS[nextIndex].id);
+}
+
+function relativeRunDetailTabIndex(
+  key: string,
+  currentIndex: number,
+  length: number,
+): number | undefined {
+  switch (key) {
+    case "ArrowRight":
+    case "ArrowDown":
+      return (currentIndex + 1) % length;
+    case "ArrowLeft":
+    case "ArrowUp":
+      return (currentIndex - 1 + length) % length;
+    case "Home":
+      return 0;
+    case "End":
+      return length - 1;
+    default:
+      return undefined;
+  }
+}

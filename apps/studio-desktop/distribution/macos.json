@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "app": {
+    "product_name": "AgentMesh",
+    "bundle_identifier": "dev.agentmesh.studio",
+    "targets": ["dmg"],
+    "target_architectures": ["darwin-aarch64"],
+    "icon_paths": [
+      "apps/studio-desktop/src-tauri/icons/32x32.png",
+      "apps/studio-desktop/src-tauri/icons/128x128.png",
+      "apps/studio-desktop/src-tauri/icons/128x128@2x.png",
+      "apps/studio-desktop/src-tauri/icons/icon.icns",
+      "apps/studio-desktop/src-tauri/icons/icon.ico"
+    ],
+    "minimum_system_version": "12.0"
+  },
+  "shell_spike": {
+    "decision": "continue-tauri",
+    "sidecar_packaging": "Tauri externalBin points at the app-managed desktop host launcher; packaging verifies the generated wrapper, bundled Node, runtime dependencies, and optional app-managed CLI resources that are not used for Studio mutations.",
+    "webview_smoke": "P3.1/P3.2 must run WKWebView smoke after the Tauri shell loads built React assets from the cookie-authenticated no-query App Server URL.",
+    "electron_fallback_threshold": "Switch only on a verified blocker: WebView API gap, native UI-process module requirement, unacceptable sidecar packaging/signing/notarization/update cost, or lifecycle reliability that would require protocol logic in Rust."
+  },
+  "signing": {
+    "environment": [
+      "APPLE_SIGNING_IDENTITY",
+      "APPLE_ID",
+      "APPLE_PASSWORD",
+      "APPLE_TEAM_ID",
+      "TAURI_SIGNING_PRIVATE_KEY",
+      "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+    ],
+    "secret_policy": "env-only"
+  },
+  "updates": {
+    "channels": {
+      "stable": {
+        "endpoint": "https://github.com/agentmesh/agentmesh/releases/download/studio-stable/latest.json",
+        "metadata_path": "apps/studio-desktop/distribution/latest.stable.darwin-aarch64.example.json"
+      },
+      "beta": {
+        "endpoint": "https://github.com/agentmesh/agentmesh/releases/download/studio-beta/latest.json",
+        "metadata_path": "apps/studio-desktop/distribution/latest.beta.darwin-aarch64.example.json"
+      }
+    },
+    "artifacts": [
+      "AgentMesh_${version}_${target}.dmg",
+      "AgentMesh_${version}_${target}.app.tar.gz",
+      "AgentMesh_${version}_${target}.app.tar.gz.sig"
+    ]
+  },
+  "runtime": {
+    "app_managed": true,
+    "entrypoint": "dist-node/apps/studio-desktop/src/main.js",
+    "npm_cli_shared_install": false
+  },
+  "agent_integrations": {
+    "command_line_tool": "Optional Install Command Line Tool writes a user-confirmed PATH wrapper to the app-managed CLI entrypoint after showing any existing PATH command.",
+    "skill_install": "Optional Install Agent Skill writes only user-selected targets and verifies each target independently.",
+    "skill_targets": ["codex", "cursor", "antigravity", "opencode", "copilot", "claude"]
+  }
+}

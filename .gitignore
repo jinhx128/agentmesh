@@ -1,0 +1,38 @@
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Python build and cache outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Node build and dependency outputs
+node_modules/
+dist-node/
+*.tsbuildinfo
+
+# Tauri build outputs
+apps/studio-desktop/src-tauri/gen/
+apps/studio-desktop/src-tauri/target/
+
+# AgentMesh runtime packets
+.agentmesh/
+
+# Runtime noise
+*.log
+*.tmp

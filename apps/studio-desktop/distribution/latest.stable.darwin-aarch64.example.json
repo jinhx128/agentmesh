@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "notes": "AgentMesh Studio stable 0.1.0",
+  "pub_date": "2026-05-16T00:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "EXAMPLE_TAURI_UPDATE_SIGNATURE_REPLACE_AT_RELEASE",
+      "url": "https://github.com/agentmesh/agentmesh/releases/download/studio-stable/AgentMesh_0.1.0_aarch64.app.tar.gz"
+    }
+  }
+}

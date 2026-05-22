@@ -1,0 +1,22 @@
+schema_version = 1
+workflow_recipe_version = 1
+compatible_packet_schema_versions = [1]
+name = "Docs Check"
+stages = ["plan", "review", "decide"]
+description = "Plan, review, and decide a documentation or release-note artifact."
+when_to_use = [
+  "A README, changelog, release note, or proposal needs focused review.",
+  "The team wants review evidence without running an execute stage.",
+]
+packet_artifacts = [
+  "request.md",
+  "assignment.toml",
+  "plan.md",
+  "findings.md",
+  "decision.md",
+]
+quality_gates = [
+  "The plan names the target readers, scope, non-goals, and verification.",
+  "Reviewers inspect the artifact and keep findings read-only.",
+  "The decider records accepted, rejected, and open findings before completion.",
+]

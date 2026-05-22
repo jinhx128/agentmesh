@@ -1,0 +1,25 @@
+{
+  "name": "@agentmesh/studio-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AgentMesh Studio React frontend.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build --config vite.config.ts"
+  },
+  "dependencies": {
+    "@mantine/core": "9.2.1",
+    "@mantine/hooks": "9.2.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "postcss": "8.5.14",
+    "postcss-preset-mantine": "1.18.0",
+    "postcss-simple-vars": "7.0.1",
+    "vite": "^8.0.13"
+  }
+}

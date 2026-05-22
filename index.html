@@ -1,0 +1,1098 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentMesh</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #182228;
+        --muted: #5c6871;
+        --line: #d7dee3;
+        --canvas: #eef2f1;
+        --paper: #ffffff;
+        --soft: #f6f8f7;
+        --dark: #101a1f;
+        --blue: #2f67a6;
+        --teal: #087a78;
+        --green: #2f7d4f;
+        --amber: #a96512;
+        --red: #b84a3a;
+        --shadow: 0 20px 56px rgba(24, 34, 40, 0.12);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--ink);
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 68px;
+        padding: 0 32px;
+        border-bottom: 1px solid rgba(24, 34, 40, 0.12);
+        background: rgba(238, 242, 241, 0.94);
+        backdrop-filter: blur(16px);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .mark {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        place-items: center;
+        border: 1px solid rgba(8, 122, 120, 0.45);
+        border-radius: 8px;
+        background: #e6f2ef;
+        color: var(--teal);
+        font-weight: 900;
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 4px;
+      }
+
+      nav a {
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        background: rgba(24, 34, 40, 0.08);
+        color: var(--ink);
+      }
+
+      .hero {
+        position: relative;
+        min-height: 78svh;
+        padding: 72px 32px 46px;
+        overflow: hidden;
+        background: var(--dark);
+        color: #f8fbfa;
+      }
+
+      #meshCanvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(16, 26, 31, 0.94), rgba(16, 26, 31, 0.7)),
+          linear-gradient(180deg, rgba(16, 26, 31, 0.16), rgba(16, 26, 31, 0.9));
+      }
+
+      .hero-inner {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 0.96fr) minmax(340px, 0.74fr);
+        gap: 44px;
+        align-items: center;
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+        color: #b9dad2;
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 30px;
+        height: 2px;
+        background: #67b3a5;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 720px;
+        font-size: clamp(48px, 8vw, 92px);
+        line-height: 0.96;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 720px;
+        margin-top: 24px;
+        color: #dfebe8;
+        font-size: clamp(18px, 2.2vw, 22px);
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid rgba(255, 255, 255, 0.26);
+        border-radius: 7px;
+        background: #f8fbfa;
+        color: #182228;
+        font-size: 14px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .button.secondary {
+        background: rgba(255, 255, 255, 0.08);
+        color: #f8fbfa;
+      }
+
+      .hero-meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1px;
+        margin-top: 56px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      .hero-meta div {
+        min-height: 104px;
+        padding: 18px;
+        background: rgba(10, 18, 22, 0.68);
+      }
+
+      .hero-meta strong {
+        display: block;
+        font-size: 24px;
+        line-height: 1.1;
+      }
+
+      .hero-meta span {
+        display: block;
+        margin-top: 8px;
+        color: #c3d4d0;
+        font-size: 13px;
+      }
+
+      .console {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 8px;
+        background: rgba(8, 13, 16, 0.82);
+        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.36);
+        overflow: hidden;
+      }
+
+      .console-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 42px;
+        padding: 0 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+        color: #c9d8d4;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .lights {
+        display: flex;
+        gap: 7px;
+      }
+
+      .lights i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--red);
+      }
+
+      .lights i:nth-child(2) {
+        background: var(--amber);
+      }
+
+      .lights i:nth-child(3) {
+        background: var(--green);
+      }
+
+      .console-body {
+        padding: 18px;
+        color: #dce8e5;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 13px;
+        overflow: auto;
+      }
+
+      .console-line {
+        display: block;
+        white-space: nowrap;
+      }
+
+      .prompt {
+        color: #83c8b9;
+      }
+
+      .ok {
+        color: #9fd38b;
+      }
+
+      .dim {
+        color: #82938f;
+      }
+
+      main {
+        background: var(--canvas);
+      }
+
+      section {
+        padding: 72px 32px;
+        scroll-margin-top: 88px;
+      }
+
+      .section-inner {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .section-title {
+        display: grid;
+        grid-template-columns: minmax(0, 0.75fr) minmax(280px, 0.55fr);
+        gap: 32px;
+        align-items: end;
+        margin-bottom: 28px;
+      }
+
+      h2 {
+        font-size: clamp(32px, 4vw, 48px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .section-title p {
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .grid-3,
+      .grid-4 {
+        display: grid;
+        gap: 14px;
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .card {
+        min-height: 100%;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: 0 10px 28px rgba(24, 34, 40, 0.06);
+      }
+
+      .card h3 {
+        font-size: 19px;
+        line-height: 1.2;
+      }
+
+      .card p {
+        margin-top: 10px;
+        color: var(--muted);
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: #edf3f1;
+        color: #2a5653;
+        font-size: 12px;
+        font-weight: 780;
+      }
+
+      .band {
+        background: var(--paper);
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .step {
+        position: relative;
+        min-height: 132px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+      }
+
+      .step::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -11px;
+        width: 12px;
+        height: 1px;
+        background: #a8b5b3;
+      }
+
+      .step:last-child::after {
+        display: none;
+      }
+
+      .step b {
+        display: block;
+        color: var(--teal);
+        font-size: 13px;
+        text-transform: uppercase;
+      }
+
+      .step strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 20px;
+      }
+
+      .step span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 760px;
+      }
+
+      th,
+      td {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 14px;
+      }
+
+      th {
+        background: #edf3f1;
+        color: #314147;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      code,
+      pre {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          monospace;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #e9eeee;
+        color: #233238;
+        font-size: 0.94em;
+      }
+
+      pre {
+        margin: 0;
+        padding: 18px;
+        border-radius: 8px;
+        background: #101a1f;
+        color: #dfe9e6;
+        font-size: 13px;
+        overflow-x: auto;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 0.78fr) minmax(320px, 0.62fr);
+        gap: 22px;
+        align-items: start;
+      }
+
+      .asset-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .asset {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .asset strong {
+        display: block;
+      }
+
+      .asset span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: #e7eef8;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .callout {
+        padding: 18px;
+        border-left: 4px solid var(--amber);
+        background: #fff8ed;
+        color: #5c4630;
+      }
+
+      .callout strong {
+        display: block;
+        color: #3a2b1b;
+      }
+
+      .footer {
+        padding: 34px 32px;
+        border-top: 1px solid rgba(24, 34, 40, 0.12);
+        background: #172126;
+        color: #d8e4e1;
+      }
+
+      .footer-inner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .footer a {
+        color: #d8e4e1;
+      }
+
+      @media (max-width: 940px) {
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 14px 20px;
+        }
+
+        nav {
+          justify-content: flex-start;
+        }
+
+        .hero,
+        section {
+          padding-right: 20px;
+          padding-left: 20px;
+        }
+
+        .hero-inner,
+        .section-title,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-meta,
+        .grid-3,
+        .grid-4,
+        .steps {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .step::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .hero {
+          min-height: auto;
+          padding-top: 50px;
+        }
+
+        h1 {
+          font-size: 44px;
+        }
+
+        .hero-meta,
+        .grid-3,
+        .grid-4,
+        .steps {
+          grid-template-columns: 1fr;
+        }
+
+        .asset {
+          grid-template-columns: 1fr;
+        }
+
+        .button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="AgentMesh home">
+        <span class="mark">A</span>
+        <span>AgentMesh</span>
+      </a>
+      <nav aria-label="Primary">
+        <a href="#release">Release</a>
+        <a href="#components">组件</a>
+        <a href="#install">安装</a>
+        <a href="#adapters">工具</a>
+        <a href="#workflow">工作流</a>
+        <a href="#config">配置</a>
+      </nav>
+    </header>
+
+    <section id="top" class="hero">
+      <canvas id="meshCanvas" aria-hidden="true"></canvas>
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow">Local AI coding workflow</div>
+          <h1>AgentMesh</h1>
+          <p class="lead">
+            把 Codex、Claude Code、Cursor、Antigravity、OpenCode 和自定义命令接入同一套本地
+            workflow 协议。每次协作都有 packet、events、artifacts 和 release evidence。
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="https://github.com/jinhx128/agentmesh/releases/tag/v0.1.0">下载 0.1.0</a>
+            <a class="button secondary" href="https://github.com/jinhx128/agentmesh">GitHub 仓库</a>
+          </div>
+          <div class="hero-meta" aria-label="AgentMesh summary">
+            <div>
+              <strong>6</strong>
+              <span>runtime adapters</span>
+            </div>
+            <div>
+              <strong>5</strong>
+              <span>workflow stages</span>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>CLI, Studio, Skill</span>
+            </div>
+            <div>
+              <strong>0.1.0</strong>
+              <span>GitHub Release</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="console" aria-label="AgentMesh CLI example">
+          <div class="console-top">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span>agentmesh</span>
+          </div>
+          <div class="console-body">
+            <span class="console-line"><span class="prompt">$</span> agentmesh adapters list</span>
+            <span class="console-line ok">antigravity-cli  Antigravity CLI.</span>
+            <span class="console-line ok">claude-code-cli  Claude Code CLI.</span>
+            <span class="console-line ok">codex-cli        Codex CLI.</span>
+            <span class="console-line ok">cursor-agent     Cursor Agent.</span>
+            <span class="console-line ok">opencode-cli     OpenCode CLI.</span>
+            <span class="console-line dim">command          Invoke a configured executable command.</span>
+            <br />
+            <span class="console-line"><span class="prompt">$</span> agentmesh flow dispatch run-123 --stage all</span>
+            <span class="console-line ok">plan -> execute -> verify -> review -> decide</span>
+            <span class="console-line dim">events and artifacts written to .agentmesh/runs/run-123</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main>
+      <section id="release">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>0.1.0 发布资产</h2>
+            <p>
+              GitHub Release 提供 CLI tarball、macOS Apple Silicon 未签名 DMG、
+              单独 Skill markdown 和 SHA256 校验文件。
+            </p>
+          </div>
+          <div class="split">
+            <div class="asset-list">
+              <div class="asset">
+                <div>
+                  <strong>agentmesh-0.1.0.tgz</strong>
+                  <span>PATH-visible CLI 安装包，用于终端和入口 agent Skill。</span>
+                </div>
+                <span class="pill">npm tarball</span>
+              </div>
+              <div class="asset">
+                <div>
+                  <strong>AgentMesh_0.1.0_aarch64.dmg</strong>
+                  <span>macOS Desktop Studio，Apple Silicon，未签名。</span>
+                </div>
+                <span class="pill">DMG</span>
+              </div>
+              <div class="asset">
+                <div>
+                  <strong>agentmesh-skill-0.1.0.md</strong>
+                  <span>可单独下载的 host guidance markdown。</span>
+                </div>
+                <span class="pill">Skill</span>
+              </div>
+              <div class="asset">
+                <div>
+                  <strong>SHA256SUMS</strong>
+                  <span>Release assets 的 sha256 校验值。</span>
+                </div>
+                <span class="pill">Checksum</span>
+              </div>
+            </div>
+            <pre><code>npm install -g \
+  https://github.com/jinhx128/agentmesh/releases/download/v0.1.0/agentmesh-0.1.0.tgz
+
+agentmesh --help
+agentmesh doctor --json</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="components" class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>三个入口，共用一套本地事实</h2>
+            <p>
+              CLI、Studio 和 Skill 都围绕同一套 packet 文件工作。底层 agent 登录态和模型权限仍由各自工具管理。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>CLI</h3>
+              <p>
+                管理 agents、workflows、presets、MCP servers、model aliases 和 run packet。
+                支持 dispatch、retry、resume、attach、doctor、release-check summary。
+              </p>
+              <div class="tag-row">
+                <span class="tag">agent registry</span>
+                <span class="tag">packet runtime</span>
+                <span class="tag">doctor</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Studio</h3>
+              <p>
+                本地 UI 展示 Runs、Calls、events、artifacts、review evidence、release evidence
+                和配置入口。Web Studio 与 Desktop Studio 复用 runtime APIs。
+              </p>
+              <div class="tag-row">
+                <span class="tag">runs</span>
+                <span class="tag">settings</span>
+                <span class="tag">desktop</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Skill</h3>
+              <p>
+                给 Codex、Claude Code、Cursor、Antigravity、OpenCode 或 Copilot 的协议说明。
+                Skill 不内置 CLI，入口 agent 通过 PATH 查找 agentmesh。
+              </p>
+              <div class="tag-row">
+                <span class="tag">codex</span>
+                <span class="tag">antigravity</span>
+                <span class="tag">claude</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="install">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>安装和接入</h2>
+            <p>
+              CLI 用于终端和 Skill 调用；DMG 用于 Desktop Studio；Skill 按 host 单独安装。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>1. 安装 CLI</h3>
+              <p>从 Release tarball 安装，或从源码 clone 后 `npm link`。</p>
+              <pre><code>npm install -g ./agentmesh-0.1.0.tgz
+agentmesh doctor --json</code></pre>
+            </article>
+            <article class="card">
+              <h3>2. 安装 Skill</h3>
+              <p>只给实际使用的 host 安装，安装后可用 verify 检查文件状态。</p>
+              <pre><code>agentmesh skill install --target codex
+agentmesh skill install --target antigravity
+agentmesh skill verify --target codex --json</code></pre>
+            </article>
+            <article class="card">
+              <h3>3. 打开 Studio</h3>
+              <p>CLI 可启动 Web Studio；DMG 可打开 Desktop Studio。</p>
+              <pre><code>agentmesh studio --port 4777
+
+# 或安装 AgentMesh.app</code></pre>
+            </article>
+          </div>
+          <div class="callout" style="margin-top: 18px">
+            <strong>DMG-only 只提供 Desktop Studio。</strong>
+            入口 agent 要调用 AgentMesh，仍然需要 PATH-visible 的 `agentmesh` 命令。
+          </div>
+        </div>
+      </section>
+
+      <section id="adapters" class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>支持的工具</h2>
+            <p>
+              Runtime adapter 统一处理命令、prompt、model、reasoning effort、stdout/stderr、
+              timeout 和 readiness。Antigravity 使用 CLI 内部当前模型。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Adapter</th>
+                  <th>Alias</th>
+                  <th>命令</th>
+                  <th>模型语义</th>
+                  <th>适用 stage</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>codex-cli</code></td>
+                  <td><code>codex</code></td>
+                  <td><code>codex exec</code></td>
+                  <td>AgentMesh 传 <code>-m</code> 和 reasoning effort。</td>
+                  <td>plan, execute, verify, review, decide</td>
+                </tr>
+                <tr>
+                  <td><code>claude-code-cli</code></td>
+                  <td><code>claude</code></td>
+                  <td><code>claude -p</code></td>
+                  <td>AgentMesh 传 <code>--model</code> 和 effort。</td>
+                  <td>plan, execute, verify, review, decide</td>
+                </tr>
+                <tr>
+                  <td><code>cursor-agent</code></td>
+                  <td><code>cursor</code></td>
+                  <td><code>cursor-agent --print --trust</code></td>
+                  <td>AgentMesh 传 <code>--model</code>，prompt 不能为空。</td>
+                  <td>plan, execute, verify, review, decide</td>
+                </tr>
+                <tr>
+                  <td><code>antigravity-cli</code></td>
+                  <td><code>antigravity</code></td>
+                  <td><code>agy -p</code></td>
+                  <td>AgentMesh 使用 <code>current</code>，不向 <code>agy</code> 传模型参数。</td>
+                  <td>plan, execute, verify, review, decide</td>
+                </tr>
+                <tr>
+                  <td><code>opencode-cli</code></td>
+                  <td><code>opencode</code></td>
+                  <td><code>opencode run</code></td>
+                  <td>AgentMesh 传 <code>--model</code> 和 variant。</td>
+                  <td>plan, execute, verify, review, decide</td>
+                </tr>
+                <tr>
+                  <td><code>command</code></td>
+                  <td>无</td>
+                  <td>自定义 executable</td>
+                  <td>无固定模型语义。</td>
+                  <td>按注册能力决定</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Workflow 和 packet</h2>
+            <p>
+              Run 创建时会把 workflow、stage assignment、fallback、timeout、context policy
+              和 release policy 固化到 packet。preset-first UX、decide checkpoint、
+              current packet schema、fallback/failure policy 和 legacy migration unsupported
+              是 0.1.0 的运行语义。
+            </p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <b>Stage 1</b>
+              <strong>plan</strong>
+              <span>生成计划或候选计划，可 fanout 后 synthesis。</span>
+            </div>
+            <div class="step">
+              <b>Stage 2</b>
+              <strong>execute</strong>
+              <span>单主控执行代码修改，避免多个 agent 同时写同一批文件。</span>
+            </div>
+            <div class="step">
+              <b>Stage 3</b>
+              <strong>verify</strong>
+              <span>记录测试、构建、检查命令和验证证据。</span>
+            </div>
+            <div class="step">
+              <b>Stage 4</b>
+              <strong>review</strong>
+              <span>一个或多个 reviewer 输出 findings 和原始证据。</span>
+            </div>
+            <div class="step">
+              <b>Stage 5</b>
+              <strong>decide</strong>
+              <span>分类 review 结果，写 decision 或 release verdict。</span>
+            </div>
+          </div>
+          <div class="split" style="margin-top: 22px">
+            <pre><code>agentmesh run \
+  --workflow &lt;workflow-id&gt; \
+  --plan &lt;planner&gt; \
+  --execute &lt;worker&gt; \
+  --verify &lt;verifier&gt; \
+  --review &lt;reviewer&gt; \
+  --decide &lt;decider&gt; \
+  --task "实现一个可验证的修改"</code></pre>
+            <article class="card">
+              <h3>Packet 文件</h3>
+              <p>
+                `.agentmesh/runs/&lt;run-id&gt;/` 保存 request、context、status、events、
+                artifacts、plan、handoff、findings、decision 和 release summary。
+              </p>
+              <div class="tag-row">
+                <span class="tag">status.json</span>
+                <span class="tag">events.jsonl</span>
+                <span class="tag">artifacts.toml</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="config" class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>配置和安全边界</h2>
+            <p>
+              AgentMesh 是本地文件协议。用户级配置保存本机 agents 和 MCP servers，
+              项目配置保存 workflow defaults、context policy 和 release policy。
+            </p>
+          </div>
+          <div class="grid-4">
+            <article class="card">
+              <h3>用户配置</h3>
+              <p><code>~/.config/agentmesh/config.toml</code> 保存 agents、MCP servers、model aliases 和个人偏好。</p>
+            </article>
+            <article class="card">
+              <h3>项目配置</h3>
+              <p><code>./.agentmesh/config.toml</code> 适合 workflow defaults、default stage agents、fallback 和 context policy。</p>
+            </article>
+            <article class="card">
+              <h3>MCP context</h3>
+              <p>Run 可通过 <code>--mcp-resource</code> 引入 text resource，成功和失败都会写入 provenance。</p>
+            </article>
+            <article class="card">
+              <h3>安全边界</h3>
+              <p>不保存 provider token，不绕过底层 CLI 登录态，Studio API 不提供任意 shell command 路由。</p>
+            </article>
+          </div>
+          <div class="split" style="margin-top: 22px">
+            <pre><code>agentmesh agents add --adapter codex --model gpt-5.5 --label "Codex"
+agentmesh doctor --json
+agentmesh workflows list
+agentmesh release-check summary &lt;run-id&gt; --write</code></pre>
+            <div class="callout">
+              <strong>Antigravity 模型说明</strong>
+              AgentMesh 不写死 Antigravity 的模型列表。Studio 和 doctor 读取本机可发现的模型信息；
+              运行时使用 `agy` 当前选择的模型，不向 `agy` 传 `-m`。
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>AgentMesh 0.1.0</span>
+        <a href="https://github.com/jinhx128/agentmesh">github.com/jinhx128/agentmesh</a>
+      </div>
+    </footer>
+
+    <script>
+      const canvas = document.getElementById("meshCanvas");
+      const context = canvas.getContext("2d");
+      const nodes = [
+        ["Codex", 0.16, 0.24, "#67b3a5"],
+        ["Claude", 0.33, 0.54, "#8fb5dc"],
+        ["Cursor", 0.52, 0.28, "#d6a25d"],
+        ["Antigravity", 0.69, 0.58, "#79b56b"],
+        ["OpenCode", 0.83, 0.34, "#d77b6c"],
+        ["Packet", 0.48, 0.72, "#e9f1ee"],
+      ];
+
+      function resizeCanvas() {
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.floor(canvas.clientWidth * ratio);
+        canvas.height = Math.floor(canvas.clientHeight * ratio);
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }
+
+      function draw() {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        const time = Date.now() / 1100;
+        context.clearRect(0, 0, width, height);
+        context.lineWidth = 1;
+
+        const points = nodes.map(([label, x, y, color], index) => {
+          const dx = Math.sin(time + index * 1.7) * 12;
+          const dy = Math.cos(time * 0.8 + index * 1.3) * 10;
+          return { label, x: x * width + dx, y: y * height + dy, color };
+        });
+
+        for (let left = 0; left < points.length; left += 1) {
+          for (let right = left + 1; right < points.length; right += 1) {
+            const a = points[left];
+            const b = points[right];
+            const distance = Math.hypot(a.x - b.x, a.y - b.y);
+            if (distance < Math.min(width, height) * 0.56) {
+              context.strokeStyle = "rgba(210, 230, 225, 0.18)";
+              context.beginPath();
+              context.moveTo(a.x, a.y);
+              context.lineTo(b.x, b.y);
+              context.stroke();
+            }
+          }
+        }
+
+        for (const point of points) {
+          context.fillStyle = point.color;
+          context.beginPath();
+          context.arc(point.x, point.y, 5, 0, Math.PI * 2);
+          context.fill();
+
+          context.fillStyle = "rgba(248, 251, 250, 0.76)";
+          context.font = "600 12px ui-sans-serif, system-ui, -apple-system, sans-serif";
+          context.fillText(point.label, point.x + 10, point.y + 4);
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      resizeCanvas();
+      draw();
+      window.addEventListener("resize", resizeCanvas);
+    </script>
+  </body>
+</html>

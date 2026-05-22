@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main AgentMesh Studio bootstrap window. It has no filesystem or command permissions exposed to web content.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

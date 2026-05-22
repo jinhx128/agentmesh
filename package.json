@@ -1,0 +1,53 @@
+{
+  "name": "agentmesh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CLI for orchestrating local AI coding agents through traceable run packets.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "bin": {
+    "agentmesh": "./dist-node/packages/cli/src/cli.js"
+  },
+  "files": [
+    "dist-node/packages/",
+    "dist-node/apps/studio/",
+    "dist-node/apps/studio-web/",
+    "packages/skills/agentmesh-skill/"
+  ],
+  "scripts": {
+    "build": "npm run build:node && npm run build:studio-frontend",
+    "build:node": "node -e \"require('node:fs').rmSync('dist-node', { recursive: true, force: true })\" && tsc -p tsconfig.json && node scripts/rewrite-package-imports.mjs && node -e \"require('node:fs').chmodSync('dist-node/packages/cli/src/cli.js', 0o755)\"",
+    "build:studio-frontend": "vite build --config apps/studio-web/vite.config.ts",
+    "build:workspaces": "npm run build --workspaces --if-present",
+    "agentmesh": "npm run build && node dist-node/packages/cli/src/cli.js",
+    "studio": "npm run build && node dist-node/apps/studio/src/main.js",
+    "studio-desktop": "npm run build && node dist-node/apps/studio-desktop/src/main.js",
+    "studio-desktop:sidecar:bundle": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify",
+    "studio-desktop:package:dev": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode dev",
+    "studio-desktop:package:signed": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode signed",
+    "studio-desktop:update:metadata": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode metadata",
+    "cli:install-smoke": "npm run build && node --test --test-name-pattern \"root CLI pack installs and runs in a clean project\" dist-node/tests-node/package-structure.test.js",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "test": "npm run build && node --test dist-node/tests-node/*.test.js",
+    "check": "npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "^5.9.0",
+    "vite": "^8.0.13"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "smol-toml": "^1.6.1",
+    "zod": "^4.4.3"
+  }
+}
