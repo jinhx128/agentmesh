@@ -671,7 +671,15 @@ export function getWorkflow(
 }
 
 export function listAgents(options: AgentMeshReadOptions = {}): AgentMeshAgentSummary[] {
-  const loaded = loadConfigWithSources(options.configPath, options.cwd);
+  let loaded: LoadedAgentmeshConfig;
+  try {
+    loaded = loadConfigWithSources(options.configPath, options.cwd);
+  } catch (error) {
+    if (shouldTreatNoConfigAsEmpty(error, options.configPath)) {
+      return [];
+    }
+    throw error;
+  }
   return Object.entries(loaded.config.agents)
     .map(([id, payload]) => agentSummary(id, payload, loaded.agentSources[id]))
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -681,12 +689,24 @@ function listAgentsIfConfigured(options: AgentMeshReadOptions): AgentMeshAgentSu
   try {
     return listAgents(options);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith("no config found; searched:")) {
+    if (shouldTreatNoConfigAsEmpty(error, options.configPath)) {
       return [];
     }
     throw error;
   }
+}
+
+function shouldTreatNoConfigAsEmpty(error: unknown, configPath?: string): boolean {
+  return isNoConfigFoundError(error) && !hasExplicitConfigOverlay(configPath);
+}
+
+function isNoConfigFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith("no config found; searched:");
+}
+
+function hasExplicitConfigOverlay(configPath?: string): boolean {
+  return Boolean(configPath || process.env.AGENTMESH_CONFIG);
 }
 
 function optionalAgentLabelMap(options: AgentMeshReadOptions): Map<string, string> {
@@ -910,7 +930,7 @@ function workspaceCompatibilityDiagnostics(
 ): WorkspaceCompatibilityDiagnostics {
   const compatibilityPath = path.join(path.resolve(workspace), WORKSPACE_COMPATIBILITY_RELATIVE_PATH);
   const base = {
-    current_runtime_version: options.runtimeVersion ?? "0.1.3",
+    current_runtime_version: options.runtimeVersion ?? "0.1.4",
     current_entrypoint: options.entrypoint ?? "cli",
     compatibility_path: compatibilityPath,
   };

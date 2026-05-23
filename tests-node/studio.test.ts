@@ -1480,7 +1480,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.3",
+    min_read_runtime_version: "0.1.4",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1500,7 +1500,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.3");
+  assert.equal(compatibility.current_runtime_version, "0.1.4");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -1509,7 +1509,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 test("Studio server exposes AgentMesh update diagnostics", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.4"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.5"), async (releaseUrl) => {
     const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
     process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
     const { server, url } = await listen(createStudioServer({ cwd: workspace }));
@@ -1524,18 +1524,18 @@ test("Studio server exposes AgentMesh update diagnostics", async () => {
       };
 
       assert.equal(update.schema_version, 1);
-      assert.equal(update.current_version, "0.1.3");
-      assert.equal(update.latest_version, "0.1.4");
+      assert.equal(update.current_version, "0.1.4");
+      assert.equal(update.latest_version, "0.1.5");
       assert.equal(update.update_available, true);
       assert.equal(update.cli.status, "update_available");
       assert.deepEqual(update.cli.install_command, [
         "npm",
         "install",
         "-g",
-        "https://example.invalid/agentmesh-0.1.4.tgz",
+        "https://example.invalid/agentmesh-0.1.5.tgz",
       ]);
       assert.equal(update.desktop.status, "manual_update_available");
-      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.4_aarch64.dmg");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.5_aarch64.dmg");
     } finally {
       if (previousReleaseUrl === undefined) {
         delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
@@ -1554,7 +1554,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.3",
+    min_read_runtime_version: "0.1.4",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1764,6 +1764,43 @@ test("Studio catalog uses runtime reads without requiring a CLI artifact", () =>
   assert.equal(catalog.presets.some((preset) => preset.presetId === "studio-review"), true);
   assert.equal(catalog.mcpServers.some((server) => server.id === "docs"), true);
   assert.deepEqual(catalog.diagnostics, []);
+});
+
+test("Studio catalog treats a missing first-run config as an empty resource registry", () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+
+  const catalog = readStudioCatalog({ cwd: workspace });
+
+  assert.deepEqual(catalog.agents, []);
+  assert.equal(catalog.workflows.length > 0, true);
+  assert.deepEqual(catalog.presets, []);
+  assert.deepEqual(catalog.mcpServers, []);
+  assert.deepEqual(catalog.diagnostics, []);
+});
+
+test("Studio catalog surfaces missing explicit config overlays", () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const missingConfig = path.join(workspace, "missing.toml");
+
+  const catalog = readStudioCatalog({ cwd: workspace, configPath: missingConfig });
+
+  assert.deepEqual(catalog.agents, []);
+  assert.equal(catalog.workflows.length > 0, true);
+  assert.deepEqual(catalog.mcpServers, []);
+  assert.equal(catalog.diagnostics.some((diagnostic) =>
+    diagnostic.target === "agents" && diagnostic.message.includes("missing.toml")), true);
+  assert.equal(catalog.diagnostics.some((diagnostic) =>
+    diagnostic.target === "mcp" && diagnostic.message.includes("missing.toml")), true);
 });
 
 test("Studio server exposes runtime-backed mutation endpoint", async () => {

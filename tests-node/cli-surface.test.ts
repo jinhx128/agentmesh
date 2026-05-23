@@ -115,6 +115,42 @@ test("top-level help exits successfully", () => {
   assert.doesNotMatch(agentsAddHelpAfterOption.stderr, /unknown help topic/);
 });
 
+test("agents list treats a missing first-run config as an empty registry", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const list = runCli(workspace, ["agents", "list"]);
+  assert.equal(list.status, 0, list.stderr);
+  assert.equal(list.stdout, "");
+  assert.equal(list.stderr, "");
+
+  const jsonList = runCli(workspace, ["agents", "list", "--json"]);
+  assert.equal(jsonList.status, 0, jsonList.stderr);
+  assert.deepEqual(JSON.parse(jsonList.stdout), []);
+  assert.equal(jsonList.stderr, "");
+  assert.equal(existsSync(userConfig(workspace)), false);
+});
+
+test("agents list surfaces missing explicit config overlays", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const missingConfig = path.join(workspace, "missing.toml");
+
+  const flagList = runCli(workspace, ["--config", missingConfig, "agents", "list", "--json"]);
+  assert.equal(flagList.status, 1);
+  assert.match(flagList.stderr, /no config found; searched:/);
+  assert.match(flagList.stderr, /missing\.toml/);
+  assert.equal(flagList.stdout, "");
+
+  const envList = runCli(workspace, ["agents", "list", "--json"], {
+    AGENTMESH_CONFIG: missingConfig,
+  });
+  assert.equal(envList.status, 1);
+  assert.match(envList.stderr, /no config found; searched:/);
+  assert.match(envList.stderr, /missing\.toml/);
+  assert.equal(envList.stdout, "");
+});
+
 test("init, agents, and adapters commands are served by the TS CLI", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

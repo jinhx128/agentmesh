@@ -133,6 +133,9 @@ function readMcpConfig(
       diagnostics: [],
     };
   } catch (error) {
+    if (shouldTreatNoConfigAsEmpty(error, options.configPath)) {
+      return { items: [], diagnostics: [] };
+    }
     return {
       items: [],
       diagnostics: [{
@@ -141,6 +144,19 @@ function readMcpConfig(
       }],
     };
   }
+}
+
+function shouldTreatNoConfigAsEmpty(error: unknown, configPath?: string): boolean {
+  return isNoConfigFoundError(error) && !hasExplicitConfigOverlay(configPath);
+}
+
+function isNoConfigFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith("no config found; searched:");
+}
+
+function hasExplicitConfigOverlay(configPath?: string): boolean {
+  return Boolean(configPath || process.env.AGENTMESH_CONFIG);
 }
 
 function sourcePath(value: string | undefined): string | undefined {

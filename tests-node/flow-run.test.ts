@@ -100,15 +100,15 @@ test("workflow run writes workspace compatibility metadata", () => {
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.schema_version, 1);
   assert.equal(metadata.packet_schema_version, 1);
-  assert.equal(metadata.min_read_runtime_version, "0.1.3");
-  assert.equal(metadata.min_write_runtime_version, "0.1.3");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.3");
+  assert.equal(metadata.min_read_runtime_version, "0.1.4");
+  assert.equal(metadata.min_write_runtime_version, "0.1.4");
+  assert.equal(metadata.last_writer_runtime_version, "0.1.4");
   assert.equal(metadata.last_writer_entrypoint, "cli");
   assert.match(metadata.updated_at, /^\d{4}-\d{2}-\d{2}T/);
 
   const diagnostics = workspaceCompatibilityDiagnostics(workspace, { entrypoint: "cli" });
   assert.equal(diagnostics.decision, "read_write");
-  assert.equal(diagnostics.current_runtime_version, "0.1.3");
+  assert.equal(diagnostics.current_runtime_version, "0.1.4");
   assert.equal(diagnostics.current_entrypoint, "cli");
 });
 
@@ -162,7 +162,7 @@ test("legacy workspace stays readable and first successful mutation backfills co
   assert.equal(attached.status, 0, attached.stderr);
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.last_writer_entrypoint, "cli");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.3");
+  assert.equal(metadata.last_writer_runtime_version, "0.1.4");
 });
 
 test("workspace compatibility diagnostics refuse unsupported reads and newer write runtimes", () => {
@@ -189,9 +189,9 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 99,
-    min_read_runtime_version: "0.1.3",
-    min_write_runtime_version: "0.1.3",
-    last_writer_runtime_version: "0.1.3",
+    min_read_runtime_version: "0.1.4",
+    min_write_runtime_version: "0.1.4",
+    last_writer_runtime_version: "0.1.4",
     last_writer_entrypoint: "desktop",
     updated_at: "2026-05-17T00:00:00.000Z",
   });
@@ -203,7 +203,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.3",
+    min_read_runtime_version: "0.1.4",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -217,7 +217,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   assert.equal(cliDiagnostics.status, 0, cliDiagnostics.stderr);
   const cliCompatibility = JSON.parse(cliDiagnostics.stdout);
   assert.equal(cliCompatibility.decision, "read_only");
-  assert.equal(cliCompatibility.current_runtime_version, "0.1.3");
+  assert.equal(cliCompatibility.current_runtime_version, "0.1.4");
   assert.equal(cliCompatibility.current_entrypoint, "cli");
   assert.equal(cliCompatibility.metadata.last_writer_entrypoint, "desktop");
 
