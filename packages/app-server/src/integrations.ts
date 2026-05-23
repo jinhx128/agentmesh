@@ -10,6 +10,10 @@ import {
   skillVersionMetadata,
   verifySkillInstall,
 } from "@agentmesh/skills";
+import {
+  detectSupportedProviderClis,
+  type ProviderCliToolReport,
+} from "@agentmesh/runtime/src/adapters/provider-cli-diagnostics.js";
 
 export interface StudioIntegrationOptions {
   commandLineTool?: StudioCommandLineToolSource;
@@ -27,6 +31,9 @@ export interface StudioIntegrationsReport {
   entrypoint: string;
   workspace: string;
   command_line_tool: StudioCommandLineToolReport;
+  provider_clis: {
+    tools: ProviderCliToolReport[];
+  };
   skills: {
     targets: StudioSkillTargetReport[];
   };
@@ -125,6 +132,10 @@ export function readStudioIntegrations(options: {
     entrypoint: options.entrypoint,
     workspace: options.cwd,
     command_line_tool: commandLineToolReport(options, options.commandLineBinDir),
+    provider_clis: detectSupportedProviderClis({
+      enabled: true,
+      workspace: options.cwd,
+    }),
     skills: {
       targets: supportedSkillTargets.map((target) => skillTargetReport(target, options.cwd)),
     },

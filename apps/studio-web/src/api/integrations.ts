@@ -1,6 +1,14 @@
 import type { StudioApiClient, StudioApiJsonResponse } from "./client.js";
 
 export type AgentMeshSkillTarget = "codex" | "cursor" | "antigravity" | "opencode" | "copilot" | "claude";
+export type ProviderCliTool = "codex" | "claude" | "cursor" | "antigravity" | "opencode";
+export type ProviderCliResolutionSource =
+  | "configured_path"
+  | "path"
+  | "app_preference"
+  | "well_known"
+  | "login_shell_probe"
+  | "missing";
 
 export interface StudioIntegrationsReport {
   schema_version: 1;
@@ -32,9 +40,25 @@ export interface StudioIntegrationsReport {
       version: string;
     };
   };
+  provider_clis: {
+    tools: StudioProviderCliToolReport[];
+  };
   skills: {
     targets: StudioSkillTargetReport[];
   };
+}
+
+export interface StudioProviderCliToolReport {
+  tool: ProviderCliTool;
+  adapter: string;
+  label: string;
+  command: string;
+  found: boolean;
+  source: ProviderCliResolutionSource;
+  path?: string;
+  version: string;
+  diagnostics: string[];
+  diagnostic?: string;
 }
 
 export interface StudioSkillTargetReport {

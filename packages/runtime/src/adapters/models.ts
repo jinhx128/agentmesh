@@ -7,7 +7,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
-import { normalizeRuntimeAdapterId } from "./registry.js";
+import type { AgentConfig } from "../adapters.js";
+import { resolveProviderTool, type ProviderToolDiscoveryOptions } from "./provider-tools.js";
+import { lookupRuntimeAdapter, normalizeRuntimeAdapterId } from "./registry.js";
 
 export type ModelDiscoverySource = "adapter-cli" | "unsupported";
 
@@ -61,6 +63,7 @@ export interface AdapterModelDiscoveryOptions {
     error?: Error;
   };
   commandPathResolver?: (command: string) => string | undefined;
+  providerToolDiscovery?: ProviderToolDiscoveryOptions | false;
   userDataTextProvider?: (adapterId: string) => string[];
   timeoutMs?: number;
 }
@@ -236,7 +239,7 @@ export function discoverAdapterModels(
         adapterId,
         source: "adapter-cli",
         models: uniqueSorted(cliModels),
-        ...(hook.strategy === "command" ? { command: hook.command } : {}),
+        ...(hook.strategy === "command" ? { command: modelDiscoveryCommand(hook, options) } : {}),
       };
     }
   }
@@ -257,9 +260,10 @@ function discoverCliModels(
   if (hook.strategy === "executable-strings") {
     return discoverExecutableStringModels(hook, options);
   }
+  const command = modelDiscoveryCommand(hook, options);
   const result = options.commandRunner
     ? options.commandRunner(hook.command)
-    : spawnModelDiscoveryCommand(hook.command, options.timeoutMs);
+    : spawnModelDiscoveryCommand(command, options.timeoutMs);
   if (result.status !== 0) {
     return [];
   }
@@ -328,7 +332,7 @@ function discoverExecutableStringModels(
   hook: Extract<AdapterModelDiscoveryHook, { strategy: "executable-strings" }>,
   options: AdapterModelDiscoveryOptions,
 ): string[] {
-  const commandPath = resolveCommandPath(hook.commandName, options);
+  const commandPath = resolveCommandPath(hook.commandName, options, hook.adapterId);
   if (!commandPath) {
     return [];
   }
@@ -406,7 +410,22 @@ function isAntigravityUserModelTextFile(filePath: string): boolean {
     || /(?:^|\/)(?:Preferences|app_storage\.json)$/i.test(filePath);
 }
 
-function resolveCommandPath(command: string, options: AdapterModelDiscoveryOptions): string | undefined {
+function modelDiscoveryCommand(
+  hook: Extract<AdapterModelDiscoveryHook, { strategy: "command" }>,
+  options: AdapterModelDiscoveryOptions,
+): string[] {
+  if (options.commandRunner) {
+    return [...hook.command];
+  }
+  const commandPath = resolveCommandPath(hook.command[0], options, hook.adapterId);
+  return [commandPath ?? hook.command[0], ...hook.command.slice(1)];
+}
+
+function resolveCommandPath(
+  command: string,
+  options: AdapterModelDiscoveryOptions,
+  adapterId?: string,
+): string | undefined {
   const resolved = options.commandPathResolver?.(command);
   if (resolved) {
     return resolved;
@@ -414,12 +433,50 @@ function resolveCommandPath(command: string, options: AdapterModelDiscoveryOptio
   if ((command.includes("/") || command.includes("\\")) && existsSync(command)) {
     return command;
   }
+  const providerResolved = adapterId ? resolveProviderCommandPath(adapterId, command, options) : undefined;
+  if (providerResolved) {
+    return providerResolved;
+  }
   const lookupCommand = process.platform === "win32" ? ["where", command] : ["which", command];
   const result = spawnModelDiscoveryCommand(lookupCommand, options.timeoutMs);
   if (result.status !== 0) {
     return undefined;
   }
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+}
+
+function resolveProviderCommandPath(
+  adapterId: string,
+  command: string,
+  options: AdapterModelDiscoveryOptions,
+): string | undefined {
+  if (options.providerToolDiscovery === false) {
+    return undefined;
+  }
+  let adapter;
+  try {
+    adapter = lookupRuntimeAdapter(adapterId);
+  } catch {
+    return undefined;
+  }
+  if (adapter.command !== command) {
+    return undefined;
+  }
+  const agent: AgentConfig = {
+    id: adapter.id,
+    label: adapter.label,
+    adapter: adapter.id,
+    command: adapter.command,
+    args: [...adapter.args],
+    env: [],
+    capabilities: [],
+  };
+  const resolution = resolveProviderTool(agent, {
+    ...(options.providerToolDiscovery ?? {}),
+    enabled: options.providerToolDiscovery?.enabled ?? true,
+    workspace: options.providerToolDiscovery?.workspace ?? process.cwd(),
+  });
+  return resolution.path;
 }
 
 function extractClaudeModelIds(text: string): string[] {

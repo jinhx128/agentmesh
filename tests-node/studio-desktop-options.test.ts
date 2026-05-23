@@ -45,6 +45,22 @@ function writeFakeAgentmesh(binDir: string): string {
   return filePath;
 }
 
+function writeFakeProviderCli(binDir: string, command: string, version: string): string {
+  mkdirSync(binDir, { recursive: true });
+  const filePath = path.join(binDir, command);
+  writeFileSync(filePath, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"--version\" ]; then",
+    `  echo ${JSON.stringify(version)}`,
+    "  exit 0",
+    "fi",
+    "exit 0",
+    "",
+  ].join("\n"));
+  chmodSync(filePath, 0o755);
+  return filePath;
+}
+
 test("parseStudioDesktopArgs uses dynamic local defaults", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -222,13 +238,25 @@ test("startStudioDesktopHost starts cookie-authenticated App Server and reads ru
 
   const queryInitial = await fetch(`${started.webviewUrl}?token=test-token`);
   assert.equal(queryInitial.status, 200);
-  assert.match(queryInitial.headers.get("set-cookie") ?? "", /agentmesh_studio_token=test-token/);
-  assert.match(await queryInitial.text(), /\/assets\/index-[^"]+\.js/);
+  assert.equal(queryInitial.headers.get("referrer-policy"), "no-referrer");
+  const querySetCookie = queryInitial.headers.get("set-cookie") ?? "";
+  assert.match(querySetCookie, /agentmesh_studio_token=test-token/);
+  const queryInitialHtml = await queryInitial.text();
+  const scriptMatch = queryInitialHtml.match(/\/assets\/index-[^"]+\.js/);
+  assert.ok(scriptMatch);
+  const queryAssetDenied = await fetch(`${started.serverUrl}${scriptMatch[0]}?token=test-token`);
+  assert.equal(queryAssetDenied.status, 401);
+  const queryAsset = await fetch(`${started.serverUrl}${scriptMatch[0]}`, {
+    headers: { cookie: "agentmesh_studio_token=test-token" },
+  });
+  assert.equal(queryAsset.status, 200);
+  assert.match(queryAsset.headers.get("content-type") ?? "", /text\/javascript/);
 
   const initial = await fetch(started.webviewUrl, {
     headers: { cookie: "agentmesh_studio_token=test-token" },
   });
   assert.equal(initial.status, 200);
+  assert.equal(initial.headers.get("referrer-policy"), "no-referrer");
   const setCookie = initial.headers.get("set-cookie") ?? "";
   assert.match(setCookie, /agentmesh_studio_token=test-token/);
   assert.match(setCookie, /HttpOnly/);
@@ -452,9 +480,19 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeRun(workspace, "no-global-cli-run");
+  const fakeHome = path.join(workspace, "home");
+  const opencodePath = writeFakeProviderCli(
+    path.join(fakeHome, ".opencode", "bin"),
+    "opencode",
+    "opencode 9.9.9",
+  );
 
   const previousPath = process.env.PATH;
+  const previousHome = process.env.HOME;
+  const previousShell = process.env.SHELL;
   process.env.PATH = "";
+  process.env.HOME = fakeHome;
+  process.env.SHELL = path.join(workspace, "missing-shell");
   const started = await startStudioDesktopHost({
     workspace,
     port: 0,
@@ -472,10 +510,32 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
         path_command: { found: boolean; source: string };
       };
       skills: { targets: Array<{ target: string; status: string }> };
+      provider_clis: {
+        tools: Array<{
+          tool: string;
+          adapter: string;
+          command: string;
+          found: boolean;
+          source: string;
+          path?: string;
+          version: string;
+        }>;
+      };
     };
     assert.equal(payload.command_line_tool.supported, true);
     assert.equal(payload.command_line_tool.path_command.found, false);
     assert.equal(payload.command_line_tool.path_command.source, "missing");
+    assert.deepEqual(
+      payload.provider_clis.tools.map((tool) => tool.tool).sort(),
+      ["antigravity", "claude", "codex", "cursor", "opencode"],
+    );
+    const opencode = payload.provider_clis.tools.find((tool) => tool.tool === "opencode");
+    assert.equal(opencode?.adapter, "opencode-cli");
+    assert.equal(opencode?.command, "opencode");
+    assert.equal(opencode?.found, true);
+    assert.equal(opencode?.source, "well_known");
+    assert.equal(opencode?.path, opencodePath);
+    assert.equal(opencode?.version, "opencode 9.9.9");
     assert.deepEqual(
       payload.skills.targets.map((target) => target.target).sort(),
       ["antigravity", "claude", "codex", "copilot", "cursor", "opencode"],
@@ -487,6 +547,16 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
     assert.equal(runs.status, 200, await runs.text());
   } finally {
     process.env.PATH = previousPath;
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    if (previousShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = previousShell;
+    }
     await started.stop();
   }
 });
@@ -542,14 +612,14 @@ test("desktop command-line tool install requires confirmation and writes an app-
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.1",
+      version: "0.1.2",
       different: false,
     });
     assert.equal(payload.command_line_tool.path_command.path, existingCommand);
     assert.equal(payload.command_line_tool.path_command.source, "external");
     const wrapper = readFileSync(wrapperPath, "utf-8");
     assert.match(wrapper, /agentmesh_app_managed=true/);
-    assert.match(wrapper, /agentmesh_cli_version=0\.1\.1/);
+    assert.match(wrapper, /agentmesh_cli_version=0\.1\.2/);
 
     const help = execFileSync(wrapperPath, ["--help"], {
       encoding: "utf-8",
@@ -617,7 +687,7 @@ test("desktop command-line tool install requires confirmation before replacing t
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.1",
+      version: "0.1.2",
       different: false,
     });
   } finally {
@@ -664,7 +734,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.1/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.2/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",

@@ -720,10 +720,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
   assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.1/);
+  assert.match(settings, /Codex（codex） · 运行时 0\.1\.2/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
-  assert.doesNotMatch(settings, /Runtime 0\.1\.1|entrypoint|Last writer|Metadata ·/);
+  assert.doesNotMatch(settings, /Runtime 0\.1\.2|entrypoint|Last writer|Metadata ·/);
   const legacySettings = renderSettingsAboutPanel({
     status: "ready",
     compatibility: legacyCompatibilityFixture(),
@@ -746,10 +746,15 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(integrations, /data-studio-section="agent-integrations-tabs"/);
   assert.match(integrations, /data-studio-section="agent-integrations-command-tab"/);
   assert.match(integrations, /data-studio-section="agent-integrations-skill-tab"/);
+  assert.match(integrations, /data-studio-section="agent-integrations-cli-tab"/);
   assert.match(integrations, /data-studio-section="agent-integrations-command-panel"/);
   assert.match(integrations, /data-studio-section="agent-integrations-skill-panel"/);
+  assert.match(integrations, /data-studio-section="agent-integrations-cli-panel"/);
   assert.match(integrations, /命令行工具/);
   assert.match(integrations, /Agent Skill/);
+  assert.match(integrations, /CLI 检测/);
+  assert.match(integrations, /OpenCode CLI/);
+  assert.match(integrations, /\.opencode\/bin\/opencode/);
   assert.match(integrations, /安装选中的 Skill/);
   assert.doesNotMatch(integrations, />studio-desktop</);
 
@@ -1833,15 +1838,15 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   return {
     decision: "read_write",
     metadata_state: "ok",
-    current_runtime_version: "0.1.1",
+    current_runtime_version: "0.1.2",
     current_entrypoint: "studio",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
       packet_schema_version: 1,
-      min_read_runtime_version: "0.1.1",
-      min_write_runtime_version: "0.1.1",
-      last_writer_runtime_version: "0.1.1",
+      min_read_runtime_version: "0.1.2",
+      min_write_runtime_version: "0.1.2",
+      last_writer_runtime_version: "0.1.2",
       last_writer_entrypoint: "codex",
       updated_at: "2026-05-18T07:00:00.000Z",
     },
@@ -1853,7 +1858,7 @@ function legacyCompatibilityFixture(): Extract<SettingsAboutState, { status: "re
   return {
     decision: "read_write",
     metadata_state: "missing_legacy",
-    current_runtime_version: "0.1.1",
+    current_runtime_version: "0.1.2",
     current_entrypoint: "cli",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: null,
@@ -1877,19 +1882,19 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         found: true,
         path: "/usr/local/bin/agentmesh",
         source: "app_wrapper",
-        version: "0.1.1",
+        version: "0.1.2",
       },
       target_file: {
         exists: true,
         source: "app_wrapper",
-        version: "0.1.1",
+        version: "0.1.2",
         different: false,
       },
       app_wrapper: {
         node_path: "/Applications/AgentMesh.app/node",
         cli_path: "/Applications/AgentMesh.app/cli.js",
         channel: "dev",
-        version: "0.1.1",
+        version: "0.1.2",
       },
     },
     skills: {
@@ -1900,6 +1905,33 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
           status: "ok",
           ok: true,
           expected: true,
+        },
+      ],
+    },
+    provider_clis: {
+      tools: [
+        {
+          tool: "opencode",
+          adapter: "opencode-cli",
+          label: "OpenCode CLI",
+          command: "opencode",
+          found: true,
+          source: "well_known",
+          path: "/Users/example/.opencode/bin/opencode",
+          version: "opencode 9.9.9",
+          diagnostics: ["well-known provider path found"],
+          diagnostic: "well-known provider path found",
+        },
+        {
+          tool: "codex",
+          adapter: "codex-cli",
+          label: "Codex CLI",
+          command: "codex",
+          found: false,
+          source: "missing",
+          version: "missing",
+          diagnostics: ["provider command not found through desktop resolver: codex"],
+          diagnostic: "provider command not found through desktop resolver: codex",
         },
       ],
     },

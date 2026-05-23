@@ -624,32 +624,42 @@ test("doctor provider discovery rejects unsafe login-shell probe output", () => 
     ["multi-line output", "/opt/homebrew/bin/codex\n/usr/local/bin/codex", /single path/],
     ["workspace-local output", workspaceLocalProvider, /inside the current workspace/],
   ] as const;
-  for (const [label, output, diagnostic] of unsafeOutputs) {
-    const report = probeAgentReadiness({
-      id: `codex-${label.replace(/[^a-z]+/g, "-")}`,
-      label,
-      adapter: "codex-cli",
-      command: "codex",
-      args: ["exec"],
-      env: [],
-      capabilities: ["plan"],
-      model: "gpt-5.5",
-      reasoning_effort: "none",
-    }, {
-      probeAuth: false,
-      providerToolDiscovery: {
-        enabled: true,
-        homeDir: home,
-        wellKnownPaths: [emptyWellKnownDir],
-        workspace,
-        shellPath,
-        shellEnv: { FAKE_PROVIDER_OUTPUT: output },
-      },
-    });
+  const previousPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    for (const [label, output, diagnostic] of unsafeOutputs) {
+      const report = probeAgentReadiness({
+        id: `codex-${label.replace(/[^a-z]+/g, "-")}`,
+        label,
+        adapter: "codex-cli",
+        command: "codex",
+        args: ["exec"],
+        env: [],
+        capabilities: ["plan"],
+        model: "gpt-5.5",
+        reasoning_effort: "none",
+      }, {
+        probeAuth: false,
+        providerToolDiscovery: {
+          enabled: true,
+          homeDir: home,
+          wellKnownPaths: [emptyWellKnownDir],
+          workspace,
+          shellPath,
+          shellEnv: { FAKE_PROVIDER_OUTPUT: output },
+        },
+      });
 
-    assert.equal(report.classification, "command_not_found", label);
-    assert.equal(report.provider_tool_source, "missing", label);
-    assert.match(report.provider_tool_diagnostics.join("\n"), diagnostic, label);
+      assert.equal(report.classification, "command_not_found", label);
+      assert.equal(report.provider_tool_source, "missing", label);
+      assert.match(report.provider_tool_diagnostics.join("\n"), diagnostic, label);
+    }
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
   }
 });
 
@@ -1387,9 +1397,10 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   const markdown = agentmeshSkillMarkdown();
   for (const expected of [
     "## Version Metadata",
-    "AgentMesh CLI version: 0.1.1",
+    "AgentMesh CLI version: 0.1.2",
     "Packet schema version: 1",
     "Workflow recipe schema version: 1",
+    "agentmesh cli detect --json",
     "skill install --target opencode",
     ".agents/skills/agentmesh/SKILL.md",
     ".claude/skills/agentmesh/SKILL.md",
@@ -1409,7 +1420,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     encoding: "utf-8",
   });
   assert.equal(showResult.status, 0, showResult.stderr);
-  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.1\.1/);
+  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.1\.2/);
   assert.match(showResult.stdout, /Packet schema version: 1/);
   assert.match(showResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1419,7 +1430,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     { cwd: workspace, encoding: "utf-8" },
   );
   assert.equal(exportResult.status, 0, exportResult.stderr);
-  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.1\.1/);
+  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.1\.2/);
   assert.match(exportResult.stdout, /Packet schema version: 1/);
   assert.match(exportResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1433,7 +1444,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     claudeProjectSkillPath(workspace),
     "utf-8",
   );
-  assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.1/);
+  assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.2/);
   assert.match(installedSkill, /Packet schema version: 1/);
   assert.match(installedSkill, /Workflow recipe schema version: 1/);
 });

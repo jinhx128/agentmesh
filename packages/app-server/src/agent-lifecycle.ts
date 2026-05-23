@@ -177,8 +177,17 @@ export function readStudioAgent(agentId: string, options: StudioAgentLifecycleOp
   return agent;
 }
 
-export function readStudioAgentModels(adapter: string): StudioAgentModelListPayload {
-  const discovery = discoverAdapterModels(adapter, { runCli: true });
+export function readStudioAgentModels(
+  adapter: string,
+  options: StudioAgentLifecycleOptions = {},
+): StudioAgentModelListPayload {
+  const discovery = discoverAdapterModels(adapter, {
+    runCli: true,
+    providerToolDiscovery: {
+      enabled: true,
+      workspace: options.cwd ?? process.cwd(),
+    },
+  });
   if (discovery.status === "discovered") {
     return {
       adapter_id: discovery.adapterId,

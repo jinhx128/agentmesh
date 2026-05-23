@@ -153,7 +153,7 @@ Codex-compatible shared Skill target with
 Latest local result:
 
 - DMG:
-  `apps/studio-desktop/src-tauri/target/debug/bundle/dmg/AgentMesh_0.1.1_aarch64.dmg`
+  `apps/studio-desktop/src-tauri/target/debug/bundle/dmg/AgentMesh_0.1.2_aarch64.dmg`
 - Start `AgentMesh.app/Contents/MacOS/agentmesh-studio-sidecar` from the mounted
   DMG with an empty `PATH`.
 - Confirm the mounted app reads a run in the shared workspace.

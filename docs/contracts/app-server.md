@@ -85,7 +85,11 @@ filesystem API, a general command runner, or unauthenticated mutation endpoints.
 Desktop launches deliver the token over the sidecar stdin handshake. Browser UI
 requests authenticate with the native WebView `agentmesh_studio_token` cookie
 (`HttpOnly; SameSite=Strict`) or explicit Bearer credentials in tests/tools;
-URL query tokens are not accepted.
+only the initial `GET /` may accept a one-time `?token=...` launch fallback to
+seed that cookie. `/api/*`, `/assets/*`, and every mutation endpoint must not
+accept URL query tokens. Initial Studio HTML responses must send
+`Referrer-Policy: no-referrer` so the fallback token is not propagated to asset
+requests through the `Referer` header.
 
 Developer and terminal Studio sessions may start the same HTTP server without
 `authToken`; that mode is for local development/CLI Studio only and must not be

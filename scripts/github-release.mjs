@@ -252,6 +252,13 @@ function writeDefaultNotes() {
     `- agentmesh-skill-${version}.md: standalone AgentMesh skill markdown`,
     "- SHA256SUMS: release asset checksums",
     "",
+    "Install and upgrade notes",
+    "",
+    "- Replace the installed AgentMesh.app with the app from this DMG; do not mix app resources, sidecars, or UI assets from different versions.",
+    "- The DMG is unsigned and Apple Silicon-only; first open may require right-click Open or approval in System Settings / Privacy & Security.",
+    "- The CLI tarball is a separate channel. Update PATH-visible CLI installs with npm install -g using the matching agentmesh tarball.",
+    "- If you use the Desktop Studio command-line wrapper, re-run Settings / Agent Integrations after moving or replacing AgentMesh.app.",
+    "",
   ].join("\n");
   writeFileSync(notesPath, body);
   return notesPath;

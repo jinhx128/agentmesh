@@ -19,6 +19,7 @@ import type {
   AgentMeshSkillTarget,
   InstallAgentSkillsResponse,
   InstallCommandLineToolResponse,
+  StudioProviderCliToolReport,
   StudioIntegrationsReport,
 } from "../../api/integrations.js";
 
@@ -84,6 +85,7 @@ export function AgentIntegrationsPanel({
 
   const report = state.report;
   const commandLine = report.command_line_tool;
+  const providerCliRows = report.provider_clis.tools;
   const effectiveBinDir = binDir || commandLine.default_bin_dir;
   const effectiveTargetPath = `${effectiveBinDir.replace(/\/+$/, "")}/agentmesh`;
   const customBinDir = effectiveBinDir !== commandLine.default_bin_dir;
@@ -119,6 +121,9 @@ export function AgentIntegrationsPanel({
           </Tabs.Tab>
           <Tabs.Tab value="skills" data-studio-section="agent-integrations-skill-tab">
             {t("agentSkill")}
+          </Tabs.Tab>
+          <Tabs.Tab value="cli-diagnostics" data-studio-section="agent-integrations-cli-tab">
+            {t("cliDiagnostics")}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="command-line" pt="md" data-studio-section="agent-integrations-command-panel">
@@ -211,6 +216,41 @@ export function AgentIntegrationsPanel({
             {skillResultText ? <Alert mt="sm" variant="light">{skillResultText}</Alert> : null}
           </Card>
         </Tabs.Panel>
+        <Tabs.Panel value="cli-diagnostics" pt="md" data-studio-section="agent-integrations-cli-panel">
+          <Card withBorder radius="md" p="md">
+            <Group justify="space-between" align="flex-start" mb="sm">
+              <Title order={3} size="h4">{t("cliDiagnostics")}</Title>
+              <Badge>{providerCliRows.filter((tool) => tool.found).length}/{providerCliRows.length}</Badge>
+            </Group>
+            <Stack gap="sm">
+              {providerCliRows.map((tool) => (
+                <Paper
+                  key={tool.tool}
+                  withBorder
+                  radius="md"
+                  p="sm"
+                  data-studio-section={`provider-cli-${tool.tool}`}
+                >
+                  <Group justify="space-between" align="flex-start" gap="md" mb="xs">
+                    <Stack gap={2} miw={0}>
+                      <Text size="sm" fw={800}>{tool.label}</Text>
+                      <Text size="xs" c="dimmed">{tool.adapter} · {tool.command}</Text>
+                    </Stack>
+                    <Badge color={tool.found ? "green" : "gray"}>
+                      {tool.found ? t("detected") : t("targetMissing")}
+                    </Badge>
+                  </Group>
+                  <Stack gap={2}>
+                    <Fact label={t("path")} value={tool.path ?? t("targetMissing")} />
+                    <Fact label={t("version")} value={tool.version} />
+                    <Fact label={t("source")} value={providerCliSourceText(tool, t)} />
+                    {tool.diagnostic ? <Text size="xs" c="dimmed">{tool.diagnostic}</Text> : null}
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          </Card>
+        </Tabs.Panel>
       </Tabs>
     </Paper>
   );
@@ -266,6 +306,29 @@ function targetFileText(
     return t("targetMissing");
   }
   return `${targetFile.source} - ${targetFile.different ? t("different") : t("targetCurrent")} - ${targetFile.version}`;
+}
+
+function providerCliSourceText(
+  tool: StudioProviderCliToolReport,
+  t: (key: StudioCopyKey) => string,
+): string {
+  if (!tool.found) {
+    return t("targetMissing");
+  }
+  switch (tool.source) {
+    case "configured_path":
+      return t("configuredPath");
+    case "path":
+      return t("pathSource");
+    case "app_preference":
+      return t("appPreference");
+    case "well_known":
+      return t("wellKnownPath");
+    case "login_shell_probe":
+      return t("loginShellProbe");
+    case "missing":
+      return t("targetMissing");
+  }
 }
 
 function PanelHeader({ title, meta }: { title: string; meta?: string }): ReactElement {

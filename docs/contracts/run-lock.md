@@ -17,7 +17,7 @@ not a packet artifact and should not be copied into handoff evidence.
   "workspace": "/Users/example/project",
   "scope": "run:example-run",
   "entrypoint": "cli",
-  "runtime_version": "0.1.1",
+  "runtime_version": "0.1.2",
   "operation": "flow.dispatch:review",
   "operation_id": "lock-12345-1840000000000",
   "command": "flow.dispatch:review",

@@ -20,6 +20,7 @@ import {
   type RuntimeAdapterMetadata,
 } from "./adapters/registry.js";
 import { prepareAdapterInvocation } from "./adapters/invocation.js";
+import { resolveProviderTool } from "./adapters/provider-tools.js";
 import { buildAgentProcessEnv } from "./process-env.js";
 
 export interface BuiltinAdapter {
@@ -248,10 +249,11 @@ export function runAgentCallWithTiming(options: {
   }
   const totalStartedAt = Date.now();
   const configStartedAt = Date.now();
-  const agents = loadAgents(options.configPath, options.cwd ?? process.cwd());
+  const cwd = options.cwd ?? process.cwd();
+  const agents = loadAgents(options.configPath, cwd);
   const configLoadMs = elapsedMs(configStartedAt);
   const agent = resolveAgent(agents, options.agentName);
-  const prepared = prepareAdapterInvocation(agent, options);
+  const prepared = prepareAdapterInvocation(resolveInvokableAgent(agent, cwd), options);
   const command = prepared.command;
   const stdin = prepared.stdin;
   const captureStdout = prepared.captureStdout;
@@ -304,10 +306,11 @@ export async function runAgentCallAsync(options: {
   }
   const totalStartedAt = Date.now();
   const configStartedAt = Date.now();
-  const agents = loadAgents(options.configPath, options.cwd ?? process.cwd());
+  const cwd = options.cwd ?? process.cwd();
+  const agents = loadAgents(options.configPath, cwd);
   const configLoadMs = elapsedMs(configStartedAt);
   const agent = resolveAgent(agents, options.agentName);
-  const prepared = prepareAdapterInvocation(agent, options);
+  const prepared = prepareAdapterInvocation(resolveInvokableAgent(agent, cwd), options);
   const command = prepared.command;
   const stdin = prepared.stdin;
   const captureStdout = prepared.captureStdout;
@@ -523,6 +526,23 @@ function stringList(
 
 function elapsedMs(startedAt: number): number {
   return Math.max(0, Date.now() - startedAt);
+}
+
+function resolveInvokableAgent(agent: AgentConfig, workspace: string): AgentConfig {
+  if (lookupRuntimeAdapter(agent.adapter).id === "command") {
+    return agent;
+  }
+  const toolResolution = resolveProviderTool(agent, {
+    enabled: true,
+    workspace,
+  });
+  if (!toolResolution.ok || !toolResolution.path) {
+    return agent;
+  }
+  return {
+    ...agent,
+    command: toolResolution.path,
+  };
 }
 
 function timeoutSecsToMs(timeoutSecs: number | undefined): number | undefined {

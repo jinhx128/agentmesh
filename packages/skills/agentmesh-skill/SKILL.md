@@ -49,6 +49,7 @@ agentmesh skill install --target opencode
 agentmesh skill install --target copilot
 agentmesh skill verify --target codex
 agentmesh skill verify --target codex --json
+agentmesh cli detect --json
 agentmesh init
 agentmesh agents add --adapter codex --model gpt55 --capability plan --capability verify --capability decide
 agentmesh agents add --adapter claude --model opus-4.7 --capability execute
@@ -65,6 +66,11 @@ tokens, cookies, API keys, or provider session files in AgentMesh.
 Agent registration runs a readiness probe before writing config. Use
 `--skip-verify` only as an offline setup escape hatch, then run
 `agentmesh doctor` before dispatching.
+Use `agentmesh cli detect --json` to inspect only the supported provider CLIs
+(Codex, Claude Code, Cursor Agent, Antigravity, and OpenCode) with the same
+desktop-safe resolver used by Studio and dispatch. This command reports command
+path, source, version, and missing state; it is not an auth probe and does not
+require every supported provider to be installed.
 When registering an agent, do not provide an `agent-id`. AgentMesh generates a
 short internal id such as `a-7f3a9c2d`; use the generated id only when later
 removing, enabling, disabling, or assigning that registered agent.

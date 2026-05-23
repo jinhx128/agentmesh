@@ -11,6 +11,7 @@ import {
 } from "./commands/agents.js";
 import { call } from "./commands/call.js";
 import { callsAdopt } from "./commands/calls.js";
+import { cliDetect } from "./commands/cli-detect.js";
 import { correctionAdd, correctionList, correctionSupersede } from "./commands/correction.js";
 import { doctor } from "./commands/doctor.js";
 import {
@@ -87,6 +88,9 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     if (command === "call") {
       return call([subcommand, ...rest].filter((arg): arg is string => Boolean(arg)), parsed.configPath);
+    }
+    if (command === "cli" && subcommand === "detect") {
+      return cliDetect(rest);
     }
     if (command === "calls" && subcommand === "adopt") {
       return callsAdopt(rest);
@@ -243,6 +247,7 @@ function usage(): void {
       "  agents disable <agent-id>",
       "  adapters list",
       "  call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--no-record]",
+      "  cli detect [--json]",
       "  calls adopt <call-id> --status accepted|rejected|superseded [--entrypoint <name>] [--reason <text>] [--related-commit <commit>] [--related-run-id <run-id>] [--superseded-by-call-id <call-id>] [--json]",
       "  correction add --scope <scope> --statement <text> [--id <id>] [--source <source>] [--owner <owner>] [--json]",
       "  correction list [--status <active|superseded>] [--scope <scope>] [--json]",

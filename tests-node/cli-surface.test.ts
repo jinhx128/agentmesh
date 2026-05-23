@@ -78,6 +78,7 @@ test("top-level help exits successfully", () => {
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stderr, /usage: agentmesh/);
   assert.match(help.stderr, /doctor \[--agent <agent-id> \.\.\.\]/);
+  assert.match(help.stderr, /cli detect \[--json\]/);
   assert.match(help.stderr, /mcp list \[--json\]/);
   assert.match(help.stderr, /mcp add <server-id> --command <command>/);
 });
@@ -210,6 +211,52 @@ test("init, agents, and adapters commands are served by the TS CLI", () => {
   assert.match(adapters.stdout, /cursor-agent\tCursor Agent/);
   assert.match(adapters.stdout, /antigravity-cli\tAntigravity CLI/);
   assert.doesNotMatch(adapters.stdout, /gemini-cli\tGemini CLI/);
+});
+
+test("cli detect reports supported provider CLIs through the shared resolver", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const opencodePath = path.join(workspace, ".home", ".opencode", "bin", "opencode");
+  mkdirSync(path.dirname(opencodePath), { recursive: true });
+  writeExecutable(opencodePath, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"--version\" ]; then",
+    "  echo 'opencode 9.9.9'",
+    "  exit 0",
+    "fi",
+    "exit 0",
+    "",
+  ].join("\n"));
+
+  const result = runCli(workspace, ["cli", "detect", "--json"], {
+    PATH: "",
+    SHELL: path.join(workspace, "missing-shell"),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout) as {
+    schema_version: number;
+    tools: Array<{
+      tool: string;
+      adapter: string;
+      command: string;
+      found: boolean;
+      source: string;
+      path?: string;
+      version: string;
+    }>;
+  };
+  assert.equal(payload.schema_version, 1);
+  assert.deepEqual(
+    payload.tools.map((tool) => tool.tool).sort(),
+    ["antigravity", "claude", "codex", "cursor", "opencode"],
+  );
+  const opencode = payload.tools.find((tool) => tool.tool === "opencode");
+  assert.equal(opencode?.adapter, "opencode-cli");
+  assert.equal(opencode?.command, "opencode");
+  assert.equal(opencode?.found, true);
+  assert.equal(opencode?.source, "well_known");
+  assert.equal(opencode?.path, opencodePath);
+  assert.equal(opencode?.version, "opencode 9.9.9");
 });
 
 test("init keeps agentmesh gitignore entries idempotent and migrates legacy runs ignore", () => {

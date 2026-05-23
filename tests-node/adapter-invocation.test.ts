@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -335,6 +335,63 @@ test("agent calls report config load and synchronous spawn timing", () => {
   assert.equal(typeof result.timing.agent_total_ms, "number");
   assert.equal(typeof result.timing.total_ms, "number");
   assert.equal(result.timing.first_output_ms, undefined);
+});
+
+test("agent calls discover provider CLIs installed outside PATH", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const home = path.join(workspace, "home");
+  const providerBin = path.join(home, ".opencode", "bin");
+  mkdirSync(providerBin, { recursive: true });
+  const providerPath = path.join(providerBin, "opencode");
+  writeFileSync(providerPath, "#!/bin/sh\necho discovered-opencode \"$@\"\n");
+  chmodSync(providerPath, 0o755);
+
+  const configPath = path.join(workspace, "agentmesh.toml");
+  writeFileSync(
+    configPath,
+    [
+      "schema_version = 1",
+      "",
+      "[agents.review]",
+      'label = "OpenCode Review"',
+      'adapter = "opencode-cli"',
+      'command = "opencode"',
+      'args = [ "run" ]',
+      'model = "openai/gpt-5.5"',
+      'reasoning_effort = "none"',
+      'capabilities = [ "review" ]',
+      "",
+    ].join("\n"),
+  );
+  const outputFile = path.join(workspace, "review.out");
+  const previousHome = process.env.HOME;
+  const previousPath = process.env.PATH;
+  process.env.HOME = home;
+  process.env.PATH = "";
+  try {
+    const result = runAgentCallWithTiming({
+      configPath,
+      cwd: workspace,
+      agentName: "review",
+      prompt: "hello",
+      outputFile,
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.match(readFileSync(outputFile, "utf-8"), /discovered-opencode run --model openai\/gpt-5\.5 hello/);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+  }
 });
 
 test("async agent calls capture stdout and first output timing", async () => {

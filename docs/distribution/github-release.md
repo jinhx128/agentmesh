@@ -10,7 +10,7 @@
 一次 GitHub Release 必须同时满足：
 
 - `main` 已推送到 `origin/main`。
-- 当前版本存在本地 annotated tag，例如 `v0.1.1`。
+- 当前版本存在本地 annotated tag，例如 `v0.1.2`。
 - 同名 tag 已推送到 `origin`。
 - GitHub Release 页面存在同名 Release，且不是 draft / prerelease。
 - Release assets 至少包含：
@@ -61,8 +61,14 @@ git push origin main v<version>
 npm run release:github -- --notes-file <release-notes.md>
 ```
 
-如果没有传 `--notes-file`，脚本会生成一份只包含资产说明的临时 release notes。
-正式发布应优先提供人工整理过的 notes。
+如果没有传 `--notes-file`，脚本会生成一份包含资产清单和安装 / 升级边界的临时
+release notes。正式发布应优先提供人工整理过的 notes，并至少说明：
+
+- Desktop Studio 必须用同版本 DMG 完整替换 `AgentMesh.app`，不要混用旧 app
+  resources、sidecar 或 UI assets。
+- DMG 是否签名、是否 notarized、目标架构，以及首次打开 / Gatekeeper 限制。
+- PATH-visible CLI 是独立安装渠道，需要用同版本 tarball 重新 `npm install -g`。
+- app-managed command-line wrapper 在移动或替换 `AgentMesh.app` 后需要重新安装。
 
 5. 验证 GitHub Release：
 

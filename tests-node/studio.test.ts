@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -60,6 +61,19 @@ function isolateHome(workspace: string): () => void {
       process.env.HOME = previousHome;
     }
   };
+}
+
+function writeFakeProviderCli(binDir: string, command: string, output: string): string {
+  mkdirSync(binDir, { recursive: true });
+  const filePath = path.join(binDir, command);
+  writeFileSync(filePath, [
+    "#!/bin/sh",
+    `if [ "$1" = "models" ]; then printf '%s\\n' ${JSON.stringify(output)}; exit 0; fi`,
+    "exit 0",
+    "",
+  ].join("\n"));
+  chmodSync(filePath, 0o755);
+  return filePath;
 }
 
 function writeRun(
@@ -1465,7 +1479,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.1",
+    min_read_runtime_version: "0.1.2",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1485,7 +1499,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.1");
+  assert.equal(compatibility.current_runtime_version, "0.1.2");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -1498,7 +1512,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.1",
+    min_read_runtime_version: "0.1.2",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -2522,6 +2536,50 @@ test("Studio agent lifecycle failures are stored as failed operations", async ()
   assert.equal(operation.operation_id, failed.operation_id);
   assert.equal(operation.status, "failed");
   assert.equal(operation.stderr, failed.stderr);
+});
+
+test("Studio agent model endpoint discovers provider CLIs outside PATH", async () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const home = process.env.HOME as string;
+  const opencodePath = writeFakeProviderCli(
+    path.join(home, ".opencode", "bin"),
+    "opencode",
+    "zhuanzhuan/deepseek-v4-pro",
+  );
+  const previousPath = process.env.PATH;
+  const previousShell = process.env.SHELL;
+  process.env.PATH = "";
+  process.env.SHELL = path.join(workspace, "missing-shell");
+  const { server, url } = await listen(createStudioServer({ cwd: workspace }));
+  try {
+    const models = await fetchJson(`${url}/api/v1/agents/models?adapter=opencode-cli`) as {
+      adapter_id: string;
+      status: string;
+      models: string[];
+      command?: string[];
+    };
+    assert.equal(models.adapter_id, "opencode-cli");
+    assert.equal(models.status, "discovered");
+    assert.deepEqual(models.models, ["zhuanzhuan/deepseek-v4-pro"]);
+    assert.deepEqual(models.command, [opencodePath, "models"]);
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    if (previousShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = previousShell;
+    }
+    server.close();
+  }
 });
 
 async function listen(server: Server): Promise<{ server: Server; url: string }> {

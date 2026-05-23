@@ -56,6 +56,10 @@ export async function doctor(args: string[], configPath?: string): Promise<numbe
       probeAuth: !skipAuthProbe,
       probeTimeoutSecs,
       agents,
+      providerToolDiscovery: {
+        enabled: true,
+        workspace: process.cwd(),
+      },
     });
     const mcpDiagnostics = await doctorMcpDiagnostics(configPath);
     report = {

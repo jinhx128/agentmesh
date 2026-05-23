@@ -162,8 +162,9 @@ function handleStudioRequest(
     if (!authorizeRequest(request, response, options.authToken, { allowQueryToken: true })) {
       return;
     }
+    const initialHeaders = studioInitialHeaders(options.authToken);
     if (options.assetDir) {
-      if (sendBuiltStudioAsset(response, options.assetDir, "/index.html", authCookie(options.authToken))) {
+      if (sendBuiltStudioAsset(response, options.assetDir, "/index.html", initialHeaders)) {
         return;
       }
       sendText(
@@ -171,11 +172,11 @@ function handleStudioRequest(
         500,
         `Studio frontend assets were not found at ${options.assetDir}. Run npm run build:studio-frontend before starting Studio.\n`,
         "text/plain; charset=utf-8",
-        authCookie(options.authToken),
+        initialHeaders,
       );
       return;
     }
-    sendText(response, 200, STUDIO_HTML, "text/html; charset=utf-8", authCookie(options.authToken));
+    sendText(response, 200, STUDIO_HTML, "text/html; charset=utf-8", initialHeaders);
     return;
   }
   if (!authorizeRequest(request, response, options.authToken)) {
@@ -341,7 +342,7 @@ function handleStudioRequest(
       sendJson(response, 400, { error: "adapter is required" });
       return;
     }
-    sendJson(response, 200, readStudioAgentModels(adapter));
+    sendJson(response, 200, readStudioAgentModels(adapter, { cwd }));
     return;
   }
   if (url.pathname === "/api/v1/settings/advanced") {
@@ -1113,4 +1114,11 @@ function authCookie(authToken: string | undefined): Record<string, string> {
         "set-cookie": `agentmesh_studio_token=${encodeURIComponent(authToken)}; Path=/; HttpOnly; SameSite=Strict`,
       }
     : {};
+}
+
+function studioInitialHeaders(authToken: string | undefined): Record<string, string> {
+  return {
+    ...authCookie(authToken),
+    "referrer-policy": "no-referrer",
+  };
 }
