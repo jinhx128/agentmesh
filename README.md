@@ -596,6 +596,16 @@ npm run studio-desktop:package:dev
 cargo tauri build --config apps/studio-desktop/src-tauri/tauri.conf.json --bundles dmg --debug
 ```
 
+准备并发布 GitHub Release：
+
+```bash
+npm run release:github -- --notes-file <release-notes.md>
+npm run release:github:verify
+```
+
+只推送 tag 不算完成发布；GitHub Releases 页面必须能看到同名 Release 和完整资产。
+完整 checklist 见 `docs/distribution/github-release.md`。
+
 打包前需要本机安装 Rust 和 Tauri CLI：
 
 ```bash
