@@ -14,7 +14,7 @@ const started = await startStudioServer({
   allowUnauthenticatedBootstrap: true,
 });
 
-console.log(`AgentMesh Studio: ${started.url}`);
+console.log(`AgentMesh: ${started.url}`);
 
 function resolveDefaultStudioAssetDir(): string {
   const assetDir = process.env.AGENTMESH_STUDIO_ASSET_DIR
@@ -29,6 +29,6 @@ function resolveDefaultStudioAssetDir(): string {
     // Fall through to the explicit build hint below.
   }
   throw new Error(
-    `Studio frontend assets were not found at ${assetDir}. Run npm run build:studio-frontend before starting Studio.`,
+    `AgentMesh frontend assets were not found at ${assetDir}. Run npm run build:studio-frontend before starting agentmesh studio.`,
   );
 }

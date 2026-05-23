@@ -3,16 +3,16 @@ export const STUDIO_HTML = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AgentMesh Studio</title>
+    <title>AgentMesh</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <main class="fallback-shell" data-studio-section="studio-fallback">
       <section class="fallback-panel">
-        <p class="fallback-kicker">AgentMesh Studio</p>
-        <h1>正在等待 React Studio 资源</h1>
+        <p class="fallback-kicker">AgentMesh</p>
+        <h1>正在等待 AgentMesh 资源</h1>
         <p>
-          当前服务已启动。生产桌面版和 Web Studio 使用 Vite 构建产物；
+          当前服务已启动。生产桌面版和 Web UI 使用 Vite 构建产物；
           未提供 assetDir 时仅显示这个最小 fallback。
         </p>
       </section>

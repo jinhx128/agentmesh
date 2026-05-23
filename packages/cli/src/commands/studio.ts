@@ -19,7 +19,7 @@ export async function studio(args: string[], configPath?: string): Promise<numbe
     ...(resolvedConfigPath ? { configPath: resolvedConfigPath } : {}),
   });
 
-  console.log(`AgentMesh Studio: ${started.url}`);
+  console.log(`AgentMesh: ${started.url}`);
   if (args.includes("--no-open")) {
     console.log("Browser open disabled (--no-open).");
   } else {
@@ -46,7 +46,7 @@ function resolveDefaultStudioAssetDir(): string {
     // Fall through to the explicit build hint below.
   }
   throw new Error(
-    `Studio frontend assets were not found at ${assetDir}. Run npm run build:studio-frontend before starting agentmesh studio.`,
+    `AgentMesh frontend assets were not found at ${assetDir}. Run npm run build:studio-frontend before starting agentmesh studio.`,
   );
 }
 

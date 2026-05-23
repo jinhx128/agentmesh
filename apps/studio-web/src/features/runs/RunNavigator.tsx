@@ -237,7 +237,7 @@ function RunButton({
       onClick={() => onSelectRun(run.run_id)}
     >
       <Stack gap={2} align="stretch" w="100%">
-        <Text size="sm" fw={800} truncate="end">{run.run_id}</Text>
+        <Text className="studio-nav-item-title" size="sm" fw={800} ta="left" truncate="end">{run.run_id}</Text>
         <Group justify="space-between" gap="xs" wrap="nowrap">
           <Text size="xs" c="dimmed" truncate="end">{meta}</Text>
           <Text component="time" dateTime={updatedAt} size="xs" c="dimmed">{formatRunListTime(updatedAt)}</Text>

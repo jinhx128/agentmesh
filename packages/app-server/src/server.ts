@@ -56,6 +56,7 @@ import {
   readStudioIntegrations,
   type StudioIntegrationOptions,
 } from "./integrations.js";
+import { checkAgentMeshUpdate } from "@agentmesh/runtime/src/update/check.js";
 import { STUDIO_CSS, STUDIO_HTML, STUDIO_JS } from "./assets.js";
 
 export interface StudioServerOptions {
@@ -170,7 +171,7 @@ function handleStudioRequest(
       sendText(
         response,
         500,
-        `Studio frontend assets were not found at ${options.assetDir}. Run npm run build:studio-frontend before starting Studio.\n`,
+        `AgentMesh frontend assets were not found at ${options.assetDir}. Run npm run build:studio-frontend before starting agentmesh studio.\n`,
         "text/plain; charset=utf-8",
         initialHeaders,
       );
@@ -252,6 +253,20 @@ function handleStudioRequest(
     }
     sendJson(response, 200, readStudioCompatibility({ cwd, entrypoint: options.entrypoint }));
     return;
+  }
+  if (url.pathname === "/api/v1/update/check") {
+    if (!requireMethod(request, response, "GET")) {
+      return;
+    }
+    return checkAgentMeshUpdate()
+      .then((report) => {
+        sendJson(response, 200, report);
+      })
+      .catch((error) => {
+        sendJson(response, 502, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
   if (url.pathname === "/api/desktop/integrations") {
     if (!requireMethod(request, response, "GET")) {

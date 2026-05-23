@@ -135,7 +135,8 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
     path.join(root, "apps", "studio-desktop", "shell", "index.html"),
     { encoding: "utf-8" },
   );
-  assert.match(shellHtml, /Starting AgentMesh Studio/);
+  assert.match(shellHtml, /Starting AgentMesh/);
+  assert.doesNotMatch(shellHtml, /AgentMesh Studio|Studio workspace/);
 
   const cargoToml = readFileSync(
     path.join(root, "apps", "studio-desktop", "src-tauri", "Cargo.toml"),
@@ -347,7 +348,7 @@ test("update metadata targets app-managed runtime without changing the npm CLI c
   assert.equal(summary.runtime.appManaged, true);
   assert.equal(summary.runtime.npmCliSharedInstall, false);
   assert.deepEqual(Object.keys(summary.updates.channels), ["stable", "beta"]);
-  assert.equal(summary.updates.metadata.version, "0.1.2");
+  assert.equal(summary.updates.metadata.version, "0.1.3");
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].url.endsWith(".app.tar.gz"));
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].signature.length > 0);
 });

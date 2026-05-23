@@ -1,13 +1,13 @@
 {
   "name": "@agentmesh/studio-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
-  "description": "AgentMesh Studio desktop host and distribution tooling.",
+  "description": "AgentMesh desktop host and distribution tooling.",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@agentmesh/app-server": "0.1.2"
+    "@agentmesh/app-server": "0.1.3"
   }
 }

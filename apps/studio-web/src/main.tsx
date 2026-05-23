@@ -8,7 +8,7 @@ import "./styles.css";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("AgentMesh Studio root element was not found");
+  throw new Error("AgentMesh root element was not found");
 }
 
 createRoot(rootElement).render(

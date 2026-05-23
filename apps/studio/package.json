@@ -1,9 +1,9 @@
 {
   "name": "@agentmesh/studio",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
-  "description": "AgentMesh Studio local launcher.",
+  "description": "AgentMesh local launcher.",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit"
   },
@@ -12,6 +12,6 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/app-server": "0.1.2"
+    "@agentmesh/app-server": "0.1.3"
   }
 }

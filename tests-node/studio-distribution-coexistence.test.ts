@@ -98,7 +98,7 @@ async function startCliStudio(workspace: string): Promise<{
     }, 5000);
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
-      const match = stdout.match(/AgentMesh Studio: (http:\/\/[^\s]+)/);
+      const match = stdout.match(/AgentMesh: (http:\/\/[^\s]+)/);
       if (!match || !stdout.includes("Press Ctrl+C to stop.")) {
         return;
       }
@@ -113,7 +113,7 @@ async function startCliStudio(workspace: string): Promise<{
       reject(error);
     });
     child.on("exit", (code) => {
-      if (!stdout.match(/AgentMesh Studio: (http:\/\/[^\s]+)/)) {
+      if (!stdout.match(/AgentMesh: (http:\/\/[^\s]+)/)) {
         clearTimeout(timeout);
         reject(new Error(`CLI Studio exited before URL with ${code}\nstderr:\n${stderr}`));
       }

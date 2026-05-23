@@ -85,7 +85,7 @@ function startStudioCli(
       }
     };
     const maybeResolve = () => {
-      const match = stdout.match(/AgentMesh Studio: (http:\/\/[^\s]+)/);
+      const match = stdout.match(/AgentMesh: (http:\/\/[^\s]+)/);
       if (!match || !stdout.includes("Press Ctrl+C to stop.")) {
         return;
       }
@@ -109,7 +109,7 @@ function startStudioCli(
       reject(error);
     });
     child.on("exit", (code) => {
-      if (!stdout.match(/AgentMesh Studio: (http:\/\/[^\s]+)/)) {
+      if (!stdout.match(/AgentMesh: (http:\/\/[^\s]+)/)) {
         clearTimeout(timeout);
         reject(new Error(`Studio CLI exited before URL with ${code}\nstderr:\n${stderr}`));
       }
@@ -172,7 +172,9 @@ test("agentmesh studio serves the Studio app with explicit host and port", async
   assert.match(started.stdout(), /Browser open disabled/);
   const response = await fetch(started.url);
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /AgentMesh Studio/);
+  const html = await response.text();
+  assert.match(html, /AgentMesh/);
+  assert.doesNotMatch(html, /AgentMesh Studio/);
   await started.stop();
 });
 
@@ -224,7 +226,7 @@ test("agentmesh studio fails with a build hint when resolved React assets are mi
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Studio frontend assets were not found/);
+  assert.match(result.stderr, /AgentMesh frontend assets were not found/);
   assert.match(result.stderr, /npm run build:studio-frontend/);
   assert.match(result.stderr, /missing-frontend/);
 });
@@ -301,6 +303,6 @@ test("agentmesh studio still prints a copyable URL when browser open fails", asy
     void started.stop();
   });
 
-  assert.match(started.stdout(), /AgentMesh Studio: http:\/\/127\.0\.0\.1:\d+/);
+  assert.match(started.stdout(), /AgentMesh: http:\/\/127\.0\.0\.1:\d+/);
   await started.stop();
 });

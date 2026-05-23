@@ -148,6 +148,10 @@ import {
   loadStudioIntegrations,
 } from "../apps/studio-web/src/api/integrations.js";
 import {
+  loadStudioUpdate,
+  type StudioUpdateReport,
+} from "../apps/studio-web/src/api/update.js";
+import {
   MANUAL_SECTIONS,
   ManualView,
 } from "../apps/studio-web/src/features/manual/ManualView.js";
@@ -163,7 +167,8 @@ test("Studio fallback serves only a minimal non-legacy shell", async () => {
   const js = await fetchText(`${url}/studio.js`);
 
   assert.match(html, /data-studio-section="studio-fallback"/);
-  assert.match(html, /正在等待 React Studio 资源/);
+  assert.match(html, /正在等待 AgentMesh 资源/);
+  assert.doesNotMatch(html, /AgentMesh Studio|React Studio/);
   assert.match(css, /\.fallback-panel/);
   assert.match(js, /studioFallback/);
   assert.doesNotMatch(html, /run-workspace|navigator-data-tabs|catalog-row/);
@@ -181,6 +186,8 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(app, /data-studio-section="language-settings"/);
   assert.doesNotMatch(app, /data-studio-section="language-switch"/);
   assert.match(app, />AgentMesh</);
+  assert.doesNotMatch(app, />Studio</);
+  assert.doesNotMatch(app, /AgentMesh Studio/);
   assert.doesNotMatch(app, />English</);
   assert.doesNotMatch(app, />配置</);
   assert.match(app, />设置</);
@@ -231,6 +238,8 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-workspace-scroll\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(frontendCss, /\.studio-nav-scroll\s*\{/);
   assert.match(frontendCss, /\.studio-data-navigator\s*\{[^}]*overflow:\s*hidden/s);
+  assert.match(frontendCss, /\.studio-nav-item\s+\.mantine-Button-label\s*\{[^}]*justify-content:\s*flex-start/s);
+  assert.match(frontendCss, /\.studio-nav-item-title\s*\{[^}]*text-align:\s*left/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s*\{[^}]*flex:\s*0 0 56px/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
@@ -497,6 +506,7 @@ test("Run and call navigators render search, refresh, selection and empty states
   assert.match(runs, /data-studio-section="navigator-auto-refresh"[\s\S]*value="Off"/);
   assert.doesNotMatch(runs, /mantine-NativeSelect/);
   assert.match(runs, /data-nav-group=/);
+  assert.match(runs, /class="[^"]*studio-nav-item-title/);
   assert.match(runs, /aria-expanded="true"/);
   assert.match(runs, /run-2/);
   assert.match(runs, /aria-current="true"/);
@@ -707,11 +717,12 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   const settings = renderSettingsAboutPanel({
     status: "ready",
     compatibility: compatibilityFixture(),
+    update: { status: "ready", report: updateFixture() },
   });
   assert.match(settings, /可读写/);
   assert.match(settings, /运行时版本/);
   assert.match(settings, /当前入口/);
-  assert.match(settings, /Studio Web/);
+  assert.match(settings, /Web 端（studio）/);
   assert.match(settings, /兼容性文件/);
   assert.match(settings, /\.agentmesh\/compatibility\.json/);
   assert.match(settings, /元数据状态/);
@@ -720,13 +731,33 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
   assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.2/);
+  assert.match(settings, /Codex（codex） · 运行时 0\.1\.3/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
-  assert.doesNotMatch(settings, /Runtime 0\.1\.2|entrypoint|Last writer|Metadata ·/);
+  assert.match(settings, /版本更新/);
+  assert.match(settings, /重新检查/);
+  assert.match(settings, /当前版本/);
+  assert.match(settings, /0\.1\.3/);
+  assert.match(settings, /最新版本/);
+  assert.match(settings, /0\.1\.4/);
+  assert.match(settings, /CLI 更新/);
+  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.4\.tgz/);
+  assert.match(settings, /桌面端更新/);
+  assert.match(settings, /AgentMesh_0\.1\.4_aarch64\.dmg/);
+  assert.doesNotMatch(settings, /Runtime 0\.1\.3|entrypoint|Last writer|Metadata ·/);
+  const updateError = renderSettingsAboutPanel({
+    status: "ready",
+    compatibility: compatibilityFixture(),
+    update: { status: "error", message: "update check failed: 403 rate limit exceeded" },
+  });
+  assert.match(updateError, /暂时无法检查/);
+  assert.match(updateError, /重新检查/);
+  assert.match(updateError, /GitHub 更新检查请求受限/);
+  assert.doesNotMatch(updateError, /检查失败|update check failed: 403/);
   const legacySettings = renderSettingsAboutPanel({
     status: "ready",
     compatibility: legacyCompatibilityFixture(),
+    update: { status: "loading" },
   });
   assert.match(legacySettings, /命令行/);
   assert.match(legacySettings, /旧工作区：缺少兼容性元数据/);
@@ -990,76 +1021,73 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   const manual = renderStudioElement(React.createElement(ManualView));
   assert.match(manual, /AgentMesh 是什么/);
   assert.match(manual, /本地优先的 AI coding agent 编排工具/);
-  assert.match(manual, /架构设计/);
-  assert.match(manual, />介绍</);
-  assert.match(manual, />安装使用</);
-  assert.match(manual, />快速开始</);
+  assert.match(manual, /架构与数据/);
+  assert.match(manual, />概览</);
+  assert.match(manual, />安装与环境</);
+  assert.match(manual, />快速上手</);
   assert.match(manual, />核心概念</);
-  assert.match(manual, />操作指南</);
-  assert.match(manual, />数据与参考</);
-  assert.match(manual, />排障</);
+  assert.match(manual, />操作与排障</);
   assert.doesNotMatch(manual, />组件</);
   assert.doesNotMatch(manual, />Packet</);
   assert.doesNotMatch(manual, />使用教程</);
 
   assert.deepEqual(
     MANUAL_SECTIONS.map((section) => section.label),
-    ["介绍", "安装使用", "快速开始", "核心概念", "操作指南", "架构设计", "数据与参考", "排障"],
+    ["概览", "安装与环境", "快速上手", "核心概念", "操作与排障", "架构与数据"],
   );
-  const intro = MANUAL_SECTIONS.find((section) => section.id === "intro");
-  assert.ok(intro);
+  const overview = MANUAL_SECTIONS.find((section) => section.id === "overview");
+  assert.ok(overview);
   assert.deepEqual(
-    intro.items.map((item) => item.title),
-    ["AgentMesh 是什么", "适合什么时候用", "Studio 做什么"],
+    overview.items.map((item) => item.title),
+    ["AgentMesh 是什么", "适合的任务", "AgentMesh 不做什么"],
   );
   assert.match(
-    intro.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    overview.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
     /不托管模型、不保存外部工具登录态/,
   );
-  const install = MANUAL_SECTIONS.find((section) => section.id === "install");
-  assert.ok(install);
+  const setup = MANUAL_SECTIONS.find((section) => section.id === "setup");
+  assert.ok(setup);
   assert.deepEqual(
-    install.items.map((item) => item.title),
-    ["安装 AgentMesh", "启动 Studio", "接入宿主工具", "配置第一个 Agent 和 Preset", "开始一次运行"],
+    setup.items.map((item) => item.title),
+    ["安装渠道", "CLI 检测与底层工具", "Agent Skill", "版本检查与更新"],
   );
   assert.match(
-    install.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
-    /npm install -g agentmesh|agentmesh skill install --target codex|agentmesh run <preset-id>/,
+    setup.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    /npm install -g agentmesh|agentmesh cli detect --json|agentmesh update check --json/,
   );
-  const architecture = MANUAL_SECTIONS.find((section) => section.id === "architecture");
-  assert.ok(architecture);
+  const quickstart = MANUAL_SECTIONS.find((section) => section.id === "quickstart");
+  assert.ok(quickstart);
   assert.deepEqual(
-    architecture.items.map((item) => item.title),
-    ["Studio 边界", "App Server"],
+    quickstart.items.map((item) => item.title),
+    ["1. 确认环境", "2. 配置 Agent 与 Preset", "3. 启动一次运行", "4. 查看结果"],
   );
   const concepts = MANUAL_SECTIONS.find((section) => section.id === "concepts");
   assert.ok(concepts);
   assert.deepEqual(
     concepts.items.map((item) => item.title),
     [
-      "Agent",
-      "Tool Adapter",
-      "Workflow",
-      "Preset",
-      "Stage Node",
-      "Run",
-      "Call",
-      "Context Pack",
-      "MCP Resource",
-      "Project Spec",
+      "Agent 与 Tool Adapter",
+      "Workflow、Stage 与 Preset",
+      "Run、Packet 与 Artifact",
+      "Call、Context 与 MCP",
     ],
   );
-  const reference = MANUAL_SECTIONS.find((section) => section.id === "reference");
-  assert.ok(reference);
+  const operations = MANUAL_SECTIONS.find((section) => section.id === "operations");
+  assert.ok(operations);
   assert.deepEqual(
-    reference.items.map((item) => item.title),
+    operations.items.map((item) => item.title),
     [
-      "Packet",
-      "Artifact",
-      "Event",
-      "Registry",
-      "Locks & Compatibility",
+      "资源管理",
+      "推进运行",
+      "审查发布",
+      "常见问题",
     ],
+  );
+  const architecture = MANUAL_SECTIONS.find((section) => section.id === "architecture");
+  assert.ok(architecture);
+  assert.deepEqual(
+    architecture.items.map((item) => item.title),
+    ["控制面边界", "文件事实源", "App Server 与 Runtime", "安全边界"],
   );
 });
 
@@ -1112,6 +1140,7 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   await loadStudioIntegrations(client);
   await installCommandLineTool(client, { bin_dir: "/usr/local/bin", confirm_existing: true });
   await installAgentSkills(client, { targets: ["codex"], force: false });
+  await loadStudioUpdate(client);
 
   assert.deepEqual(calls.map((call) => `${call.init?.method ?? "GET"} ${new URL(call.url).pathname}`), [
     "GET /api/runs",
@@ -1138,6 +1167,7 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/desktop/integrations",
     "POST /api/desktop/integrations/command-line-tool",
     "POST /api/desktop/integrations/skills",
+    "GET /api/v1/update/check",
   ]);
   assert.equal(new URL(calls[11].url).search, "?adapter=claude-code-cli");
   assert.equal((calls[0].init?.headers as Headers).get("authorization"), "Bearer secret-token");
@@ -1429,7 +1459,7 @@ function renderSafeActionsPanel(
 }
 
 function renderSettingsAboutPanel(state: SettingsAboutState): string {
-  return renderStudioElement(React.createElement(SettingsAboutPanel, { state }));
+  return renderStudioElement(React.createElement(SettingsAboutPanel, { state, onRefreshUpdate: () => {} }));
 }
 
 function renderAgentIntegrationsPanel(state: AgentIntegrationsState): string {
@@ -1465,7 +1495,7 @@ function renderSettingsView(initialTab: SettingsTabId): string {
       onSaveAdvancedSettings: async () => advancedSettingsFixture(),
     },
     about: {
-      state: { status: "ready", compatibility: compatibilityFixture() },
+      state: { status: "ready", compatibility: compatibilityFixture(), update: { status: "ready", report: updateFixture() } },
     },
   }));
 }
@@ -1838,15 +1868,15 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   return {
     decision: "read_write",
     metadata_state: "ok",
-    current_runtime_version: "0.1.2",
+    current_runtime_version: "0.1.3",
     current_entrypoint: "studio",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
       packet_schema_version: 1,
-      min_read_runtime_version: "0.1.2",
-      min_write_runtime_version: "0.1.2",
-      last_writer_runtime_version: "0.1.2",
+      min_read_runtime_version: "0.1.3",
+      min_write_runtime_version: "0.1.3",
+      last_writer_runtime_version: "0.1.3",
       last_writer_entrypoint: "codex",
       updated_at: "2026-05-18T07:00:00.000Z",
     },
@@ -1854,11 +1884,34 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   };
 }
 
+function updateFixture(): StudioUpdateReport {
+  return {
+    schema_version: 1,
+    current_version: "0.1.3",
+    latest_version: "0.1.4",
+    update_available: true,
+    release_url: "https://example.invalid/releases/tag/v0.1.4",
+    checked_at: "2026-05-23T13:00:00.000Z",
+    cli: {
+      status: "update_available",
+      asset_name: "agentmesh-0.1.4.tgz",
+      asset_url: "https://example.invalid/agentmesh-0.1.4.tgz",
+      install_command: ["npm", "install", "-g", "https://example.invalid/agentmesh-0.1.4.tgz"],
+    },
+    desktop: {
+      status: "manual_update_available",
+      asset_name: "AgentMesh_0.1.4_aarch64.dmg",
+      asset_url: "https://example.invalid/AgentMesh_0.1.4_aarch64.dmg",
+      reason: "Desktop auto-update is not enabled for this release channel; download and install the DMG manually.",
+    },
+  };
+}
+
 function legacyCompatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }>["compatibility"] {
   return {
     decision: "read_write",
     metadata_state: "missing_legacy",
-    current_runtime_version: "0.1.2",
+    current_runtime_version: "0.1.3",
     current_entrypoint: "cli",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: null,
@@ -1882,19 +1935,19 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         found: true,
         path: "/usr/local/bin/agentmesh",
         source: "app_wrapper",
-        version: "0.1.2",
+        version: "0.1.3",
       },
       target_file: {
         exists: true,
         source: "app_wrapper",
-        version: "0.1.2",
+        version: "0.1.3",
         different: false,
       },
       app_wrapper: {
         node_path: "/Applications/AgentMesh.app/node",
         cli_path: "/Applications/AgentMesh.app/cli.js",
         channel: "dev",
-        version: "0.1.2",
+        version: "0.1.3",
       },
     },
     skills: {
@@ -2169,6 +2222,9 @@ function apiPayloadFor(pathname: string): unknown {
       ...integrationsFixture(),
       installed_targets: [{ target: "codex", ok: true, files: integrationsFixture().skills.targets }],
     };
+  }
+  if (pathname === "/api/v1/update/check") {
+    return updateFixture();
   }
   return {};
 }

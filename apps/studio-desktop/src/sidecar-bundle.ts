@@ -64,7 +64,7 @@ export function bundleStudioDesktopSidecar(options: {
   const paths = studioDesktopSidecarPaths({ ...options, cwd });
   const sourceNode = path.resolve(options.nodePath ?? process.execPath);
   requireFile(paths.entrypointPath, "desktop sidecar entrypoint");
-  requireFile(paths.frontendIndexPath, "built Studio frontend");
+  requireFile(paths.frontendIndexPath, "built AgentMesh frontend");
   requireFile(sourceNode, "Node runtime");
 
   mkdirSync(paths.sidecarDir, { recursive: true });

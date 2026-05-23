@@ -165,6 +165,17 @@ button:not(:disabled),
   display: block !important;
 }
 
+.studio-nav-item .mantine-Button-label {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.studio-nav-item-title {
+  width: 100%;
+  text-align: left;
+}
+
 .studio-nav-item .mantine-Button-inner,
 .studio-nav-group-toggle .mantine-Button-inner,
 .studio-nav-group-toggle .mantine-Button-label,

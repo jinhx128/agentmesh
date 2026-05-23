@@ -1,6 +1,7 @@
 import {
   Alert,
   Badge,
+  Button,
   Card,
   Group,
   List,
@@ -14,17 +15,28 @@ import type { ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { formatLocalDateTime } from "../../app/time.js";
 import type { StudioCompatibilityDiagnostics } from "../../api/compatibility.js";
+import type { StudioUpdateReport, StudioUpdateTargetReport } from "../../api/update.js";
 
 export type SettingsAboutState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; compatibility: StudioCompatibilityDiagnostics };
+  | {
+      status: "ready";
+      compatibility: StudioCompatibilityDiagnostics;
+      update?: SettingsAboutUpdateState;
+    };
+
+export type SettingsAboutUpdateState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; report: StudioUpdateReport };
 
 export interface SettingsAboutPanelProps {
   state: SettingsAboutState;
+  onRefreshUpdate?: () => void;
 }
 
-export function SettingsAboutPanel({ state }: SettingsAboutPanelProps): ReactElement {
+export function SettingsAboutPanel({ state, onRefreshUpdate }: SettingsAboutPanelProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "loading") {
     return (
@@ -78,6 +90,7 @@ export function SettingsAboutPanel({ state }: SettingsAboutPanelProps): ReactEle
           ) : null}
         </Stack>
       </Card>
+      <UpdateCard state={state.update ?? { status: "loading" }} onRefresh={onRefreshUpdate} />
       {reasonItems.length > 0 ? (
         <Stack mt="md" gap="xs">
           <Text fw={800} mb="xs">{t("compatibilityDiagnostics")}</Text>
@@ -88,6 +101,103 @@ export function SettingsAboutPanel({ state }: SettingsAboutPanelProps): ReactEle
       ) : null}
     </Paper>
   );
+}
+
+function UpdateCard({
+  state,
+  onRefresh,
+}: {
+  state: SettingsAboutUpdateState;
+  onRefresh?: () => void;
+}): ReactElement {
+  if (state.status === "loading") {
+    return (
+      <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+        <PanelHeader
+          title="版本更新"
+          meta="检查中"
+          action={<UpdateRefreshButton onRefresh={onRefresh} disabled />}
+        />
+        <Alert mt="md" variant="light">正在检查 AgentMesh 最新版本。</Alert>
+      </Card>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+        <PanelHeader
+          title="版本更新"
+          meta="暂时无法检查"
+          action={<UpdateRefreshButton onRefresh={onRefresh} />}
+        />
+        <Alert mt="md" color="yellow" variant="light">{updateErrorMessage(state.message)}</Alert>
+      </Card>
+    );
+  }
+  const report = state.report;
+  return (
+    <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+      <Stack gap="md">
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <PanelHeader
+            title="版本更新"
+            meta={report.update_available ? "发现新版本" : "已是最新"}
+            action={<UpdateRefreshButton onRefresh={onRefresh} />}
+          />
+          <Badge color={report.update_available ? "blue" : "green"}>{report.update_available ? "可更新" : "当前版本"}</Badge>
+        </Group>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+          <InfoItem label="当前版本" value={report.current_version} />
+          <InfoItem label="最新版本" value={report.latest_version} />
+          <InfoItem label="CLI 更新" value={updateTargetLabel(report.cli)} />
+          <InfoItem label="桌面端更新" value={updateTargetLabel(report.desktop)} />
+        </SimpleGrid>
+        {report.cli.install_command ? (
+          <InfoItem label="CLI 更新命令" value={report.cli.install_command.join(" ")} />
+        ) : null}
+        {report.desktop.asset_name && report.desktop.asset_url ? (
+          <InfoItem label="桌面端下载" value={`${report.desktop.asset_name} · ${report.desktop.asset_url}`} />
+        ) : null}
+      </Stack>
+    </Card>
+  );
+}
+
+function UpdateRefreshButton({
+  onRefresh,
+  disabled = false,
+}: {
+  onRefresh?: () => void;
+  disabled?: boolean;
+}): ReactElement | null {
+  if (!onRefresh) {
+    return null;
+  }
+  return (
+    <Button size="xs" variant="light" onClick={onRefresh} disabled={disabled}>
+      重新检查
+    </Button>
+  );
+}
+
+function updateErrorMessage(message: string): string {
+  if (/403|429|rate limit/i.test(message)) {
+    return "GitHub 更新检查请求受限，请稍后重新检查；本机 AgentMesh 可以继续使用。";
+  }
+  return message;
+}
+
+function updateTargetLabel(target: StudioUpdateTargetReport): string {
+  if (target.status === "current") {
+    return "已是最新";
+  }
+  if (target.status === "update_available") {
+    return target.asset_name ? `可更新：${target.asset_name}` : "可更新";
+  }
+  if (target.status === "manual_update_available") {
+    return target.asset_name ? `手动安装：${target.asset_name}` : "手动安装";
+  }
+  return target.reason ?? "发布资产缺失";
 }
 
 function missingMetadataValue(compatibility: StudioCompatibilityDiagnostics): string {
@@ -101,7 +211,7 @@ function InfoItem({ label, value }: { label: string; value: string | number }): 
   return (
     <Stack gap={2}>
       <Text size="xs" c="dimmed" fw={800}>{label}</Text>
-      <Text size="sm" fw={700}>{value}</Text>
+      <Text size="sm" fw={700} style={{ overflowWrap: "anywhere" }}>{value}</Text>
     </Stack>
   );
 }
@@ -138,8 +248,8 @@ function entrypointLabel(entrypoint: string): string {
     codex: "Codex",
     cursor: "Cursor",
     desktop: "桌面端",
-    studio: "Studio Web",
-    "studio-desktop": "Studio 桌面端",
+    studio: "Web 端",
+    "studio-desktop": "桌面端",
   };
   const label = labels[entrypoint] ?? entrypoint;
   return label === entrypoint ? entrypoint : `${label}（${entrypoint}）`;
@@ -178,11 +288,22 @@ function localizeCompatibilityReason(reason: string): string {
   return `原始诊断：${reason}`;
 }
 
-function PanelHeader({ title, meta }: { title: string; meta: string }): ReactElement {
+function PanelHeader({
+  title,
+  meta,
+  action,
+}: {
+  title: string;
+  meta: string;
+  action?: ReactElement | null;
+}): ReactElement {
   return (
     <Group justify="space-between" align="flex-start" gap="md">
       <Title order={2} size="h3">{title}</Title>
-      <Text size="sm" c="dimmed" fw={700}>{meta}</Text>
+      <Group gap="xs" justify="flex-end">
+        {action}
+        <Text size="sm" c="dimmed" fw={700}>{meta}</Text>
+      </Group>
     </Group>
   );
 }

@@ -55,6 +55,9 @@ import {
   loadStudioCompatibility,
 } from "../api/compatibility.js";
 import {
+  loadStudioUpdate,
+} from "../api/update.js";
+import {
   installAgentSkills,
   installCommandLineTool,
   loadStudioIntegrations,
@@ -244,10 +247,32 @@ export function App(): ReactElement {
     setSettingsAboutState({ status: "loading" });
     void loadStudioCompatibility(client)
       .then((compatibility) => {
-        setSettingsAboutState({ status: "ready", compatibility });
+        setSettingsAboutState({
+          status: "ready",
+          compatibility,
+          update: { status: "loading" },
+        });
+        loadUpdateWithClient(client);
       })
       .catch((error: unknown) => {
         setSettingsAboutState({ status: "error", message: normalizeStudioApiError(error).message });
+      });
+  }
+
+  function loadUpdateWithClient(client: StudioApiClient): void {
+    setSettingsAboutState((current) => current.status === "ready"
+      ? { ...current, update: { status: "loading" } }
+      : current);
+    void loadStudioUpdate(client)
+      .then((report) => {
+        setSettingsAboutState((current) => current.status === "ready"
+          ? { ...current, update: { status: "ready", report } }
+          : current);
+      })
+      .catch((error: unknown) => {
+        setSettingsAboutState((current) => current.status === "ready"
+          ? { ...current, update: { status: "error", message: normalizeStudioApiError(error).message } }
+          : current);
       });
   }
 
@@ -440,7 +465,7 @@ export function App(): ReactElement {
 
   async function submitSafeAction(request: StudioMutationRequest): Promise<StudioMutationResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     return submitStudioMutation(apiClient, request);
   }
@@ -454,7 +479,7 @@ export function App(): ReactElement {
 
   async function createAgent(request: StudioAgentCreateRequest): Promise<void> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioAgentLifecycleOperation(apiClient, {
       action: "create",
@@ -466,7 +491,7 @@ export function App(): ReactElement {
 
   async function submitAgentLifecycle(request: StudioAgentLifecycleSubmit): Promise<void> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioAgentLifecycleOperation(apiClient, request);
     loadAgentLifecycleWithClient(apiClient, response.payload);
@@ -475,14 +500,14 @@ export function App(): ReactElement {
 
   async function loadAgentModels(adapter: string): Promise<StudioAgentModelListPayload> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     return loadStudioAgentModels(apiClient, adapter);
   }
 
   async function createWorkflow(request: StudioWorkflowCreateRequest): Promise<StudioWorkflowLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioWorkflowCreate(apiClient, request);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -494,7 +519,7 @@ export function App(): ReactElement {
     request: StudioWorkflowUpdateRequest,
   ): Promise<StudioWorkflowLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioWorkflowUpdate(apiClient, workflowId, request);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -503,7 +528,7 @@ export function App(): ReactElement {
 
   async function deleteWorkflow(workflowId: string): Promise<StudioWorkflowLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioWorkflowDelete(apiClient, workflowId);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -512,7 +537,7 @@ export function App(): ReactElement {
 
   async function createPreset(request: StudioPresetCreateRequest): Promise<StudioPresetLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioPresetCreate(apiClient, request);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -524,7 +549,7 @@ export function App(): ReactElement {
     request: StudioPresetUpdateRequest,
   ): Promise<StudioPresetLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioPresetUpdate(apiClient, presetId, request);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -533,7 +558,7 @@ export function App(): ReactElement {
 
   async function deletePreset(presetId: string): Promise<StudioPresetLifecycleResponse> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioPresetDelete(apiClient, presetId);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
@@ -544,7 +569,7 @@ export function App(): ReactElement {
     request: StudioCallAdoptionRequest,
   ): Promise<StudioCallAdoptionResponse> {
     if (!apiClient || !selectedCallId) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioCallAdoption(apiClient, selectedCallId, request);
     if (response.ok && "call" in response.payload) {
@@ -559,7 +584,7 @@ export function App(): ReactElement {
     confirm_existing: boolean;
   }): Promise<void> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await installCommandLineTool(apiClient, request);
     if (response.ok && "command_line_tool" in response.payload) {
@@ -580,7 +605,7 @@ export function App(): ReactElement {
     force: boolean;
   }): Promise<void> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const response = await installAgentSkills(apiClient, request);
     if (response.ok && "skills" in response.payload) {
@@ -600,7 +625,7 @@ export function App(): ReactElement {
     request: StudioAdvancedSettingsUpdateRequest,
   ): Promise<StudioAdvancedSettingsPayload> {
     if (!apiClient) {
-      throw new Error("Studio API is not ready.");
+      throw new Error("AgentMesh API is not ready.");
     }
     const settings = await updateStudioAdvancedSettings(apiClient, request);
     setAdvancedSettingsState({ status: "ready", settings });
@@ -642,7 +667,6 @@ export function App(): ReactElement {
             <Stack gap={10}>
               <Box ta="center">
                 <Title order={1} size="h2">AgentMesh</Title>
-                <Text size="xs" c="dimmed" fw={700}>Studio</Text>
               </Box>
               <Group grow gap="xs" component="nav" aria-label={t("viewNavigation")}>
                 <Button
@@ -812,6 +836,11 @@ export function App(): ReactElement {
                 }}
                 about={{
                   state: settingsAboutState,
+                  onRefreshUpdate: () => {
+                    if (apiClient) {
+                      loadUpdateWithClient(apiClient);
+                    }
+                  },
                 }}
               />
             </Stack>

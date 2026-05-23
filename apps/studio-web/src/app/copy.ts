@@ -54,7 +54,7 @@ const STUDIO_COPY = {
     createWorkflow: "创建 Workflow",
     customBinConfirmWarning: "自定义 Bin 目录会在安装时检查；替换或遮蔽其他命令前需要确认。",
     definitions: "手册",
-    definitionsSubtitle: "查阅 Studio 架构、概念、Packet 和使用路径。",
+    definitionsSubtitle: "查阅 AgentMesh 架构、概念、Packet 和使用路径。",
     delete: "删除",
     deleteWarning: "删除后不可撤销，请确认后继续。",
     details: "详情",

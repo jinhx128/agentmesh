@@ -21,7 +21,8 @@ skill is not a second orchestration engine.
 Default flow:
 
 1. Understand the user's task, repository, scope, and requested roles.
-2. Check AgentMesh availability with `agentmesh --help` when needed.
+2. Check AgentMesh availability with `agentmesh --help`, `agentmesh help <command>`,
+   or `agentmesh version --json` when needed.
 3. Initialize or update configuration only when the user asks or configuration
    is missing.
 4. Create or continue a run packet through `agentmesh`.
@@ -39,6 +40,12 @@ Use these commands when the user asks to set up a project or register local
 agents:
 
 ```bash
+agentmesh --help
+agentmesh help studio
+agentmesh version --json
+agentmesh update check --json
+agentmesh update install --target cli --dry-run --json
+agentmesh update install --target desktop --dry-run --json
 agentmesh skill show
 agentmesh skill export --format markdown
 agentmesh skill install --target codex
@@ -68,9 +75,17 @@ Agent registration runs a readiness probe before writing config. Use
 `agentmesh doctor` before dispatching.
 Use `agentmesh cli detect --json` to inspect only the supported provider CLIs
 (Codex, Claude Code, Cursor Agent, Antigravity, and OpenCode) with the same
-desktop-safe resolver used by Studio and dispatch. This command reports command
-path, source, version, and missing state; it is not an auth probe and does not
-require every supported provider to be installed.
+desktop-safe resolver used by the AgentMesh app and dispatch. This command
+reports command path, source, version, and missing state; it is not an auth
+probe and does not require every supported provider to be installed.
+Use `agentmesh update check --json` when the user asks whether AgentMesh itself
+is current. It reports the local CLI/app-managed runtime version, the latest
+GitHub release version, and separate CLI/Desktop update options. Use
+`agentmesh update install --target cli --dry-run --json` or
+`agentmesh update install --target desktop --dry-run --json` to show the exact
+update action without mutating the machine. Desktop updates are reported as a
+manual DMG download/install action unless the active release channel explicitly
+supports an auto-updater.
 When registering an agent, do not provide an `agent-id`. AgentMesh generates a
 short internal id such as `a-7f3a9c2d`; use the generated id only when later
 removing, enabling, disabling, or assigning that registered agent.

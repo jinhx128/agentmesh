@@ -21,18 +21,18 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("failed to run AgentMesh Studio desktop shell");
+        .expect("failed to run AgentMesh desktop shell");
 }
 
 fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let window = app
         .get_webview_window("main")
-        .ok_or("missing main AgentMesh Studio window")?;
+        .ok_or("missing main AgentMesh window")?;
     let app_handle = app.handle().clone();
     let launch_token = generate_launch_token().map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("failed to generate AgentMesh Studio launch token: {error}"),
+            format!("failed to generate AgentMesh launch token: {error}"),
         )
     })?;
     let sidecar_args = sidecar_launch_args();
@@ -41,14 +41,14 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
         let command = match app_handle.shell().sidecar("agentmesh-studio-sidecar") {
             Ok(command) => command.args(sidecar_args),
             Err(error) => {
-                eprintln!("failed to create AgentMesh Studio sidecar command: {error}");
+                eprintln!("failed to create AgentMesh sidecar command: {error}");
                 return;
             }
         };
         let (mut events, mut child) = match command.spawn() {
             Ok(spawned) => spawned,
             Err(error) => {
-                eprintln!("failed to start AgentMesh Studio sidecar: {error}");
+                eprintln!("failed to start AgentMesh sidecar: {error}");
                 return;
             }
         };
@@ -58,7 +58,7 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
         })
         .to_string();
         if let Err(error) = child.write(format!("{handshake}\n").as_bytes()) {
-            eprintln!("failed to send AgentMesh Studio launch handshake: {error}");
+            eprintln!("failed to send AgentMesh launch handshake: {error}");
             return;
         }
 
@@ -80,7 +80,7 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
                 }
                 CommandEvent::Terminated(status) => {
                     if !navigated {
-                        eprintln!("AgentMesh Studio sidecar exited before readiness: {status:?}");
+                        eprintln!("AgentMesh sidecar exited before readiness: {status:?}");
                     }
                     break;
                 }
@@ -142,18 +142,18 @@ fn try_navigate_ready_line(
         return;
     }
     let Ok(url) = url::Url::parse(&event.webview_url) else {
-        eprintln!("AgentMesh Studio sidecar reported an invalid launch URL");
+        eprintln!("AgentMesh sidecar reported an invalid launch URL");
         return;
     };
     if let Err(error) = set_studio_auth_cookie(window, &url, launch_token) {
-        eprintln!("failed to prepare AgentMesh Studio auth cookie, using launch URL token fallback: {error}");
+            eprintln!("failed to prepare AgentMesh auth cookie, using launch URL token fallback: {error}");
     }
     let mut navigate_url = url;
     navigate_url
         .query_pairs_mut()
         .append_pair("token", launch_token);
     if let Err(error) = window.navigate(navigate_url) {
-        eprintln!("failed to navigate AgentMesh Studio window: {error}");
+        eprintln!("failed to navigate AgentMesh window: {error}");
         return;
     }
     *navigated = true;

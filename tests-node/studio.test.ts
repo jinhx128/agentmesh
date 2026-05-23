@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   chmodSync,
@@ -766,7 +766,8 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   test.after(() => server.close());
 
   const html = await fetchText(`${url}/`);
-  assert.match(html, /AgentMesh Studio/);
+  assert.match(html, /AgentMesh/);
+  assert.doesNotMatch(html, /AgentMesh Studio/);
 
   const runs = await fetchJson(`${url}/api/runs`) as {
     runs: Array<{ run_id: string }>;
@@ -1198,7 +1199,7 @@ test("Studio server can serve a built Vite frontend without taking over APIs", a
       '<html lang="zh-Hans">',
       "<head>",
       '<meta charset="utf-8" />',
-      '<title>AgentMesh Studio</title>',
+      '<title>AgentMesh</title>',
       '<script type="module" crossorigin src="/assets/studio-react.js"></script>',
       '<link rel="stylesheet" crossorigin href="/assets/studio-react.css">',
       "</head>",
@@ -1479,7 +1480,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.2",
+    min_read_runtime_version: "0.1.3",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1499,10 +1500,51 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.2");
+  assert.equal(compatibility.current_runtime_version, "0.1.3");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
+});
+
+test("Studio server exposes AgentMesh update diagnostics", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  await withReleaseServer(releasePayload("0.1.4"), async (releaseUrl) => {
+    const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
+    process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
+    const { server, url } = await listen(createStudioServer({ cwd: workspace }));
+    try {
+      const update = await fetchJson(`${url}/api/v1/update/check`) as {
+        schema_version: number;
+        current_version: string;
+        latest_version: string;
+        update_available: boolean;
+        cli: { status: string; install_command?: string[] };
+        desktop: { status: string; asset_url?: string };
+      };
+
+      assert.equal(update.schema_version, 1);
+      assert.equal(update.current_version, "0.1.3");
+      assert.equal(update.latest_version, "0.1.4");
+      assert.equal(update.update_available, true);
+      assert.equal(update.cli.status, "update_available");
+      assert.deepEqual(update.cli.install_command, [
+        "npm",
+        "install",
+        "-g",
+        "https://example.invalid/agentmesh-0.1.4.tgz",
+      ]);
+      assert.equal(update.desktop.status, "manual_update_available");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.4_aarch64.dmg");
+    } finally {
+      if (previousReleaseUrl === undefined) {
+        delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
+      } else {
+        process.env.AGENTMESH_UPDATE_RELEASE_URL = previousReleaseUrl;
+      }
+      server.close();
+    }
+  });
 });
 
 test("Studio mutation endpoint surfaces read-only compatibility as a stable UI error", async () => {
@@ -1512,7 +1554,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.2",
+    min_read_runtime_version: "0.1.3",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -2601,6 +2643,42 @@ async function fetchText(url: string): Promise<string> {
   const response = await fetch(url);
   assert.equal(response.status, 200);
   return response.text();
+}
+
+async function withReleaseServer(
+  payload: unknown,
+  fn: (releaseUrl: string) => Promise<void>,
+): Promise<void> {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify(payload));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address() as AddressInfo;
+    await fn(`http://${address.address}:${address.port}/latest`);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
+}
+
+function releasePayload(version: string): unknown {
+  return {
+    tag_name: `v${version}`,
+    html_url: `https://example.invalid/releases/tag/v${version}`,
+    assets: [
+      {
+        name: `agentmesh-${version}.tgz`,
+        browser_download_url: `https://example.invalid/agentmesh-${version}.tgz`,
+      },
+      {
+        name: `AgentMesh_${version}_aarch64.dmg`,
+        browser_download_url: `https://example.invalid/AgentMesh_${version}_aarch64.dmg`,
+      },
+    ],
+  };
 }
 
 async function postJson(url: string, body: unknown): Promise<unknown> {

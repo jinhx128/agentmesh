@@ -24,6 +24,7 @@ function runCli(
   workspace: string,
   args: string[],
   envOverrides: NodeJS.ProcessEnv = {},
+  timeoutMs?: number,
 ) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -37,6 +38,7 @@ function runCli(
     cwd: workspace,
     env,
     encoding: "utf-8",
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
   });
 }
 
@@ -81,6 +83,36 @@ test("top-level help exits successfully", () => {
   assert.match(help.stderr, /cli detect \[--json\]/);
   assert.match(help.stderr, /mcp list \[--json\]/);
   assert.match(help.stderr, /mcp add <server-id> --command <command>/);
+
+  const helpCommand = runCli(workspace, ["help"]);
+  assert.equal(helpCommand.status, 0, helpCommand.stderr);
+  assert.match(helpCommand.stderr, /usage: agentmesh/);
+
+  const studioHelp = runCli(workspace, ["help", "studio"]);
+  assert.equal(studioHelp.status, 0, studioHelp.stderr);
+  assert.match(studioHelp.stderr, /usage: agentmesh studio \[--host <host>\]/);
+  assert.doesNotMatch(studioHelp.stdout, /AgentMesh: http:\/\//);
+
+  const studioFlagHelp = runCli(workspace, ["studio", "--help"], {}, 1000);
+  assert.equal(studioFlagHelp.status, 0, studioFlagHelp.stderr);
+  assert.equal(studioFlagHelp.error, undefined);
+  assert.match(studioFlagHelp.stderr, /usage: agentmesh studio \[--host <host>\]/);
+  assert.doesNotMatch(studioFlagHelp.stdout, /AgentMesh: http:\/\//);
+
+  const agentsAddHelp = runCli(workspace, ["agents", "add", "--help"]);
+  assert.equal(agentsAddHelp.status, 0, agentsAddHelp.stderr);
+  assert.match(agentsAddHelp.stderr, /usage: agentmesh agents add --adapter <adapter>/);
+
+  const agentsAddHelpAfterOption = runCli(workspace, [
+    "agents",
+    "add",
+    "--adapter",
+    "codex-cli",
+    "--help",
+  ]);
+  assert.equal(agentsAddHelpAfterOption.status, 0, agentsAddHelpAfterOption.stderr);
+  assert.match(agentsAddHelpAfterOption.stderr, /usage: agentmesh agents add --adapter <adapter>/);
+  assert.doesNotMatch(agentsAddHelpAfterOption.stderr, /unknown help topic/);
 });
 
 test("init, agents, and adapters commands are served by the TS CLI", () => {
