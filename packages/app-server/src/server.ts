@@ -155,6 +155,29 @@ function handleStudioRequest(
     sendCorsPreflight(response, request);
     return;
   }
+  if (url.pathname === "/") {
+    if (!requireMethod(request, response, "GET")) {
+      return;
+    }
+    if (!authorizeRequest(request, response, options.authToken, { allowQueryToken: true })) {
+      return;
+    }
+    if (options.assetDir) {
+      if (sendBuiltStudioAsset(response, options.assetDir, "/index.html", authCookie(options.authToken))) {
+        return;
+      }
+      sendText(
+        response,
+        500,
+        `Studio frontend assets were not found at ${options.assetDir}. Run npm run build:studio-frontend before starting Studio.\n`,
+        "text/plain; charset=utf-8",
+        authCookie(options.authToken),
+      );
+      return;
+    }
+    sendText(response, 200, STUDIO_HTML, "text/html; charset=utf-8", authCookie(options.authToken));
+    return;
+  }
   if (!authorizeRequest(request, response, options.authToken)) {
     return;
   }
@@ -182,26 +205,6 @@ function handleStudioRequest(
       workspace: cwd,
       api_base_url: "",
     });
-    return;
-  }
-  if (url.pathname === "/") {
-    if (!requireMethod(request, response, "GET")) {
-      return;
-    }
-    if (options.assetDir) {
-      if (sendBuiltStudioAsset(response, options.assetDir, "/index.html", authCookie(options.authToken))) {
-        return;
-      }
-      sendText(
-        response,
-        500,
-        `Studio frontend assets were not found at ${options.assetDir}. Run npm run build:studio-frontend before starting Studio.\n`,
-        "text/plain; charset=utf-8",
-        authCookie(options.authToken),
-      );
-      return;
-    }
-    sendText(response, 200, STUDIO_HTML, "text/html; charset=utf-8", authCookie(options.authToken));
     return;
   }
   if (url.pathname === "/style.css") {
@@ -795,12 +798,14 @@ function authorizeRequest(
   request: IncomingMessage,
   response: ServerResponse,
   authToken?: string,
+  options: { allowQueryToken?: boolean } = {},
 ): boolean {
   if (!authToken) {
     return true;
   }
   const provided = bearerToken(request.headers.authorization)
-    ?? cookieToken(request.headers.cookie);
+    ?? cookieToken(request.headers.cookie)
+    ?? (options.allowQueryToken ? requestQueryToken(request.url) : undefined);
   if (provided === authToken) {
     return true;
   }
@@ -891,6 +896,12 @@ function cookieToken(value: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function requestQueryToken(requestUrl: string | undefined): string | undefined {
+  const url = new URL(requestUrl ?? "/", "http://studio.local");
+  const token = url.searchParams.get("token")?.trim();
+  return token && token.length > 0 ? token : undefined;
 }
 
 function readJsonBody(request: IncomingMessage): Promise<unknown> {

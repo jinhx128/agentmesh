@@ -50,7 +50,7 @@ test("studio desktop distribution wires the macOS DMG app identity and icons", (
   assert.match(summary.shell.sidecarPackaging, /externalBin/);
   assert.match(summary.shell.webviewSmoke, /P3\.1/);
   assert.match(summary.shell.webviewSmoke, /P3\.2/);
-  assert.match(summary.shell.webviewSmoke, /cookie-authenticated no-query/);
+  assert.match(summary.shell.webviewSmoke, /launch-token fallback/);
   assert.match(summary.shell.electronFallbackThreshold, /verified blocker/);
   assert.equal(summary.shell.frontendDist, "../shell");
   assert.equal(summary.shell.bootstrapPage, "index.html");
@@ -153,6 +153,7 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
   assert.match(libRs, /"--workspace"/);
   assert.match(libRs, /strip_prefix\("--workspace="\)/);
   assert.doesNotMatch(libRs, /\.args\(\["--launch-json"\]\)/);
+  assert.match(libRs, /append_pair\("token"/);
   assert.match(libRs, /\.navigate\(/);
   assert.doesNotMatch(
     libRs,

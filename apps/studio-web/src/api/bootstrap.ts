@@ -38,8 +38,10 @@ export async function bootstrapStudio(
 ): Promise<StudioBootstrapResult> {
   const location = options.location ?? browserLocation();
   const baseUrl = options.baseUrl ?? baseUrlFromLocation(location);
+  const launchToken = launchTokenFromLocation(location);
   const bootstrapClient = createStudioApiClient({
     baseUrl,
+    token: launchToken,
     fetch: options.fetch,
   });
   const bootstrap = await bootstrapClient.getJson<StudioBootstrapPayload>("/api/bootstrap");
@@ -48,6 +50,7 @@ export async function bootstrapStudio(
     bootstrap,
     client: createStudioApiClient({
       baseUrl: bootstrap.api_base_url || baseUrl,
+      token: launchToken,
       fetch: options.fetch,
     }),
   };
@@ -71,6 +74,11 @@ function urlWithoutLaunchToken(location: StudioBootstrapLocation | undefined): s
   }
   url.searchParams.delete("token");
   return url.toString();
+}
+
+function launchTokenFromLocation(location: StudioBootstrapLocation | undefined): string | undefined {
+  const token = urlFromLocation(location)?.searchParams.get("token")?.trim();
+  return token && token.length > 0 ? token : undefined;
 }
 
 function urlFromLocation(location: StudioBootstrapLocation | undefined): URL | undefined {

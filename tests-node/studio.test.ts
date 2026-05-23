@@ -1297,7 +1297,7 @@ test("Studio frontend API client owns token headers cookie fallback and redacted
   );
 });
 
-test("Studio frontend bootstrap uses cookie auth without launch URL tokens", async () => {
+test("Studio frontend bootstrap uses launch URL bearer token with cookie fallback", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     calls.push({ url: String(input), init: init ?? {} });
@@ -1320,10 +1320,13 @@ test("Studio frontend bootstrap uses cookie auth without launch URL tokens", asy
     fetch: fetchImpl,
   });
   assert.equal(calls[0].url, "http://127.0.0.1:6123/api/bootstrap");
-  assert.equal(new Headers(calls[0].init.headers).has("authorization"), false);
+  assert.equal(new Headers(calls[0].init.headers).get("authorization"), "Bearer launch-token");
   assert.equal(calls[0].init.credentials, "same-origin");
   assert.equal(tokenUrlBootstrap.bootstrap.workspace, "/tmp/project");
   assert.doesNotMatch(JSON.stringify(tokenUrlBootstrap), /launch-token/);
+  await tokenUrlBootstrap.client.getJson("/api/health");
+  assert.equal(calls[1].url, "http://127.0.0.1:6123/api/health");
+  assert.equal(new Headers(calls[1].init.headers).get("authorization"), "Bearer launch-token");
 
   const cleanedUrls: string[] = [];
   await bootstrapStudio({
@@ -1335,15 +1338,17 @@ test("Studio frontend bootstrap uses cookie auth without launch URL tokens", asy
     },
     fetch: fetchImpl,
   });
+  assert.equal(calls[2].url, "http://127.0.0.1:6123/api/bootstrap");
+  assert.equal(new Headers(calls[2].init.headers).get("authorization"), "Bearer launch-token");
   assert.deepEqual(cleanedUrls, ["http://127.0.0.1:6123/?view=runs#top"]);
 
   const cookieBootstrap = await bootstrapStudio({
     location: new URL("http://127.0.0.1:7345/"),
     fetch: fetchImpl,
   });
-  assert.equal(calls[2].url, "http://127.0.0.1:7345/api/bootstrap");
-  assert.equal(new Headers(calls[2].init.headers).has("authorization"), false);
-  assert.equal(calls[2].init.credentials, "same-origin");
+  assert.equal(calls[3].url, "http://127.0.0.1:7345/api/bootstrap");
+  assert.equal(new Headers(calls[3].init.headers).has("authorization"), false);
+  assert.equal(calls[3].init.credentials, "same-origin");
   assert.equal(cookieBootstrap.bootstrap.authenticated, true);
 });
 

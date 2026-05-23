@@ -146,10 +146,13 @@ fn try_navigate_ready_line(
         return;
     };
     if let Err(error) = set_studio_auth_cookie(window, &url, launch_token) {
-        eprintln!("failed to prepare AgentMesh Studio auth cookie: {error}");
-        return;
+        eprintln!("failed to prepare AgentMesh Studio auth cookie, using launch URL token fallback: {error}");
     }
-    if let Err(error) = window.navigate(url) {
+    let mut navigate_url = url;
+    navigate_url
+        .query_pairs_mut()
+        .append_pair("token", launch_token);
+    if let Err(error) = window.navigate(navigate_url) {
         eprintln!("failed to navigate AgentMesh Studio window: {error}");
         return;
     }

@@ -220,6 +220,11 @@ test("startStudioDesktopHost starts cookie-authenticated App Server and reads ru
   const initialDenied = await fetch(started.webviewUrl);
   assert.equal(initialDenied.status, 401);
 
+  const queryInitial = await fetch(`${started.webviewUrl}?token=test-token`);
+  assert.equal(queryInitial.status, 200);
+  assert.match(queryInitial.headers.get("set-cookie") ?? "", /agentmesh_studio_token=test-token/);
+  assert.match(await queryInitial.text(), /\/assets\/index-[^"]+\.js/);
+
   const initial = await fetch(started.webviewUrl, {
     headers: { cookie: "agentmesh_studio_token=test-token" },
   });

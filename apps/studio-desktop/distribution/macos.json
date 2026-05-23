@@ -17,7 +17,7 @@
   "shell_spike": {
     "decision": "continue-tauri",
     "sidecar_packaging": "Tauri externalBin points at the app-managed desktop host launcher; packaging verifies the generated wrapper, bundled Node, runtime dependencies, and optional app-managed CLI resources that are not used for Studio mutations.",
-    "webview_smoke": "P3.1/P3.2 must run WKWebView smoke after the Tauri shell loads built React assets from the cookie-authenticated no-query App Server URL.",
+    "webview_smoke": "P3.1/P3.2 must run WKWebView smoke after the Tauri shell loads built React assets through the launch-token fallback and cookie-authenticated App Server URL.",
     "electron_fallback_threshold": "Switch only on a verified blocker: WebView API gap, native UI-process module requirement, unacceptable sidecar packaging/signing/notarization/update cost, or lifecycle reliability that would require protocol logic in Rust."
   },
   "signing": {
