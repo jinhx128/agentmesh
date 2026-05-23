@@ -256,6 +256,7 @@ function WorkflowStageButton({
   const duration = formatDuration(timing?.duration_ms) || t("unknown");
   const attemptCount = formatAttemptCount(timing?.attempt_count, t);
   const timingSummary = `${duration} · ${attemptCount}`;
+  const agentSummary = workflowStageNodeAgentLabel(summary, stage, t);
   return (
     <Button
       className={`workflow-stage-card ${status}${selected ? " selected" : ""}`}
@@ -268,10 +269,13 @@ function WorkflowStageButton({
       onClick={() => onSelectStage(stage)}
     >
       <Stack gap={6} align="center" w="100%">
-        <Text size="sm" fw={800} ta="center" w="100%" truncate="end">{stage}</Text>
+        <Text size="sm" fw={800} ta="center" w="100%" truncate="end" title={stage}>{stage}</Text>
         <Badge size="xs" color={stageColor(status)}>{stageStatusLabel(status, t)}</Badge>
         <Text className="workflow-node-metric" data-studio-section="workflow-flow-node-metrics" size="xs" c="dimmed" fw={700}>
           {timingSummary}
+        </Text>
+        <Text className="workflow-node-agent" data-studio-section="workflow-flow-node-agents" size="xs" c="dimmed" fw={700} truncate="end">
+          {agentSummary}
         </Text>
       </Stack>
     </Button>
@@ -289,6 +293,8 @@ function WorkflowStageDetail({
 }): ReactElement {
   const { t } = useStudioCopy();
   const timing = workflowStageTiming(summary, stage);
+  const agentLabel = workflowStageAgentLabel(summary, stage, t);
+  const exitLabel = workflowStageExitLabel(summary, stage, t);
   return (
     <Card className="workflow-stage-detail" withBorder radius="md" mt="md" p="md">
       <Group justify="space-between" mb="sm">
@@ -298,12 +304,13 @@ function WorkflowStageDetail({
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
         <OverviewMetric label={t("stage")} value={stage} />
         <OverviewMetric label={t("type")} value={workflowStageType(summary, stage)} />
+        <OverviewMetric label={t("agent")} value={agentLabel} lineClamp={3} />
         <OverviewMetric label={t("status")} value={stageStatusLabel(status, t)} />
         <OverviewMetric label={t("startedAt")} value={formatTimestamp(timing?.started_at)} />
         <OverviewMetric label={timing?.failed_at ? t("statusFailed") : t("completedAt")} value={formatTimestamp(timing?.failed_at ?? timing?.completed_at)} />
         <OverviewMetric label={t("duration")} value={formatDuration(timing?.duration_ms) || t("unknown")} />
         <OverviewMetric label={t("attemptCount")} value={formatAttemptCount(timing?.attempt_count, t)} />
-        <OverviewMetric label={t("exit")} value={timing?.exit_code === undefined || timing.exit_code === null ? t("unknown") : `exit=${timing.exit_code}`} />
+        <OverviewMetric label={t("exit")} value={exitLabel} />
       </SimpleGrid>
     </Card>
   );
@@ -313,15 +320,17 @@ function OverviewMetric({
   label,
   value,
   className,
+  lineClamp,
 }: {
   label: string;
   value: string;
   className?: string;
+  lineClamp?: number;
 }): ReactElement {
   return (
     <Card className="studio-metric" withBorder radius="md" p="sm">
       <Text size="xs" c="dimmed" fw={700}>{label}</Text>
-      <Text fw={800} className={className}>{value}</Text>
+      <Text fw={800} className={className} lineClamp={lineClamp} title={value}>{value}</Text>
     </Card>
   );
 }
@@ -369,6 +378,94 @@ function workflowStageType(summary: StudioRunDetailSummary, stage: string): stri
   return summary.stage_nodes?.find((node) => node.id === stage)?.type ?? stage;
 }
 
+function workflowStageInvocations(summary: StudioRunDetailSummary, stage: string) {
+  return summary.stage_invocations?.[stage] ?? [];
+}
+
+function workflowStageAttempts(summary: StudioRunDetailSummary, stage: string) {
+  return summary.stage_attempts?.[stage] ?? [];
+}
+
+function workflowStageAgents(summary: StudioRunDetailSummary, stage: string): string[] {
+  const agents = [
+    ...workflowStageInvocations(summary, stage)
+      .map((invocation) => typeof invocation.agent === "string" ? invocation.agent : undefined),
+    ...(summary.stage_assignments?.[stage] ?? []),
+    ...workflowStageAttempts(summary, stage)
+      .flatMap((attempt) => [attempt.actual_agent, attempt.requested_agent, attempt.primary_agent]),
+  ].filter(isNonEmptyString);
+  return [...new Set(agents)];
+}
+
+export function workflowStageAgentLabel(
+  summary: StudioRunDetailSummary,
+  stage: string,
+  t: (key: StudioCopyKey) => string,
+): string {
+  const agents = workflowStageAgents(summary, stage);
+  return agents.length > 0 ? agents.join(", ") : t("unknown");
+}
+
+export function workflowStageNodeAgentLabel(
+  summary: StudioRunDetailSummary,
+  stage: string,
+  t: (key: StudioCopyKey) => string,
+): string {
+  const agents = workflowStageAgents(summary, stage);
+  if (agents.length === 0) {
+    return t("unknown");
+  }
+  return agents.length === 1 ? agents[0] : `${agents.length} ${t("agents")}`;
+}
+
+export function workflowStageExitLabel(
+  summary: StudioRunDetailSummary,
+  stage: string,
+  t: (key: StudioCopyKey) => string,
+): string {
+  const timing = workflowStageTiming(summary, stage);
+  if (typeof timing?.exit_code === "number") {
+    return `exit=${timing.exit_code}`;
+  }
+  const attemptExitCodes = workflowStageAttempts(summary, stage)
+    .map((attempt) => attempt.exit_code)
+    .filter((exitCode): exitCode is number => typeof exitCode === "number");
+  if (attemptExitCodes.length > 0) {
+    const uniqueExitCodes = [...new Set(attemptExitCodes)];
+    return uniqueExitCodes.length === 1
+      ? `exit=${uniqueExitCodes[0]}`
+      : uniqueExitCodes.map((exitCode) => `exit=${exitCode}`).join(", ");
+  }
+  return workflowStageIsCurrentOnly(summary, stage) ? t("noExternalProcess") : t("exitCodeNotRecorded");
+}
+
+function workflowStageIsCurrentOnly(summary: StudioRunDetailSummary, stage: string): boolean {
+  const invocations = workflowStageInvocations(summary, stage);
+  if (workflowStageAttempts(summary, stage).some(hasExternalStageAttemptAgent)) {
+    return false;
+  }
+  if (invocations.length > 0) {
+    return invocations.every((invocation) =>
+      invocation.kind === "current" || invocation.agent === "current"
+    );
+  }
+  const agents = workflowStageAgents(summary, stage);
+  return agents.length === 1 && agents[0] === "current";
+}
+
+function hasExternalStageAttemptAgent(attempt: {
+  actual_agent?: string;
+  requested_agent?: string;
+  primary_agent?: string;
+}): boolean {
+  return [attempt.actual_agent, attempt.requested_agent, attempt.primary_agent]
+    .some((agent) => isNonEmptyString(agent) && agent !== "current");
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
 function stageStatusLabel(status: WorkflowStageStatus, t: (key: StudioCopyKey) => string): string {
   return {
     completed: t("statusCompleted"),
@@ -394,24 +491,6 @@ function PanelHeader({ title, meta }: { title: string; meta: string }): ReactEle
       {meta ? <Text size="sm" c="dimmed" fw={700}>{meta}</Text> : null}
     </Group>
   );
-}
-
-function stageTimingSummary(
-  timing: StudioStageTimingSummary | undefined,
-  t: (key: StudioCopyKey) => string,
-): string {
-  return [
-    formatDuration(timing?.duration_ms),
-    timing?.attempt_count === undefined ? "" : formatAttemptCount(timing.attempt_count, t),
-    timing?.exit_code === undefined || timing.exit_code === null ? "" : `exit=${timing.exit_code}`,
-  ].filter(Boolean).join(" · ");
-}
-
-function stageTimestampSummary(timing: StudioStageTimingSummary | undefined): string {
-  return [
-    formatTimestamp(timing?.started_at),
-    formatTimestamp(timing?.failed_at ?? timing?.completed_at),
-  ].filter((value) => value !== "unknown").join(" → ");
 }
 
 function runOverviewMessage(

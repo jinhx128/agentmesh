@@ -35,10 +35,11 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
             format!("failed to generate AgentMesh Studio launch token: {error}"),
         )
     })?;
+    let sidecar_args = sidecar_launch_args();
 
     tauri::async_runtime::spawn(async move {
         let command = match app_handle.shell().sidecar("agentmesh-studio-sidecar") {
-            Ok(command) => command.args(["--launch-json"]),
+            Ok(command) => command.args(sidecar_args),
             Err(error) => {
                 eprintln!("failed to create AgentMesh Studio sidecar command: {error}");
                 return;
@@ -89,6 +90,25 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
     });
 
     Ok(())
+}
+
+fn sidecar_launch_args() -> Vec<String> {
+    let mut sidecar_args = vec!["--launch-json".to_string()];
+    let mut process_args = std::env::args().skip(1);
+    while let Some(arg) = process_args.next() {
+        if arg == "--workspace" {
+            if let Some(value) = process_args.next() {
+                sidecar_args.push("--workspace".to_string());
+                sidecar_args.push(value);
+            }
+        } else if let Some(value) = arg.strip_prefix("--workspace=") {
+            if !value.is_empty() {
+                sidecar_args.push("--workspace".to_string());
+                sidecar_args.push(value.to_string());
+            }
+        }
+    }
+    sidecar_args
 }
 
 fn handle_stdout_chunk(

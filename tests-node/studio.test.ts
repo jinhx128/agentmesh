@@ -483,6 +483,18 @@ test("Studio packet browser reads release and review evidence", () => {
   );
   mkdirSync(path.join(runDir, "reviews"));
   writeFileSync(path.join(runDir, "reviews", "gemini.md"), "[Should Fix] Review note.\n");
+  writeFileSync(
+    path.join(workspace, "agentmesh.toml"),
+    [
+      "schema_version = 1",
+      "",
+      "[agents.gemini]",
+      'label = "Gemini Reviewer"',
+      'adapter = "command"',
+      'capabilities = ["review"]',
+      "",
+    ].join("\n"),
+  );
 
   const detail = readStudioRun("release-run", { cwd: workspace });
 
@@ -506,6 +518,8 @@ test("Studio packet browser reads release and review evidence", () => {
     "gemini",
     "claude",
   ]);
+  assert.equal(detail.review_release.raw_reviews[0].reviewer_label, "Gemini Reviewer");
+  assert.equal(detail.review_release.raw_reviews[1].reviewer_label, undefined);
   assert.match(detail.review_release.raw_reviews[0].content, /Review note/);
   assert.match(detail.review_release.raw_reviews[1].content, /Embedded raw review note/);
   assert.equal(
@@ -1446,7 +1460,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.0",
+    min_read_runtime_version: "0.1.1",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1466,7 +1480,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.0");
+  assert.equal(compatibility.current_runtime_version, "0.1.1");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -1479,7 +1493,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.0",
+    min_read_runtime_version: "0.1.1",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",

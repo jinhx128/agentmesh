@@ -63,13 +63,13 @@ export function SettingsAboutPanel({ state }: SettingsAboutPanelProps): ReactEle
             <InfoItem label={t("currentEntrypoint")} value={entrypointLabel(compatibility.current_entrypoint)} />
             <InfoItem label={t("compatibilityFile")} value={compatibility.compatibility_path} />
             <InfoItem label={t("metadataState")} value={metadataStateLabel(compatibility.metadata_state)} />
-            <InfoItem label={t("packetSchemaVersion")} value={metadata?.packet_schema_version ?? t("unknown")} />
-            <InfoItem label={t("minReadRuntimeVersion")} value={metadata?.min_read_runtime_version ?? t("policyNotRecorded")} />
-            <InfoItem label={t("minWriteRuntimeVersion")} value={metadata?.min_write_runtime_version ?? t("policyNotRecorded")} />
+            <InfoItem label={t("packetSchemaVersion")} value={metadata?.packet_schema_version ?? missingMetadataValue(compatibility)} />
+            <InfoItem label={t("minReadRuntimeVersion")} value={metadata?.min_read_runtime_version ?? missingMetadataValue(compatibility)} />
+            <InfoItem label={t("minWriteRuntimeVersion")} value={metadata?.min_write_runtime_version ?? missingMetadataValue(compatibility)} />
             <InfoItem label={t("lastWriter")} value={metadata
               ? `${entrypointLabel(metadata.last_writer_entrypoint)} · 运行时 ${metadata.last_writer_runtime_version}`
-              : "尚未写入兼容性元数据"} />
-            <InfoItem label={t("lastUpdatedAt")} value={metadata ? formatLocalDateTime(metadata.updated_at) : t("policyNotRecorded")} />
+              : "尚未生成兼容性元数据"} />
+            <InfoItem label={t("lastUpdatedAt")} value={metadata ? formatLocalDateTime(metadata.updated_at) : missingMetadataValue(compatibility)} />
           </SimpleGrid>
           {compatibility.decision !== "read_write" ? (
             <Text size="sm" c="yellow.8">{compatibility.decision === "read_only"
@@ -88,6 +88,13 @@ export function SettingsAboutPanel({ state }: SettingsAboutPanelProps): ReactEle
       ) : null}
     </Paper>
   );
+}
+
+function missingMetadataValue(compatibility: StudioCompatibilityDiagnostics): string {
+  if (compatibility.metadata_state === "missing_legacy") {
+    return "尚未生成（旧工作区首次成功写入后补齐）";
+  }
+  return "未记录（兼容性元数据不可用）";
 }
 
 function InfoItem({ label, value }: { label: string; value: string | number }): ReactElement {

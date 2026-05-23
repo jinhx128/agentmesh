@@ -69,6 +69,7 @@ import {
   formatLocalDateTime,
   formatLocalTime,
 } from "../apps/studio-web/src/app/time.js";
+import type { StudioCopyKey } from "../apps/studio-web/src/app/copy.js";
 import { StudioThemeProvider } from "../apps/studio-web/src/app/StudioThemeProvider.js";
 import {
   buildPresetTomlFromManualFields,
@@ -101,7 +102,11 @@ import {
 import {
   RunOverview,
   preferredWorkflowStage,
+  workflowStageAgentLabel,
+  workflowStageExitLabel,
+  workflowStageIds,
   workflowStageStatus,
+  workflowStageNodeAgentLabel,
   type RunOverviewState,
 } from "../apps/studio-web/src/features/runs/RunOverview.js";
 import {
@@ -236,12 +241,27 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\]::after\s*\{[^}]*display:\s*none/s);
   assert.doesNotMatch(frontendCss, /\.studio-language-switch/);
   assert.match(frontendCss, /button:not\(:disabled\)[\s\S]*cursor:\s*pointer/s);
+  assert.match(frontendCss, /--studio-flow-node-width:\s*156px;/);
+  assert.match(frontendCss, /--studio-flow-node-min-height:\s*88px;/);
+  assert.match(frontendCss, /--studio-flow-connector-width:\s*28px;/);
+  assert.match(frontendCss, /--studio-flow-connector-color:\s*#6f7f96;/);
+  assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*display:\s*flex/s);
+  assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*flex-wrap:\s*nowrap/s);
   assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*overflow-x:\s*auto/s);
-  assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*scroll-padding-inline:\s*6px/s);
+  assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*overflow-y:\s*hidden/s);
+  assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*scroll-snap-type:\s*x proximity/s);
   assert.match(frontendCss, /\.workflow-step,\s*\.artifact-step\s*\{[^}]*display:\s*flex/s);
-  assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*background:\s*#c8d2e2/s);
-  assert.match(frontendCss, /--studio-flow-node-min-height:\s*104px;/);
+  assert.match(frontendCss, /\.workflow-step,\s*\.artifact-step\s*\{[^}]*flex:\s*0 0 auto/s);
+  assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*flex:\s*0 0 var\(--studio-flow-connector-width\)/s);
+  assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*margin:\s*0 8px 0 4px/s);
+  assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*background:\s*var\(--studio-flow-connector-color\)/s);
+  assert.match(frontendCss, /\.workflow-connector::after,\s*\.artifact-connector::after\s*\{[^}]*right:\s*0/s);
+  assert.match(frontendCss, /\.workflow-connector::after,\s*\.artifact-connector::after\s*\{[^}]*border-left:\s*9px solid var\(--studio-flow-connector-color\)/s);
   assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*min-height:\s*var\(--studio-flow-node-min-height\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*width:\s*var\(--studio-flow-node-width\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*max-width:\s*var\(--studio-flow-node-width\)/s);
+  assert.doesNotMatch(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*display:\s*none/s);
+  assert.doesNotMatch(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*width:\s*100%/s);
   assert.doesNotMatch(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*min-height:\s*122px;/s);
   assert.doesNotMatch(frontendCss, /\.artifact-node\s*\{[^}]*min-height:\s*138px;/s);
   assert.match(frontendCss, /\.artifact-preview-panel\s+\.studio-code-block\s*\{[^}]*max-height:\s*min\(70vh,\s*760px\)/s);
@@ -513,12 +533,94 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   const details = renderRunOverview({ status: "ready", detail }, "details");
   assert.match(details, /data-studio-section="workflow-flow"/);
   assert.match(details, /data-studio-section="workflow-flow-node-metrics"/);
+  assert.match(details, /title="review"/);
   assert.match(details, /padding:var\(--mantine-spacing-xs\)/);
   assert.match(details, /300\.0s · 2 次尝试/);
+  assert.match(details, /data-studio-section="workflow-flow-node-agents"/);
+  assert.match(details, /Agent[\s\S]*current/);
+  assert.match(details, /退出码[\s\S]*无外部进程/);
+  assert.doesNotMatch(details, /退出码[\s\S]*未知/);
   assert.doesNotMatch(details, /耗时 · 300\.0s/);
   assert.doesNotMatch(details, /尝试次数 · 2 次尝试/);
   assert.match(details, /data-studio-section="current-run-overview"/);
   assert.doesNotMatch(details, /data-studio-section="run-diagnostics"/);
+  const executeDetails = renderRunOverview({
+    status: "ready",
+    detail: {
+      ...detail,
+      summary: {
+        ...detail.summary,
+        current_stage: "execute",
+      },
+    },
+  }, "details");
+  assert.match(executeDetails, /Agent[\s\S]*worker/);
+  assert.match(executeDetails, /退出码[\s\S]*exit=0/);
+
+  const attemptsOnlySummary = {
+    ...detail.summary,
+    stages: ["build"],
+    stage_nodes: [],
+    completed_stages: ["build"],
+    current_stage: undefined,
+    stage_assignments: {},
+    stage_invocations: {},
+    stage_attempts: {
+      build: [
+        { actual_agent: "builder", exit_code: 1, status: "failed" },
+        { actual_agent: "fallback", exit_code: 2, status: "failed" },
+      ],
+    },
+    stage_timing: [
+      {
+        stage: "build",
+        attempt_count: 2,
+        exit_code: null,
+      },
+    ],
+  };
+  assert.deepEqual(workflowStageIds(attemptsOnlySummary), ["build"]);
+  assert.equal(workflowStageAgentLabel(attemptsOnlySummary, "build", testStudioCopy), "builder, fallback");
+  assert.equal(workflowStageNodeAgentLabel(attemptsOnlySummary, "build", testStudioCopy), "2 Agents");
+  assert.equal(workflowStageExitLabel(attemptsOnlySummary, "build", testStudioCopy), "exit=1, exit=2");
+  assert.equal(workflowStageExitLabel({
+    ...attemptsOnlySummary,
+    stage_attempts: {
+      build: [{ actual_agent: "builder", exit_code: 0, status: "completed" }],
+    },
+  }, "build", testStudioCopy), "exit=0");
+  assert.equal(workflowStageExitLabel({
+    ...detail.summary,
+    stage_assignments: {},
+    stage_invocations: {
+      review: [{ kind: "current" }],
+    },
+    stage_attempts: {
+      review: [],
+    },
+  }, "review", testStudioCopy), "无外部进程");
+  assert.equal(workflowStageExitLabel({
+    ...detail.summary,
+    stage_assignments: {},
+    stage_invocations: {
+      review: [{ agent: "current", kind: "current" }],
+    },
+    stage_attempts: {
+      review: [{ actual_agent: "reviewer", status: "completed" }],
+    },
+  }, "review", testStudioCopy), "未记录");
+  assert.equal(workflowStageExitLabel({
+    ...detail.summary,
+    stage_assignments: {
+      review: ["reviewer"],
+    },
+    stage_invocations: {
+      review: [{ agent: "reviewer", kind: "primary" }],
+    },
+    stage_attempts: {
+      review: [],
+    },
+  }, "review", testStudioCopy), "未记录");
 
   const artifacts = sortStudioArtifacts(detail);
   assert.deepEqual(artifacts.map((artifact) => artifact.name), ["prompt.md", "output.md"]);
@@ -558,6 +660,7 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(releaseHtml, /needs_decision/);
   assert.match(releaseHtml, /manual approval required/);
   assert.match(releaseHtml, /原始审查/);
+  assert.match(releaseHtml, /Cursor Reviewer/);
 });
 
 test("Call detail renders previews, warnings, adoption controls and history", () => {
@@ -617,20 +720,27 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
   assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.0/);
+  assert.match(settings, /Codex（codex） · 运行时 0\.1\.1/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
-  assert.doesNotMatch(settings, /Runtime 0\.1\.0|entrypoint|Last writer|Metadata ·/);
+  assert.doesNotMatch(settings, /Runtime 0\.1\.1|entrypoint|Last writer|Metadata ·/);
   const legacySettings = renderSettingsAboutPanel({
     status: "ready",
     compatibility: legacyCompatibilityFixture(),
   });
   assert.match(legacySettings, /命令行/);
   assert.match(legacySettings, /旧工作区：缺少兼容性元数据/);
-  assert.match(legacySettings, /尚未写入兼容性元数据/);
+  assert.match(legacySettings, /兼容性元数据/);
+  assert.match(legacySettings, /Packet Schema 版本/);
+  assert.match(legacySettings, /最低读取版本/);
+  assert.match(legacySettings, /最低写入版本/);
+  assert.match(legacySettings, /最后写入方/);
+  assert.match(legacySettings, /最后更新时间/);
+  assert.match(legacySettings, /尚未生成（旧工作区首次成功写入后补齐）/);
+  assert.match(legacySettings, /尚未生成兼容性元数据/);
   assert.match(legacySettings, /诊断说明/);
   assert.match(legacySettings, /当前按旧工作区可读写处理，下次成功写入后会自动补齐/);
-  assert.doesNotMatch(legacySettings, /compatibility metadata is missing|legacy workspace|packet schema unknown/);
+  assert.doesNotMatch(legacySettings, /compatibility metadata is missing|legacy workspace|packet schema unknown|未知|未记录/);
 
   const integrations = renderAgentIntegrationsPanel({ status: "ready", report: integrationsFixture() });
   assert.match(integrations, /data-studio-section="agent-integrations-tabs"/);
@@ -1138,6 +1248,15 @@ test("Agent model option cache preloads every Studio tool once", async () => {
   });
 });
 
+const testStudioCopyMessages: Partial<Record<StudioCopyKey, string>> = {
+  agents: "Agents",
+  exitCodeNotRecorded: "未记录",
+  noExternalProcess: "无外部进程",
+  unknown: "未知",
+};
+
+const testStudioCopy = (key: StudioCopyKey): string => testStudioCopyMessages[key] ?? key;
+
 function renderStudioElement(element: React.ReactElement): string {
   return renderToStaticMarkup(
     React.createElement(
@@ -1431,6 +1550,19 @@ function studioRunDetailFixture(): StudioRunDetail {
       ],
       completed_stages: ["plan", "execute"],
       current_stage: "review",
+      stage_assignments: {
+        plan: ["planner"],
+        execute: ["worker"],
+        review: ["current"],
+      },
+      stage_invocations: {
+        plan: [{ agent: "planner", kind: "primary" }],
+        execute: [{ agent: "worker", kind: "primary" }],
+        review: [{ agent: "current", kind: "current" }],
+      },
+      stage_attempts: {
+        execute: [{ actual_agent: "worker", exit_code: 0, status: "completed" }],
+      },
       stage_timing: [
         {
           stage: "plan",
@@ -1446,7 +1578,6 @@ function studioRunDetailFixture(): StudioRunDetail {
           started_at: "2026-05-18T06:55:00.000Z",
           completed_at: "2026-05-18T07:00:00.000Z",
           duration_ms: 300000,
-          exit_code: 0,
         },
       ],
     },
@@ -1492,6 +1623,7 @@ function studioRunDetailFixture(): StudioRunDetail {
       raw_reviews: [
         {
           reviewer: "cursor",
+          reviewer_label: "Cursor Reviewer",
           path: ".agentmesh/calls/review.md",
           content: "LGTM with one question",
           truncated: false,
@@ -1701,15 +1833,15 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   return {
     decision: "read_write",
     metadata_state: "ok",
-    current_runtime_version: "0.1.0",
+    current_runtime_version: "0.1.1",
     current_entrypoint: "studio",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
       packet_schema_version: 1,
-      min_read_runtime_version: "0.1.0",
-      min_write_runtime_version: "0.1.0",
-      last_writer_runtime_version: "0.1.0",
+      min_read_runtime_version: "0.1.1",
+      min_write_runtime_version: "0.1.1",
+      last_writer_runtime_version: "0.1.1",
       last_writer_entrypoint: "codex",
       updated_at: "2026-05-18T07:00:00.000Z",
     },
@@ -1721,7 +1853,7 @@ function legacyCompatibilityFixture(): Extract<SettingsAboutState, { status: "re
   return {
     decision: "read_write",
     metadata_state: "missing_legacy",
-    current_runtime_version: "0.1.0",
+    current_runtime_version: "0.1.1",
     current_entrypoint: "cli",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: null,
@@ -1745,19 +1877,19 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         found: true,
         path: "/usr/local/bin/agentmesh",
         source: "app_wrapper",
-        version: "0.1.0",
+        version: "0.1.1",
       },
       target_file: {
         exists: true,
         source: "app_wrapper",
-        version: "0.1.0",
+        version: "0.1.1",
         different: false,
       },
       app_wrapper: {
         node_path: "/Applications/AgentMesh.app/node",
         cli_path: "/Applications/AgentMesh.app/cli.js",
         channel: "dev",
-        version: "0.1.0",
+        version: "0.1.1",
       },
     },
     skills: {

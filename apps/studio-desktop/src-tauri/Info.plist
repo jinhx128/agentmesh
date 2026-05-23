@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+  <key>NSFileProviderDomainUsageDescription</key>
+  <string>AgentMesh Studio reads your selected workspace so it can show local runs, calls, artifacts, and AgentMesh configuration.</string>
+</dict>
+</plist>

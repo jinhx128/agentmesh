@@ -1,6 +1,8 @@
 :root {
-  --studio-flow-node-width: 172px;
-  --studio-flow-node-min-height: 104px;
+  --studio-flow-node-width: 156px;
+  --studio-flow-node-min-height: 88px;
+  --studio-flow-connector-width: 28px;
+  --studio-flow-connector-color: #6f7f96;
 
   color: #172033;
   background: #f5f7fb;
@@ -282,6 +284,7 @@ button:not(:disabled),
 .workflow-nodes,
 .artifact-flow {
   display: flex;
+  flex-wrap: nowrap;
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
@@ -291,27 +294,30 @@ button:not(:disabled),
   scroll-snap-type: x proximity;
 }
 
-.workflow-nodes,
-.artifact-flow {
-  gap: 0;
-}
-
 .workflow-step,
 .artifact-step {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
+  min-width: 0;
   scroll-snap-align: start;
 }
 
 .workflow-stage-card,
 .artifact-node {
-  flex: 0 0 var(--studio-flow-node-width);
+  width: var(--studio-flow-node-width);
   max-width: var(--studio-flow-node-width);
+  flex: 0 0 var(--studio-flow-node-width);
   min-height: var(--studio-flow-node-min-height);
 }
 
+.workflow-stage-card .mantine-Button-label,
+.artifact-node .mantine-Button-label {
+  min-width: 0;
+}
+
 .workflow-node-metric,
+.workflow-node-agent,
 .artifact-node-generated-at {
   max-width: 100%;
   line-height: 1.2;
@@ -321,21 +327,22 @@ button:not(:disabled),
 .workflow-connector,
 .artifact-connector {
   position: relative;
-  flex: 0 0 36px;
-  height: 2px;
-  background: #c8d2e2;
+  flex: 0 0 var(--studio-flow-connector-width);
+  height: 3px;
+  margin: 0 8px 0 4px;
+  background: var(--studio-flow-connector-color);
 }
 
 .workflow-connector::after,
 .artifact-connector::after {
   position: absolute;
   top: 50%;
-  right: -1px;
+  right: 0;
   width: 0;
   height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 7px solid #c8d2e2;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 9px solid var(--studio-flow-connector-color);
   content: "";
   transform: translateY(-50%);
 }
@@ -505,17 +512,6 @@ button:not(:disabled),
 
   .studio-data-navigator {
     height: min(58vh, 460px);
-  }
-
-  .workflow-stage-card,
-  .artifact-node {
-    flex-basis: 156px;
-    max-width: 156px;
-  }
-
-  .workflow-connector,
-  .artifact-connector {
-    flex-basis: 28px;
   }
 
   .agent-create-field-grid {

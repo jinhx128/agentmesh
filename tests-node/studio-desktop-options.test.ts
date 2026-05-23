@@ -59,6 +59,93 @@ test("parseStudioDesktopArgs uses dynamic local defaults", () => {
   });
 });
 
+test("parseStudioDesktopArgs uses workspace env when app cwd is filesystem root", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  mkdirSync(path.join(workspace, "frontend-dist"));
+
+  const previousWorkspace = process.env.AGENTMESH_STUDIO_WORKSPACE;
+  process.env.AGENTMESH_STUDIO_WORKSPACE = workspace;
+  try {
+    assert.deepEqual(
+      parseStudioDesktopArgs(["--asset-dir", path.join(workspace, "frontend-dist")], {
+        cwd: path.parse(workspace).root,
+      }),
+      {
+        host: "127.0.0.1",
+        port: 0,
+        workspace,
+        assetDir: path.join(workspace, "frontend-dist"),
+      },
+    );
+  } finally {
+    if (previousWorkspace === undefined) {
+      delete process.env.AGENTMESH_STUDIO_WORKSPACE;
+    } else {
+      process.env.AGENTMESH_STUDIO_WORKSPACE = previousWorkspace;
+    }
+  }
+});
+
+test("parseStudioDesktopArgs discovers a recent workspace when app cwd is filesystem root", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const fakeHome = path.join(workspace, "home");
+  const discoveredWorkspace = path.join(fakeHome, "Documents", "WebStorm", "agentmesh");
+  mkdirSync(path.join(discoveredWorkspace, "frontend-dist"), { recursive: true });
+  writeRun(discoveredWorkspace, "discovered-run");
+
+  const previousWorkspace = process.env.AGENTMESH_STUDIO_WORKSPACE;
+  delete process.env.AGENTMESH_STUDIO_WORKSPACE;
+  try {
+    assert.deepEqual(
+      parseStudioDesktopArgs(["--asset-dir", path.join(discoveredWorkspace, "frontend-dist")], {
+        cwd: path.parse(workspace).root,
+        homeDir: fakeHome,
+      }),
+      {
+        host: "127.0.0.1",
+        port: 0,
+        workspace: discoveredWorkspace,
+        assetDir: path.join(discoveredWorkspace, "frontend-dist"),
+      },
+    );
+  } finally {
+    if (previousWorkspace !== undefined) {
+      process.env.AGENTMESH_STUDIO_WORKSPACE = previousWorkspace;
+    }
+  }
+});
+
+test("parseStudioDesktopArgs falls back to home instead of filesystem root", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  mkdirSync(path.join(workspace, "frontend-dist"));
+  const fakeHome = path.join(workspace, "home");
+  mkdirSync(fakeHome);
+
+  const previousWorkspace = process.env.AGENTMESH_STUDIO_WORKSPACE;
+  delete process.env.AGENTMESH_STUDIO_WORKSPACE;
+  try {
+    assert.deepEqual(
+      parseStudioDesktopArgs(["--asset-dir", path.join(workspace, "frontend-dist")], {
+        cwd: path.parse(workspace).root,
+        homeDir: fakeHome,
+      }),
+      {
+        host: "127.0.0.1",
+        port: 0,
+        workspace: fakeHome,
+        assetDir: path.join(workspace, "frontend-dist"),
+      },
+    );
+  } finally {
+    if (previousWorkspace !== undefined) {
+      process.env.AGENTMESH_STUDIO_WORKSPACE = previousWorkspace;
+    }
+  }
+});
+
 test("parseStudioDesktopArgs accepts explicit workspace, port, and assets", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -450,14 +537,14 @@ test("desktop command-line tool install requires confirmation and writes an app-
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.0",
+      version: "0.1.1",
       different: false,
     });
     assert.equal(payload.command_line_tool.path_command.path, existingCommand);
     assert.equal(payload.command_line_tool.path_command.source, "external");
     const wrapper = readFileSync(wrapperPath, "utf-8");
     assert.match(wrapper, /agentmesh_app_managed=true/);
-    assert.match(wrapper, /agentmesh_cli_version=0\.1\.0/);
+    assert.match(wrapper, /agentmesh_cli_version=0\.1\.1/);
 
     const help = execFileSync(wrapperPath, ["--help"], {
       encoding: "utf-8",
@@ -525,7 +612,7 @@ test("desktop command-line tool install requires confirmation before replacing t
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.0",
+      version: "0.1.1",
       different: false,
     });
   } finally {
@@ -572,7 +659,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.0/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.1/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",

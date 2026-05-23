@@ -56,7 +56,7 @@ npx tauri build --config apps/studio-desktop/src-tauri/tauri.conf.json --bundles
 
 The latest internal unsigned local artifact is:
 
-- `apps/studio-desktop/src-tauri/target/debug/bundle/dmg/AgentMesh_0.1.0_aarch64.dmg`
+- `apps/studio-desktop/src-tauri/target/debug/bundle/dmg/AgentMesh_0.1.1_aarch64.dmg`
 - SHA-256:
   `5ca5a3901c2f05d5d4ab1f64c82c9ef282cad7e5a22df3854d1be36d86e972c7`
 - Evidence: `docs/reviews/studio/p3-internal-dmg-2026-05-17.md`

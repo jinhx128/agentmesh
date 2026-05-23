@@ -112,6 +112,7 @@ interface TauriConfig {
     macOS?: {
       minimumSystemVersion?: string;
       entitlements?: string;
+      infoPlist?: string;
     };
   };
   plugins?: {
@@ -136,6 +137,7 @@ interface UpdateMetadata {
 
 const manifestPath = "apps/studio-desktop/distribution/macos.json";
 const tauriConfigPath = "apps/studio-desktop/src-tauri/tauri.conf.json";
+const tauriInfoPlistPath = "apps/studio-desktop/src-tauri/Info.plist";
 const packageJsonPath = "package.json";
 const updaterPubkeyPlaceholder = "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY";
 
@@ -250,6 +252,14 @@ export function validateStudioDesktopDistribution(
     app.minimumSystemVersion,
   );
   requireFile(issues, cwd, path.join("apps/studio-desktop/src-tauri", tauriConfig?.bundle?.macOS?.entitlements ?? ""));
+  requireEqual(
+    issues,
+    "Tauri macOS infoPlist",
+    tauriConfig?.bundle?.macOS?.infoPlist,
+    "Info.plist",
+  );
+  requireFile(issues, cwd, path.join("apps/studio-desktop/src-tauri", tauriConfig?.bundle?.macOS?.infoPlist ?? ""));
+  validateMacOsPrivacyUsageDescriptions(issues, cwd, tauriConfig?.bundle?.macOS?.infoPlist ?? tauriInfoPlistPath);
 
   for (const iconPath of app.iconPaths) {
     requireFile(issues, cwd, iconPath);
@@ -367,6 +377,43 @@ function requireTextIncludes(
 function requireFile(issues: string[], cwd: string, relativePath: string): void {
   if (!relativePath || !existsSync(path.join(cwd, relativePath))) {
     issues.push(`missing ${relativePath}`);
+  }
+}
+
+function requireFileTextIncludes(
+  issues: string[],
+  cwd: string,
+  relativePath: string,
+  expected: string,
+): void {
+  const absolutePath = path.join(cwd, relativePath);
+  if (!existsSync(absolutePath)) {
+    issues.push(`missing ${relativePath}`);
+    return;
+  }
+  const content = readFileSync(absolutePath, "utf-8");
+  if (!content.includes(expected)) {
+    issues.push(`${relativePath} must include ${expected}`);
+  }
+}
+
+function validateMacOsPrivacyUsageDescriptions(
+  issues: string[],
+  cwd: string,
+  infoPlistPath: string,
+): void {
+  const relativePath = infoPlistPath.includes("/")
+    ? infoPlistPath
+    : path.join("apps/studio-desktop/src-tauri", infoPlistPath);
+  for (const key of [
+    "NSDocumentsFolderUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+    "NSNetworkVolumesUsageDescription",
+    "NSRemovableVolumesUsageDescription",
+    "NSFileProviderDomainUsageDescription",
+  ]) {
+    requireFileTextIncludes(issues, cwd, relativePath, `<key>${key}</key>`);
   }
 }
 

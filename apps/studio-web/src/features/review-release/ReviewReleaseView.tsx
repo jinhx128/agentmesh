@@ -142,8 +142,9 @@ function RawReviews({ rawReviews }: { rawReviews: StudioRawReviewView[] }): Reac
               <Tabs.Tab
                 value={String(index)}
                 key={`${review.reviewer}:${review.path}:${index}`}
+                title={review.reviewer}
               >
-                {review.reviewer || "reviewer"}{review.truncated ? ` · ${t("truncated")}` : ""}
+                {rawReviewDisplayName(review)}{review.truncated ? ` · ${t("truncated")}` : ""}
               </Tabs.Tab>
             ))}
           </Tabs.List>
@@ -157,6 +158,10 @@ function RawReviews({ rawReviews }: { rawReviews: StudioRawReviewView[] }): Reac
       ) : <Text c="dimmed">{t("noRawReviews")}</Text>}
     </Card>
   );
+}
+
+function rawReviewDisplayName(review: StudioRawReviewView): string {
+  return review.reviewer_label || review.reviewer || "reviewer";
 }
 
 function ItemList({ items, emptyLabel }: { items: string[]; emptyLabel: string }): ReactElement {

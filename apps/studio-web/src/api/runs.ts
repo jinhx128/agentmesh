@@ -29,6 +29,9 @@ export interface StudioRunDetailSummary extends StudioRunSummary {
   stage_nodes?: StudioStageNodeSummary[];
   completed_stages: string[];
   stage_timing: StudioStageTimingSummary[];
+  stage_assignments?: Record<string, string[]>;
+  stage_invocations?: Record<string, StudioStageInvocationSummary[]>;
+  stage_attempts?: Record<string, StudioStageAttemptSummary[]>;
   current_stage?: string;
   resolved_context_policy?: Record<string, unknown>;
   resolved_execution_policy?: Record<string, unknown>;
@@ -48,6 +51,21 @@ export interface StudioStageTimingSummary {
   failed_at?: string;
   duration_ms?: number;
   exit_code?: number | null;
+}
+
+export interface StudioStageInvocationSummary {
+  agent?: string;
+  kind?: string;
+  [key: string]: unknown;
+}
+
+export interface StudioStageAttemptSummary {
+  primary_agent?: string;
+  requested_agent?: string;
+  actual_agent?: string;
+  status?: string;
+  exit_code?: number | null;
+  [key: string]: unknown;
 }
 
 export interface StudioRunEvent {
@@ -105,6 +123,7 @@ export interface StudioReviewFindingsView {
 
 export interface StudioRawReviewView {
   reviewer: string;
+  reviewer_label?: string;
   path: string;
   content: string;
   truncated: boolean;

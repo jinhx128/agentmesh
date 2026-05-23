@@ -540,6 +540,7 @@ export interface AgentMeshReviewReleaseView {
 
 export interface AgentMeshRawReviewView {
   reviewer: string;
+  reviewer_label?: string;
   path: string;
   content: string;
   truncated: boolean;
@@ -688,6 +689,14 @@ function listAgentsIfConfigured(options: AgentMeshReadOptions): AgentMeshAgentSu
   }
 }
 
+function optionalAgentLabelMap(options: AgentMeshReadOptions): Map<string, string> {
+  try {
+    return new Map(listAgentsIfConfigured(options).map((agent) => [agent.id, agent.label]));
+  } catch {
+    return new Map();
+  }
+}
+
 export function listRuns(options: AgentMeshRunListOptions = {}): AgentMeshRunPage {
   const runs = readRunSummaries(options.cwd, options.eventTail ?? 1);
   const pageSize = normalizePageSize(options.pageSize, DEFAULT_RUN_PAGE_SIZE, MAX_RUN_PAGE_SIZE);
@@ -711,13 +720,14 @@ export function getRun(
     limit: options.eventLimit ?? options.eventTail ?? DEFAULT_EVENT_TAIL,
   });
   const status = loadStatus(runDir) as Record<string, unknown>;
+  const agentLabels = optionalAgentLabelMap(options);
   return {
     summary: runSummary(runDir, 1),
     status,
     events: eventPage.events,
     events_page: eventPage.page,
     artifacts: listArtifacts(runDir),
-    review_release: readReviewReleaseView(runDir, status, options.previewBytes ?? DEFAULT_PREVIEW_BYTES),
+    review_release: readReviewReleaseView(runDir, status, options.previewBytes ?? DEFAULT_PREVIEW_BYTES, agentLabels),
   };
 }
 
@@ -900,7 +910,7 @@ function workspaceCompatibilityDiagnostics(
 ): WorkspaceCompatibilityDiagnostics {
   const compatibilityPath = path.join(path.resolve(workspace), WORKSPACE_COMPATIBILITY_RELATIVE_PATH);
   const base = {
-    current_runtime_version: options.runtimeVersion ?? "0.1.0",
+    current_runtime_version: options.runtimeVersion ?? "0.1.1",
     current_entrypoint: options.entrypoint ?? "cli",
     compatibility_path: compatibilityPath,
   };
@@ -1354,6 +1364,7 @@ function readReviewReleaseView(
   runDir: string,
   status: Record<string, unknown>,
   previewBytes: number,
+  agentLabels: Map<string, string>,
 ): AgentMeshReviewReleaseView {
   const findings = readOptionalPacketText(runDir, "findings.md", previewBytes);
   const releaseSummary = readOptionalPacketText(runDir, "release-summary.md", previewBytes);
@@ -1366,8 +1377,8 @@ function readReviewReleaseView(
   ];
   const residualRisk = markdownSectionItems(releaseSummaryContent, "Residual Risk Signals");
   const rawReviews = mergeRawReviews(
-    readRawReviewViews(runDir, previewBytes),
-    embeddedRawReviewViews(findings?.content ?? ""),
+    readRawReviewViews(runDir, previewBytes, agentLabels),
+    embeddedRawReviewViews(findings?.content ?? "", agentLabels),
   );
 
   return {
@@ -1414,7 +1425,11 @@ function mergeRawReviews(
   ];
 }
 
-function readRawReviewViews(runDir: string, previewBytes: number): AgentMeshRawReviewView[] {
+function readRawReviewViews(
+  runDir: string,
+  previewBytes: number,
+  agentLabels: Map<string, string>,
+): AgentMeshRawReviewView[] {
   const reviewsDir = path.join(runDir, "reviews");
   if (!isDirectory(reviewsDir)) {
     return [];
@@ -1425,8 +1440,10 @@ function readRawReviewViews(runDir: string, previewBytes: number): AgentMeshRawR
     .map((fileName) => {
       const relativePath = `reviews/${fileName}`;
       const review = readOptionalPacketText(runDir, relativePath, previewBytes);
+      const reviewer = path.basename(fileName, ".md");
       return {
-        reviewer: path.basename(fileName, ".md"),
+        reviewer,
+        ...rawReviewLabel(reviewer, agentLabels),
         path: relativePath,
         content: review?.content ?? "",
         truncated: review?.truncated ?? false,
@@ -1434,7 +1451,10 @@ function readRawReviewViews(runDir: string, previewBytes: number): AgentMeshRawR
     });
 }
 
-function embeddedRawReviewViews(findings: string): AgentMeshRawReviewView[] {
+function embeddedRawReviewViews(
+  findings: string,
+  agentLabels: Map<string, string>,
+): AgentMeshRawReviewView[] {
   const rawReviewSection = markdownSectionContent(findings, "Raw Review Outputs");
   if (!rawReviewSection) {
     return [];
@@ -1445,7 +1465,7 @@ function embeddedRawReviewViews(findings: string): AgentMeshRawReviewView[] {
   for (const line of rawReviewSection.split(/\r?\n/)) {
     if (line.startsWith("### ")) {
       if (reviewer) {
-        reviews.push(embeddedRawReviewView(reviewer, lines));
+        reviews.push(embeddedRawReviewView(reviewer, lines, agentLabels));
       }
       reviewer = line.slice(4).trim();
       lines = [];
@@ -1454,19 +1474,32 @@ function embeddedRawReviewViews(findings: string): AgentMeshRawReviewView[] {
     }
   }
   if (reviewer) {
-    reviews.push(embeddedRawReviewView(reviewer, lines));
+    reviews.push(embeddedRawReviewView(reviewer, lines, agentLabels));
   }
   return reviews;
 }
 
-function embeddedRawReviewView(reviewer: string, lines: string[]): AgentMeshRawReviewView {
+function embeddedRawReviewView(
+  reviewer: string,
+  lines: string[],
+  agentLabels: Map<string, string>,
+): AgentMeshRawReviewView {
   const safeReviewer = reviewer.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "agent";
   return {
     reviewer,
+    ...rawReviewLabel(reviewer, agentLabels),
     path: `findings.md#raw-review-outputs/${safeReviewer}`,
     content: lines.join("\n").trim(),
     truncated: false,
   };
+}
+
+function rawReviewLabel(
+  reviewer: string,
+  agentLabels: Map<string, string>,
+): Pick<AgentMeshRawReviewView, "reviewer_label"> {
+  const label = agentLabels.get(reviewer);
+  return label && label !== reviewer ? { reviewer_label: label } : {};
 }
 
 function releaseVerdictView(value: unknown): AgentMeshReleaseVerdictView | undefined {

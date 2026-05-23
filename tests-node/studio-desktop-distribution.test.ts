@@ -58,7 +58,14 @@ test("studio desktop distribution wires the macOS DMG app identity and icons", (
     readFileSync(path.join(root, "apps", "studio-desktop", "src-tauri", "tauri.conf.json"), {
       encoding: "utf-8",
     }),
-  ) as { bundle?: { resources?: Record<string, string> } };
+  ) as { bundle?: { macOS?: { infoPlist?: string }; resources?: Record<string, string> } };
+  assert.equal(tauriConfig.bundle?.macOS?.infoPlist, "Info.plist");
+  assert.match(
+    readFileSync(path.join(root, "apps", "studio-desktop", "src-tauri", "Info.plist"), {
+      encoding: "utf-8",
+    }),
+    /NSDocumentsFolderUsageDescription/,
+  );
   assert.deepEqual(Object.keys(tauriConfig.bundle?.resources ?? {}).sort(), [
     "../../../dist-node/apps/studio-desktop/runtime-node_modules",
     "../../../dist-node/apps/studio-desktop/sidecar",
@@ -142,7 +149,10 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
   );
   assert.match(libRs, /tauri_plugin_shell::init/);
   assert.match(libRs, /\.sidecar\("agentmesh-studio-sidecar"\)/);
-  assert.match(libRs, /"--launch-json"/);
+  assert.match(libRs, /sidecar_launch_args\(\)/);
+  assert.match(libRs, /"--workspace"/);
+  assert.match(libRs, /strip_prefix\("--workspace="\)/);
+  assert.doesNotMatch(libRs, /\.args\(\["--launch-json"\]\)/);
   assert.match(libRs, /\.navigate\(/);
   assert.doesNotMatch(
     libRs,
@@ -336,7 +346,7 @@ test("update metadata targets app-managed runtime without changing the npm CLI c
   assert.equal(summary.runtime.appManaged, true);
   assert.equal(summary.runtime.npmCliSharedInstall, false);
   assert.deepEqual(Object.keys(summary.updates.channels), ["stable", "beta"]);
-  assert.equal(summary.updates.metadata.version, "0.1.0");
+  assert.equal(summary.updates.metadata.version, "0.1.1");
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].url.endsWith(".app.tar.gz"));
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].signature.length > 0);
 });

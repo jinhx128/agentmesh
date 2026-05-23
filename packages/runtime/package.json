@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Local AgentMesh runtime for packet IO, workflows, release gates, and readiness probes.",
@@ -12,6 +12,6 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/core": "0.1.0"
+    "@agentmesh/core": "0.1.1"
   }
 }
