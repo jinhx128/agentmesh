@@ -2661,6 +2661,79 @@ test("Studio agent model endpoint discovers provider CLIs outside PATH", async (
   }
 });
 
+test("Studio agent lifecycle discovers provider CLIs outside PATH during update", async () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const home = process.env.HOME as string;
+  const userConfigDir = path.join(home, ".config", "agentmesh");
+  mkdirSync(userConfigDir, { recursive: true });
+  writeFakeProviderCli(path.join(home, ".local", "bin"), "claude", "claude-opus-4-7");
+  writeFileSync(
+    path.join(userConfigDir, "config.toml"),
+    [
+      "schema_version = 1",
+      "",
+      "[agents.claude-agent]",
+      'label = "Claude Agent"',
+      'adapter = "claude-code-cli"',
+      'command = "claude"',
+      'args = ["-p"]',
+      'model = "claude-opus-4-7"',
+      'reasoning_effort = "high"',
+      'capabilities = ["plan"]',
+      "",
+    ].join("\n"),
+  );
+  const previousPath = process.env.PATH;
+  const previousShell = process.env.SHELL;
+  process.env.PATH = "";
+  process.env.SHELL = path.join(workspace, "missing-shell");
+  let server: Server | undefined;
+  try {
+    const started = await listen(createStudioServer({ cwd: workspace }));
+    server = started.server;
+    const response = await fetch(`${started.url}/api/v1/agents/claude-agent`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        adapter: "claude-code-cli",
+        model: "claude-opus-4-7",
+        label: "Claude Agent Updated",
+        capabilities: ["plan", "execute"],
+        reasoning_effort: "high",
+      }),
+    });
+    const updated = await response.json() as {
+      status: string;
+      exit_code: number;
+      stdout: string;
+      stderr: string;
+    };
+
+    assert.equal(response.status, 200, updated.stderr);
+    assert.equal(updated.status, "succeeded");
+    assert.equal(updated.exit_code, 0);
+    assert.match(updated.stdout, /Updated agent: claude-agent/);
+    assert.equal(updated.stderr, "");
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    if (previousShell === undefined) {
+      delete process.env.SHELL;
+    } else {
+      process.env.SHELL = previousShell;
+    }
+    server?.close();
+  }
+});
+
 async function listen(server: Server): Promise<{ server: Server; url: string }> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address() as AddressInfo;

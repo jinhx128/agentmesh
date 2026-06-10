@@ -14,6 +14,7 @@ import {
   resolveKnownAdapterModelWithAliases,
   type ModelResolution,
 } from "../adapters/models.js";
+import type { ProviderToolDiscoveryOptions } from "../adapters/provider-tools.js";
 import { listRuntimeAdapters, normalizeRuntimeAdapterId } from "../adapters/registry.js";
 import { configPathForAgentWrite, loadConfig } from "../config.js";
 
@@ -56,6 +57,7 @@ export interface AgentLifecycleRuntimeOptions {
   cwd?: string;
   configPath?: string;
   agentIdGenerator?: AgentIdGenerator;
+  providerToolDiscovery?: ProviderToolDiscoveryOptions;
 }
 
 export interface AgentLifecycleRuntimeResult {
@@ -72,12 +74,13 @@ export function createAgentRegistration(
   options: AgentLifecycleRuntimeOptions = {},
 ): AgentLifecycleRuntimeResult {
   const cwd = options.cwd ?? process.cwd();
+  const providerToolDiscovery = providerToolDiscoveryForLifecycle(cwd, options.providerToolDiscovery);
   const existingAgents = loadExistingAgentsForDuplicateCheck(options.configPath, cwd);
   const resolvedModel = resolveKnownAdapterModelWithAliases(
     input.adapter,
     input.model,
     loadModelAliases(options.configPath, cwd),
-    { runCli: true },
+    { runCli: true, providerToolDiscovery },
   );
   if (resolvedModel.status !== "resolved") {
     return failure("create", reportModelResolutionFailure(resolvedModel), 2);
@@ -132,6 +135,7 @@ export function createAgentRegistration(
   }
   const readiness = probeAgentRegistrationReadiness(candidate, {
     skipVerify: false,
+    providerToolDiscovery,
   });
   if (!readiness.ok) {
     return failure(
@@ -200,6 +204,7 @@ export function updateAgentRegistration(
   options: AgentLifecycleRuntimeOptions = {},
 ): AgentLifecycleRuntimeResult {
   const cwd = options.cwd ?? process.cwd();
+  const providerToolDiscovery = providerToolDiscoveryForLifecycle(cwd, options.providerToolDiscovery);
   const targetConfigPath = configPathForAgentWrite(cwd);
   const scopedAgents = loadExistingAgentsForDuplicateCheck(targetConfigPath, cwd);
   const existingAgent = scopedAgents[currentAgentId];
@@ -215,7 +220,7 @@ export function updateAgentRegistration(
     adapter,
     model,
     loadModelAliases(options.configPath, cwd),
-    { runCli: true },
+    { runCli: true, providerToolDiscovery },
   );
   if (resolvedModel.status !== "resolved") {
     return failure("update", reportModelResolutionFailure(resolvedModel), 2, currentAgentId, targetConfigPath);
@@ -269,6 +274,7 @@ export function updateAgentRegistration(
   }
   const readiness = probeAgentRegistrationReadiness(candidate, {
     skipVerify: false,
+    providerToolDiscovery,
   });
   if (!readiness.ok) {
     return failure(
@@ -443,6 +449,17 @@ function success(
     exitCode: 0,
     stdout: `${stdout}\n`,
     stderr: "",
+  };
+}
+
+function providerToolDiscoveryForLifecycle(
+  cwd: string,
+  overrides: ProviderToolDiscoveryOptions | undefined,
+): ProviderToolDiscoveryOptions {
+  return {
+    ...(overrides ?? {}),
+    enabled: overrides?.enabled ?? true,
+    workspace: overrides?.workspace ?? cwd,
   };
 }
 

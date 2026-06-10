@@ -7,6 +7,7 @@ import {
   probeAgentReadiness,
   type DoctorAgentReport,
 } from "../doctor/readiness.js";
+import type { ProviderToolDiscoveryOptions } from "./provider-tools.js";
 import { lookupRuntimeAdapter } from "./registry.js";
 
 const DEFAULT_CAPABILITIES = [...STAGE_TYPES];
@@ -31,6 +32,7 @@ export interface AgentRegistrationCandidateInput {
 export interface AgentRegistrationReadinessOptions {
   skipVerify?: boolean;
   probeTimeoutSecs?: number;
+  providerToolDiscovery?: ProviderToolDiscoveryOptions;
 }
 
 export interface AgentRegistrationReadinessResult {
@@ -76,6 +78,7 @@ export function probeAgentRegistrationReadiness(
   const report = probeAgentReadiness(candidate, {
     probeAuth: !skipVerify,
     probeTimeoutSecs: options.probeTimeoutSecs,
+    providerToolDiscovery: options.providerToolDiscovery,
   });
   const warnings = skipVerify
     ? [

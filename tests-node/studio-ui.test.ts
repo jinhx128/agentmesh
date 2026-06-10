@@ -1068,9 +1068,14 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     [
       "Agent 与 Tool Adapter",
       "Workflow、Stage 与 Preset",
+      "Stage 类型",
       "Run、Packet 与 Artifact",
       "Call、Context 与 MCP",
     ],
+  );
+  assert.match(
+    concepts.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    /plan.md[\s\S]*handoff.md[\s\S]*verification.md[\s\S]*findings.md[\s\S]*decision.md/,
   );
   const operations = MANUAL_SECTIONS.find((section) => section.id === "operations");
   assert.ok(operations);

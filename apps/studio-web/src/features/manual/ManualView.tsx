@@ -169,6 +169,17 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         ],
       },
       {
+        title: "Stage 类型",
+        body: "AgentMesh 内置 plan、execute、verify、review、decide 五类 stage；它们决定当前节点的 prompt contract、规范产物和 fanout 规则。",
+        details: [
+          "plan：把请求和上下文收敛成可执行方案，产出 plan.md；多 Agent plan 会先写独立候选，再合成为规范 plan。",
+          "execute：按 plan 执行实际变更或交付，产出 handoff.md；运行时只允许一个主控 Agent，避免多个 worker 同时改同一批文件。",
+          "verify：运行测试、构建、smoke 或回归检查，产出 verification.md；记录 skipped checks 和 residual risk，但不写 release verdict。",
+          "review：审查 diff、产物和 verification evidence，保留 reviews/<reviewer>.md 原始证据，再汇总 controller-visible findings.md。",
+          "decide：基于前序证据做工程或发布决策，产出 decision.md；在 release workflow 里也是 release verdict 的来源。",
+        ],
+      },
+      {
         title: "Run、Packet 与 Artifact",
         body: "Run 是一次执行实例；Packet 是它的文件事实源；Artifact 是运行过程中生成、附加或汇总的交付物。",
         details: [
