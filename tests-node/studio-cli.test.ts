@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -211,6 +211,18 @@ test("agentmesh studio serves built React assets by default without taking over 
 
   const callsResponse = await fetch(`${started.url}/api/calls`);
   assert.equal(callsResponse.status, 200);
+  const bootstrapResponse = await fetch(`${started.url}/api/bootstrap`);
+  assert.equal(bootstrapResponse.status, 200);
+  const bootstrapPayload = await bootstrapResponse.json() as {
+    authenticated: boolean;
+    workspace: string;
+  };
+  assert.deepEqual(bootstrapPayload, {
+    schema_version: 1,
+    authenticated: false,
+    workspace: realpathSync(workspace),
+    api_base_url: "",
+  });
   await started.stop();
 });
 

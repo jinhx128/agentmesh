@@ -1,7 +1,7 @@
 {
-  "name": "agentmesh",
-  "version": "0.1.4",
-  "private": true,
+  "name": "@jinhx128/agentmesh",
+  "version": "0.1.5",
+  "private": false,
   "type": "module",
   "description": "CLI for orchestrating local AI coding agents through traceable run packets.",
   "workspaces": [
@@ -29,6 +29,8 @@
     "studio-desktop:package:dev": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode dev",
     "studio-desktop:package:signed": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode signed",
     "studio-desktop:update:metadata": "npm run build && node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify && node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode metadata",
+    "publish:npm": "bash scripts/publish-npm.sh",
+    "publish:github": "bash scripts/publish-github-release.sh",
     "release:assets": "node scripts/github-release.mjs --prepare-only",
     "release:github": "node scripts/github-release.mjs",
     "release:github:verify": "node scripts/github-release.mjs --verify-only",
@@ -39,6 +41,10 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Read-only AgentMesh SDK for stable local state discovery.",
@@ -12,7 +12,7 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/core": "0.1.4",
+    "@agentmesh/core": "0.1.5",
     "smol-toml": "^1.6.1"
   }
 }

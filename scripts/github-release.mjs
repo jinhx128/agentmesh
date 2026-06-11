@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, copyFileS
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { normalizePackedTarballAsset, releaseTarballName } from "./github-release-assets.mjs";
 
 const root = process.cwd();
 const args = parseArgs(process.argv.slice(2));
@@ -12,7 +13,7 @@ const tag = `v${version}`;
 const repo = args.repo ?? process.env.GITHUB_REPOSITORY ?? "jinhx128/agentmesh";
 const distDir = path.join(root, "dist-release");
 const assets = [
-  `agentmesh-${version}.tgz`,
+  releaseTarballName(version),
   `AgentMesh_${version}_aarch64.dmg`,
   `agentmesh-skill-${version}.md`,
   "SHA256SUMS",
@@ -60,7 +61,13 @@ verifyRelease({ compareLocal: true });
 
 function prepareAssets() {
   mkdirSync(distDir, { recursive: true });
-  run("npm", ["pack", "--pack-destination", "dist-release"]);
+  console.log("$ npm pack --pack-destination dist-release --json");
+  const npmPackOutput = execFileSync("npm", ["pack", "--pack-destination", "dist-release", "--json"], {
+    cwd: root,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  normalizePackedTarballAsset({ distDir, npmPackOutput, version });
 
   const dmgName = `AgentMesh_${version}_aarch64.dmg`;
   const dmgSource = path.join(

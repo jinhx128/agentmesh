@@ -16,6 +16,7 @@ export async function studio(args: string[], configPath?: string): Promise<numbe
     port,
     cwd: workspace,
     assetDir,
+    allowUnauthenticatedBootstrap: true,
     ...(resolvedConfigPath ? { configPath: resolvedConfigPath } : {}),
   });
 

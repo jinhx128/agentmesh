@@ -348,9 +348,28 @@ test("update metadata targets app-managed runtime without changing the npm CLI c
   assert.equal(summary.runtime.appManaged, true);
   assert.equal(summary.runtime.npmCliSharedInstall, false);
   assert.deepEqual(Object.keys(summary.updates.channels), ["stable", "beta"]);
-  assert.equal(summary.updates.metadata.version, "0.1.4");
+  assert.equal(summary.updates.metadata.version, "0.1.5");
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].url.endsWith(".app.tar.gz"));
+  assert.match(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/jinhx128\/agentmesh/);
+  assert.doesNotMatch(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/agentmesh\/agentmesh/);
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].signature.length > 0);
+
+  const tauriConfig = readFileSync(
+    path.join(root, "apps", "studio-desktop", "src-tauri", "tauri.conf.json"),
+    { encoding: "utf-8" },
+  );
+  const stableFeed = readFileSync(
+    path.join(root, "apps", "studio-desktop", "distribution", "latest.stable.darwin-aarch64.example.json"),
+    { encoding: "utf-8" },
+  );
+  const betaFeed = readFileSync(
+    path.join(root, "apps", "studio-desktop", "distribution", "latest.beta.darwin-aarch64.example.json"),
+    { encoding: "utf-8" },
+  );
+  for (const source of [tauriConfig, stableFeed, betaFeed]) {
+    assert.match(source, /github\.com\/jinhx128\/agentmesh/);
+    assert.doesNotMatch(source, /github\.com\/agentmesh\/agentmesh/);
+  }
 });
 
 async function launchSidecar(

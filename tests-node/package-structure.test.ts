@@ -74,6 +74,44 @@ test("package split exposes the agentmesh CLI as the TS target surface", () => {
   assert.equal(existsSync(path.join(root, "apps", "studio-desktop", "src-tauri", "tauri.conf.json")), true);
 });
 
+test("release publish wrappers expose npm and GitHub one-command flows", () => {
+  const root = process.cwd();
+  const packageJson = JSON.parse(
+    readFileSync(path.join(root, "package.json"), { encoding: "utf-8" }),
+  );
+
+  assert.equal(packageJson.scripts["publish:npm"], "bash scripts/publish-npm.sh");
+  assert.equal(packageJson.scripts["publish:github"], "bash scripts/publish-github-release.sh");
+
+  const npmScript = readFileSync(path.join(root, "scripts", "publish-npm.sh"), {
+    encoding: "utf-8",
+  });
+  assert.match(npmScript, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/);
+  for (const expected of [
+    "npm whoami",
+    "npm access ls-packages",
+    "npm run build",
+    "npm run cli:install-smoke",
+    "npm view",
+    "npm publish",
+    "--access public",
+  ]) {
+    assert.match(npmScript, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  const githubScript = readFileSync(path.join(root, "scripts", "publish-github-release.sh"), {
+    encoding: "utf-8",
+  });
+  assert.match(githubScript, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/);
+  for (const expected of [
+    "gh auth status",
+    "node scripts/github-release.mjs",
+  ]) {
+    assert.match(githubScript, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.doesNotMatch(githubScript, /release:github:verify/);
+});
+
 test("packages and apps are explicit workspace build units", () => {
   const root = process.cwd();
   const units = [
@@ -115,7 +153,7 @@ test("packages and apps are explicit workspace build units", () => {
       assert.equal(unitPackageJson.dependencies["react-dom"], "^19.2.6");
     } else if (unitPath === "apps/studio-desktop") {
       assert.equal(unitPackageJson.exports, undefined);
-      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.1.4");
+      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.1.5");
     } else {
       assert.equal(typeof unitPackageJson.exports, "object");
       assert.ok(unitPackageJson.exports["."].startsWith("./src/"));
@@ -130,8 +168,12 @@ test("root package owns the only installable CLI tarball boundary", () => {
     readFileSync(path.join(root, "package.json"), { encoding: "utf-8" }),
   );
 
-  assert.equal(packageJson.name, "agentmesh");
-  assert.equal(packageJson.private, true);
+  assert.equal(packageJson.name, "@jinhx128/agentmesh");
+  assert.equal(packageJson.private, false);
+  assert.deepEqual(packageJson.publishConfig, {
+    access: "public",
+    registry: "https://registry.npmjs.org/",
+  });
   assert.equal(packageJson.bin.agentmesh, "./dist-node/packages/cli/src/cli.js");
   assert.deepEqual(packageJson.files, [
     "dist-node/packages/",
@@ -363,7 +405,7 @@ test("skills package owns skill templates and install verification", () => {
   });
 
   assert.equal(skillsPackage.name, "@agentmesh/skills");
-  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.1.4");
+  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.1.5");
   assert.equal(existsSync(path.join(root, "packages", "skills", "agentmesh-skill", "SKILL.md")), true);
   assert.equal(existsSync(path.join(root, "agentmesh-skill", "SKILL.md")), false);
   assert.match(cliSkillCommand, /@agentmesh\/skills/);
@@ -405,7 +447,7 @@ test("public read SDK is promoted with read-only boundaries and real consumers",
   assert.equal(sdkPackageJson.type, "module");
   assert.equal(sdkPackageJson.exports["."], "./src/index.ts");
   assert.equal(sdkPackageJson.dependencies["@agentmesh/runtime"], undefined);
-  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.1.4");
+  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.1.5");
   assert.equal(typeof sdkPackageJson.dependencies["smol-toml"], "string");
 
   for (const apiName of [
@@ -632,8 +674,8 @@ test("internal distribution shape is documented as a release gate", () => {
   );
 
   for (const requiredTerm of [
-    "root package `agentmesh` is the only installable CLI tarball",
-    "`private: true`",
+    "root package `@jinhx128/agentmesh` is the only installable CLI tarball",
+    "`private: false`",
     "`dist-node/packages/`",
     "`dist-node/apps/studio/`",
     "`dist-node/apps/studio-web/`",
@@ -643,7 +685,7 @@ test("internal distribution shape is documented as a release gate", () => {
     "clean install smoke",
     "source checkout",
     "tarball",
-    "private registry",
+    "public npm registry",
     "PATH-visible `agentmesh`",
     "agentmesh skill verify --target <host> --json",
     "Install Command Line Tool",

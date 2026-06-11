@@ -34,11 +34,11 @@
   "updates": {
     "channels": {
       "stable": {
-        "endpoint": "https://github.com/agentmesh/agentmesh/releases/download/studio-stable/latest.json",
+        "endpoint": "https://github.com/jinhx128/agentmesh/releases/download/studio-stable/latest.json",
         "metadata_path": "apps/studio-desktop/distribution/latest.stable.darwin-aarch64.example.json"
       },
       "beta": {
-        "endpoint": "https://github.com/agentmesh/agentmesh/releases/download/studio-beta/latest.json",
+        "endpoint": "https://github.com/jinhx128/agentmesh/releases/download/studio-beta/latest.json",
         "metadata_path": "apps/studio-desktop/distribution/latest.beta.darwin-aarch64.example.json"
       }
     },

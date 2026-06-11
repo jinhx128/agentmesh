@@ -2,7 +2,7 @@
 
 `schema_version`: 1
 
-This document defines how an internal teammate gets a PATH-visible
+This document defines how a user or internal teammate gets a PATH-visible
 `agentmesh` command for terminal usage and entry-agent Skill usage.
 
 ## Required Boundary
@@ -52,18 +52,18 @@ path and observed version/status before the user replaces it.
 
 ### Tarball
 
-Use this for reproducible internal smoke without a public registry:
+Use the GitHub Release-shaped tarball for reproducible smoke without a
+registry:
 
 ```sh
-npm run build
-npm pack --pack-destination /tmp
-npm install -g /tmp/agentmesh-<version>.tgz
+npm run release:assets
+npm install -g ./dist-release/agentmesh-<version>.tgz
 agentmesh --help
 agentmesh doctor --json
 ```
 
-Use the exact tarball filename printed by `npm pack`; the version placeholder
-must match the packaged root `package.json`.
+The npm package name is scoped, but GitHub Release assets intentionally use the
+unscoped `agentmesh-<version>.tgz` filename.
 
 The repository smoke gate is:
 
@@ -76,23 +76,33 @@ then runs `agentmesh --help`, `agentmesh doctor --json`,
 `agentmesh skill show`, `agentmesh skill install --target codex --force`, and
 `agentmesh skill verify --target codex --json`.
 
-### Private Registry
+### Public npm Registry
 
-Use this only after the release owner publishes the same root tarball to an
-internal npm registry. The root package is still `private: true` in this
-checkout, so public `npm install -g agentmesh` is not available from the public
-npm registry.
-
-Expected internal shape:
+Use this after the release owner publishes the root package to the public npm
+registry:
 
 ```sh
-npm install -g agentmesh --registry <internal-registry-url>
+npm install -g @jinhx128/agentmesh
 agentmesh --help
 agentmesh doctor --json
 ```
 
-The private registry package must preserve the same `bin.agentmesh`,
-`files`, dependency boundary, and clean-install smoke as the local tarball.
+The package name is scoped, but the installed command remains `agentmesh`
+because the root `bin.agentmesh` entry owns the executable name.
+
+### Private Registry
+
+Use this only if the same root tarball is mirrored to an internal npm registry.
+Expected internal shape:
+
+```sh
+npm install -g @jinhx128/agentmesh --registry <internal-registry-url>
+agentmesh --help
+agentmesh doctor --json
+```
+
+The registry package must preserve the same `bin.agentmesh`, `files`,
+dependency boundary, and clean-install smoke as the local tarball.
 
 `npm install -g` itself does not prompt before changing a global command. Any
 team installer, app action, or rollout wrapper that switches the PATH-visible
