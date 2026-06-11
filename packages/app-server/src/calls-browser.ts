@@ -3,10 +3,15 @@ import path from "node:path";
 
 import { appendCallAdoptionEvent } from "@agentmesh/runtime/src/calls/history.js";
 import {
+  currentWorkspaceRegistryEntry,
+  listRegisteredWorkspaces,
+  resolveRegisteredWorkspace,
+  type WorkspaceRegistryEntry,
+} from "@agentmesh/runtime/src/workspaces/registry.js";
+import {
   getCall,
   listCallAdoptionEvents,
   listCalls,
-  resolveCallDirectory,
   type AgentMeshCallAdoptionEvent,
   type AgentMeshCallReadOptions,
   type AgentMeshCallRecord,
@@ -16,7 +21,26 @@ const DEFAULT_CALL_PREVIEW_BYTES = 24 * 1024;
 
 type CallArtifactRef = NonNullable<AgentMeshCallRecord["prompt_ref"]>;
 
-type StudioCallOptions = AgentMeshCallReadOptions;
+type StudioWorkspaceScope = "all" | "current" | "workspace";
+
+type StudioCallOptions = AgentMeshCallReadOptions & {
+  registryPath?: string;
+  scope?: StudioWorkspaceScope;
+  workspaceId?: string;
+};
+
+export interface StudioWorkspaceRef {
+  id: string;
+  label: string;
+  path: string;
+  current: boolean;
+}
+
+export interface StudioCallDiagnostic {
+  code: string;
+  message: string;
+  workspace?: StudioWorkspaceRef;
+}
 
 export interface StudioCallWarning {
   code: string;
@@ -25,6 +49,7 @@ export interface StudioCallWarning {
 }
 
 export interface StudioCallSummary extends AgentMeshCallRecord {
+  workspace: StudioWorkspaceRef;
   unsupported_schema: boolean;
   warnings: StudioCallWarning[];
 }
@@ -39,6 +64,8 @@ export interface StudioCallIndex {
   total: number;
   calls: StudioCallSummary[];
   groups: StudioCallGroup[];
+  workspaces: StudioWorkspaceRef[];
+  diagnostics: StudioCallDiagnostic[];
 }
 
 export interface StudioCallPreview {
@@ -69,33 +96,57 @@ export interface StudioCallAdoptionRequest {
   superseded_by_call_id?: unknown;
 }
 
-export function listStudioCalls(options: AgentMeshCallReadOptions = {}): StudioCallIndex {
+export function listStudioCalls(options: StudioCallOptions = {}): StudioCallIndex {
   const cwd = options.cwd ?? process.cwd();
-  const calls = listCalls({ cwd }).map((record) => studioCallSummary(record, cwd));
+  const { workspaces, diagnostics } = visibleStudioWorkspaces(cwd, options);
+  const calls = workspaces.flatMap((workspace) => {
+    if (!isReadableDirectory(workspace.path)) {
+      diagnostics.push({
+        code: "workspace_missing",
+        message: `workspace path is not readable: ${workspace.path}`,
+        workspace,
+      });
+      return [];
+    }
+    try {
+      return listCalls({ cwd: workspace.path }).map((record) =>
+        studioCallSummary(record, workspace));
+    } catch (error) {
+      diagnostics.push({
+        code: "workspace_call_list_failed",
+        message: error instanceof Error ? error.message : String(error),
+        workspace,
+      });
+      return [];
+    }
+  }).sort(compareStudioCalls);
   return {
     schema_version: 1,
     total: calls.length,
     calls,
     groups: groupCallsByDate(calls),
+    workspaces,
+    diagnostics,
   };
 }
 
 export function readStudioCall(
   callId: string,
-  options: AgentMeshCallReadOptions & { previewBytes?: number } = {},
+  options: StudioCallOptions & { previewBytes?: number } = {},
 ): StudioCallDetail {
   const cwd = options.cwd ?? process.cwd();
-  const callDir = resolveCallDirectory(callId, cwd);
-  const record = getCall(callDir, { cwd });
-  const call = studioCallSummary(record, cwd);
+  const workspace = resolveStudioWorkspace(cwd, options);
+  const callDir = resolveStudioCallDirectory(callId, workspace.path);
+  const record = getCall(callDir, { cwd: workspace.path });
+  const call = studioCallSummary(record, workspace);
   const previewBytes = normalizePreviewBytes(options.previewBytes);
   return {
     schema_version: 1,
     call,
     prompt: readCallRefPreview(callDir, record.prompt_ref, previewBytes),
-    output: readOutputPreview(cwd, callDir, record, previewBytes),
+    output: readOutputPreview(workspace.path, callDir, record, previewBytes),
     stderr: readNamedCallFilePreview(callDir, "stderr.txt", previewBytes),
-    adoption_events: listCallAdoptionEvents(callDir, { cwd }),
+    adoption_events: listCallAdoptionEvents(callDir, { cwd: workspace.path }),
     warnings: call.warnings,
   };
 }
@@ -106,7 +157,8 @@ export function adoptStudioCall(
   options: StudioCallOptions = {},
 ): StudioCallDetail {
   const cwd = options.cwd ?? process.cwd();
-  const callDir = resolveCallDirectory(callId, cwd);
+  const workspace = resolveStudioWorkspace(cwd, options);
+  const callDir = resolveStudioCallDirectory(callId, workspace.path);
   const reason = optionalString(request.reason);
   const relatedCommit = optionalString(request.related_commit);
   const relatedRunId = optionalString(request.related_run_id);
@@ -120,7 +172,7 @@ export function adoptStudioCall(
     relatedRunId,
     supersededByCallId,
   });
-  return readStudioCall(callId, { cwd });
+  return readStudioCall(callId, { cwd, registryPath: options.registryPath, workspaceId: workspace.id });
 }
 
 export function isInvalidStudioCallAdoptionError(error: unknown): boolean {
@@ -146,13 +198,15 @@ export function isInvalidStudioCallIdError(error: unknown): boolean {
 }
 
 export function isMissingStudioCallError(error: unknown): boolean {
-  return errorMessage(error).startsWith("call not found:");
+  const message = errorMessage(error);
+  return message.startsWith("call not found:") || message.startsWith("workspace not found:");
 }
 
-function studioCallSummary(record: AgentMeshCallRecord, cwd: string): StudioCallSummary {
-  const warnings = callWarnings(record, cwd);
+function studioCallSummary(record: AgentMeshCallRecord, workspace: StudioWorkspaceRef): StudioCallSummary {
+  const warnings = callWarnings(record, workspace.path);
   return {
     ...record,
+    workspace,
     unsupported_schema: Boolean(record.read_only || record.schema_warning),
     warnings,
   };
@@ -215,6 +269,90 @@ function groupCallsByDate(calls: StudioCallSummary[]): StudioCallGroup[] {
     date,
     calls: groupedCalls,
   }));
+}
+
+function visibleStudioWorkspaces(
+  cwd: string,
+  options: StudioCallOptions,
+): { workspaces: StudioWorkspaceRef[]; diagnostics: StudioCallDiagnostic[] } {
+  const diagnostics: StudioCallDiagnostic[] = [];
+  const current = workspaceRef(currentWorkspaceRegistryEntry(cwd), true);
+  const byId = new Map<string, StudioWorkspaceRef>([[current.id, current]]);
+  try {
+    for (const entry of listRegisteredWorkspaces({ registryPath: options.registryPath })) {
+      if (!entry.enabled) {
+        continue;
+      }
+      const existing = byId.get(entry.id);
+      byId.set(
+        entry.id,
+        existing
+          ? { ...workspaceRef(entry, existing.current), current: existing.current }
+          : workspaceRef(entry, false),
+      );
+    }
+  } catch (error) {
+    diagnostics.push({
+      code: "workspace_registry_unreadable",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const workspaces = [...byId.values()];
+  if (options.scope === "current") {
+    return { workspaces: [current], diagnostics };
+  }
+  if (options.scope === "workspace" && options.workspaceId) {
+    return {
+      workspaces: workspaces.filter((workspace) => workspace.id === options.workspaceId),
+      diagnostics,
+    };
+  }
+  return { workspaces, diagnostics };
+}
+
+function resolveStudioWorkspace(cwd: string, options: StudioCallOptions): StudioWorkspaceRef {
+  if (!options.workspaceId) {
+    return workspaceRef(currentWorkspaceRegistryEntry(cwd), true);
+  }
+  const entry = resolveRegisteredWorkspace(options.workspaceId, {
+    currentWorkspace: cwd,
+    registryPath: options.registryPath,
+  });
+  if (!entry) {
+    throw new Error(`workspace not found: ${options.workspaceId}`);
+  }
+  return workspaceRef(entry, entry.id === currentWorkspaceRegistryEntry(cwd).id);
+}
+
+function workspaceRef(entry: WorkspaceRegistryEntry, current: boolean): StudioWorkspaceRef {
+  return {
+    id: entry.id,
+    label: entry.label,
+    path: entry.path,
+    current,
+  };
+}
+
+function resolveStudioCallDirectory(callId: string, workspace: string): string {
+  if (!/^[A-Za-z0-9._-]+$/.test(callId)) {
+    throw new Error(`invalid call id: ${callId}`);
+  }
+  const callsDir = path.resolve(workspace, ".agentmesh", "calls");
+  const callDir = path.resolve(callsDir, callId);
+  const relative = path.relative(callsDir, callDir);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`invalid call id: ${callId}`);
+  }
+  if (!existsSync(path.join(callDir, "call.json"))) {
+    throw new Error(`call not found: ${callId}`);
+  }
+  return callDir;
+}
+
+function compareStudioCalls(left: StudioCallSummary, right: StudioCallSummary): number {
+  return right.created_at.localeCompare(left.created_at)
+    || left.workspace.label.localeCompare(right.workspace.label)
+    || left.id.localeCompare(right.id);
 }
 
 function readOutputPreview(
@@ -337,6 +475,14 @@ function isInside(root: string, value: string): boolean {
 function isReadableFile(filePath: string): boolean {
   try {
     return existsSync(filePath) && statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isReadableDirectory(filePath: string): boolean {
+  try {
+    return existsSync(filePath) && statSync(filePath).isDirectory();
   } catch {
     return false;
   }

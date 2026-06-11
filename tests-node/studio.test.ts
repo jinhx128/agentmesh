@@ -24,6 +24,7 @@ import {
   type DirectCallRecord,
   readCallRecord,
 } from "../packages/runtime/src/calls/history.js";
+import { registerWorkspace } from "../packages/runtime/src/workspaces/registry.js";
 import {
   listStudioRuns,
   readStudioArtifactPreview,
@@ -307,7 +308,7 @@ test("Studio packet browser lists runs and reads packet details", () => {
     ],
   );
 
-  const runs = listStudioRuns({ cwd: workspace });
+  const runs = listStudioRuns({ cwd: workspace, scope: "current" });
   assert.deepEqual(runs.map((run) => run.run_id), ["run-new", "run-old"]);
   assert.equal(runs[0].status, "needs_decision");
   assert.equal(runs[0].latest_event, "stage.completed");
@@ -769,7 +770,7 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   assert.match(html, /AgentMesh/);
   assert.doesNotMatch(html, /AgentMesh Studio/);
 
-  const runs = await fetchJson(`${url}/api/runs`) as {
+  const runs = await fetchJson(`${url}/api/runs?scope=current`) as {
     runs: Array<{ run_id: string }>;
   };
   assert.deepEqual(runs.runs.map((run) => run.run_id), ["server-run"]);
@@ -793,12 +794,111 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   assert.match(preview.content, /server-run/);
 });
 
+test("Studio server aggregates runs from registered workspaces", async () => {
+  const currentWorkspace = makeWorkspace();
+  const remoteWorkspace = makeWorkspace();
+  test.after(() => {
+    rmSync(currentWorkspace, { recursive: true, force: true });
+    rmSync(remoteWorkspace, { recursive: true, force: true });
+  });
+  const restoreHome = isolateHome(currentWorkspace);
+  try {
+    writeRun(
+      currentWorkspace,
+      "current-run",
+      {
+        status: "running",
+        created_at: "2026-06-10T08:00:00.000Z",
+        updated_at: "2026-06-10T08:01:00.000Z",
+      },
+      [
+        {
+          schema_version: 1,
+          timestamp: "2026-06-10T08:00:00.000Z",
+          event: "run.created",
+        },
+      ],
+    );
+    writeRun(
+      remoteWorkspace,
+      "remote-run",
+      {
+        status: "needs_decision",
+        created_at: "2026-06-10T09:00:00.000Z",
+        updated_at: "2026-06-10T09:01:00.000Z",
+      },
+      [
+        {
+          schema_version: 1,
+          timestamp: "2026-06-10T09:00:00.000Z",
+          event: "run.created",
+        },
+        {
+          schema_version: 1,
+          timestamp: "2026-06-10T09:01:00.000Z",
+          event: "stage.completed",
+          stage: "plan",
+        },
+      ],
+    );
+    const remoteEntry = registerWorkspace(remoteWorkspace, {
+      label: "Remote Runs",
+      now: "2026-06-10T09:02:00.000Z",
+    });
+
+    const { server, url } = await listen(createStudioServer({ cwd: currentWorkspace }));
+    try {
+      const index = await fetchJson(`${url}/api/runs`) as {
+        runs: Array<{
+          run_id: string;
+          workspace: { id: string; label: string; path: string; current: boolean };
+        }>;
+        workspaces: Array<{ id: string; current: boolean }>;
+        diagnostics: unknown[];
+      };
+      assert.deepEqual(index.runs.map((run) => run.run_id), ["remote-run", "current-run"]);
+      assert.equal(index.runs[0].workspace.id, remoteEntry.id);
+      assert.equal(index.runs[0].workspace.label, "Remote Runs");
+      assert.equal(index.runs[0].workspace.path, realpathSync(remoteWorkspace));
+      assert.equal(index.runs[0].workspace.current, false);
+      assert.equal(index.runs[1].workspace.current, true);
+      assert.equal(index.workspaces.length, 2);
+      assert.deepEqual(index.diagnostics, []);
+
+      const localOnlyDetail = await fetch(`${url}/api/runs/remote-run`);
+      assert.equal(localOnlyDetail.status, 404);
+      assert.match(await localOnlyDetail.text(), /run not found/);
+
+      const detail = await fetchJson(
+        `${url}/api/runs/remote-run?workspace_id=${remoteEntry.id}&event_offset=0&event_limit=2`,
+      ) as {
+        summary: { run_id: string; workspace: { id: string }; latest_event: string };
+        events: Array<{ event: string }>;
+      };
+      assert.equal(detail.summary.workspace.id, remoteEntry.id);
+      assert.equal(detail.summary.latest_event, "stage.completed");
+      assert.deepEqual(detail.events.map((event) => event.event), ["run.created", "stage.completed"]);
+
+      const preview = await fetchJson(
+        `${url}/api/runs/remote-run/artifacts/request?workspace_id=${remoteEntry.id}`,
+      ) as { content: string };
+      assert.match(preview.content, /remote-run/);
+    } finally {
+      server.close();
+    }
+  } finally {
+    restoreHome();
+  }
+});
+
 test("Studio server exposes read-only direct call index and details", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const callsDir = path.join(workspace, CALLS_RELATIVE_DIR);
+  const restoreHome = isolateHome(workspace);
 
-  const adopted = createCallRecord({
+  try {
+    const adopted = createCallRecord({
     workspace,
     cwd: workspace,
     agentId: "caller",
@@ -1002,9 +1102,109 @@ test("Studio server exposes read-only direct call index and details", async () =
   assert.equal(missing.status, 404);
   assert.match(await missing.text(), /call not found/);
 
-  const invalid = await fetch(`${url}/api/calls/bad%2fid`);
-  assert.equal(invalid.status, 400);
-  assert.match(await invalid.text(), /invalid call id/);
+    const invalid = await fetch(`${url}/api/calls/bad%2fid`);
+    assert.equal(invalid.status, 400);
+    assert.match(await invalid.text(), /invalid call id/);
+  } finally {
+    restoreHome();
+  }
+});
+
+test("Studio server aggregates direct calls from registered workspaces", async () => {
+  const currentWorkspace = makeWorkspace();
+  const remoteWorkspace = makeWorkspace();
+  test.after(() => {
+    rmSync(currentWorkspace, { recursive: true, force: true });
+    rmSync(remoteWorkspace, { recursive: true, force: true });
+  });
+  const restoreHome = isolateHome(currentWorkspace);
+  try {
+    const current = createCallRecord({
+      workspace: currentWorkspace,
+      cwd: currentWorkspace,
+      agentId: "current-agent",
+      adapter: "command",
+      purpose: "review",
+      promptSource: "inline",
+      promptContent: "current prompt",
+    });
+    completeCallRecord(current, {
+      status: "success",
+      stdout: "current output\n",
+    });
+    writeCallRecordPatch(current.callDir, {
+      created_at: "2026-06-10T08:00:00.000Z",
+      started_at: "2026-06-10T08:00:00.000Z",
+      completed_at: "2026-06-10T08:00:01.000Z",
+      heartbeat_at: "2026-06-10T08:00:01.000Z",
+    });
+
+    const remote = createCallRecord({
+      workspace: remoteWorkspace,
+      cwd: remoteWorkspace,
+      agentId: "remote-agent",
+      adapter: "command",
+      purpose: "review",
+      promptSource: "inline",
+      promptContent: "remote prompt",
+    });
+    completeCallRecord(remote, {
+      status: "success",
+      stdout: "remote output\n",
+    });
+    writeCallRecordPatch(remote.callDir, {
+      created_at: "2026-06-10T09:00:00.000Z",
+      started_at: "2026-06-10T09:00:00.000Z",
+      completed_at: "2026-06-10T09:00:01.000Z",
+      heartbeat_at: "2026-06-10T09:00:01.000Z",
+    });
+    const remoteEntry = registerWorkspace(remoteWorkspace, {
+      label: "Remote Workspace",
+      now: "2026-06-10T09:01:00.000Z",
+    });
+
+    const { server, url } = await listen(createStudioServer({ cwd: currentWorkspace }));
+    try {
+      const index = await fetchJson(`${url}/api/calls`) as {
+        calls: Array<{
+          id: string;
+          workspace: { id: string; label: string; path: string; current: boolean };
+        }>;
+        workspaces: Array<{ id: string; current: boolean }>;
+        diagnostics: unknown[];
+      };
+
+      assert.deepEqual(index.calls.map((call) => call.id), [remote.record.id, current.record.id]);
+      assert.equal(index.calls[0].workspace.id, remoteEntry.id);
+      assert.equal(index.calls[0].workspace.label, "Remote Workspace");
+      assert.equal(index.calls[0].workspace.path, realpathSync(remoteWorkspace));
+      assert.equal(index.calls[0].workspace.current, false);
+      assert.equal(index.calls[1].workspace.current, true);
+      assert.equal(index.workspaces.length, 2);
+      assert.deepEqual(index.diagnostics, []);
+
+      const localOnlyDetail = await fetch(`${url}/api/calls/${remote.record.id}`);
+      assert.equal(localOnlyDetail.status, 404);
+      assert.match(await localOnlyDetail.text(), /call not found/);
+
+      const remoteDetail = await fetchJson(
+        `${url}/api/calls/${remote.record.id}?workspace_id=${remoteEntry.id}`,
+      ) as { call: { workspace: { id: string } }; output: { content: string } };
+      assert.equal(remoteDetail.call.workspace.id, remoteEntry.id);
+      assert.match(remoteDetail.output.content, /remote output/);
+
+      const adopted = await postJson(
+        `${url}/api/calls/${remote.record.id}/adoption?workspace_id=${remoteEntry.id}`,
+        { status: "accepted", reason: "used from global Studio" },
+      ) as { call: { adoption_status: string; workspace: { id: string } } };
+      assert.equal(adopted.call.adoption_status, "accepted");
+      assert.equal(adopted.call.workspace.id, remoteEntry.id);
+    } finally {
+      server.close();
+    }
+  } finally {
+    restoreHome();
+  }
 });
 
 test("Studio server appends direct call adoption actions without touching artifacts", async () => {
@@ -1237,7 +1437,7 @@ test("Studio server can serve a built Vite frontend without taking over APIs", a
   const escaped = await fetch(`${url}/assets/%2e%2e/index.html`);
   assert.equal(escaped.status, 404);
 
-  const runs = await fetchJson(`${url}/api/runs`) as {
+  const runs = await fetchJson(`${url}/api/runs?scope=current`) as {
     runs: Array<{ run_id: string }>;
   };
   assert.deepEqual(runs.runs.map((run) => run.run_id), ["built-asset-run"]);

@@ -77,12 +77,14 @@ import {
   loadStudioArtifactPreview,
   loadStudioRunDetail,
   loadStudioRuns,
-  nextSelectedRunId,
+  nextSelectedRunKey,
+  studioRunKey,
 } from "../api/runs.js";
 import {
   loadStudioCallDetail,
   loadStudioCalls,
-  nextSelectedCallId,
+  nextSelectedCallKey,
+  studioCallKey,
   submitStudioCallAdoption,
   type StudioCallAdoptionRequest,
   type StudioCallAdoptionResponse,
@@ -182,8 +184,8 @@ export function App(): ReactElement {
   const [callDetailState, setCallDetailState] = useState<CallDetailState>({ status: "empty" });
   const [selectedArtifactName, setSelectedArtifactName] = useState<string | undefined>(undefined);
   const [artifactPreviewState, setArtifactPreviewState] = useState<ArtifactPreviewState>({ status: "idle" });
-  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
-  const [selectedCallId, setSelectedCallId] = useState<string | undefined>(undefined);
+  const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>(undefined);
+  const [selectedCallKey, setSelectedCallKey] = useState<string | undefined>(undefined);
   const [eventOffset, setEventOffset] = useState<number | undefined>(undefined);
   const [runQuery, setRunQuery] = useState("");
   const [callQuery, setCallQuery] = useState("");
@@ -193,7 +195,7 @@ export function App(): ReactElement {
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState<AutoRefreshSeconds>(15);
   const [runDetailTab, setRunDetailTab] = useState<RunDetailTab>("details");
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
-  const previousSelectedRunIdRef = useRef<string | undefined>(undefined);
+  const previousSelectedRunKeyRef = useRef<string | undefined>(undefined);
 
   function loadRunsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
     if (options.showLoading !== false) {
@@ -202,11 +204,11 @@ export function App(): ReactElement {
     void loadStudioRuns(client)
       .then(({ runs }) => {
         setRunsState({ status: "ready", runs });
-        setSelectedRunId((current) => nextSelectedRunId(runs, current));
+        setSelectedRunKey((current) => nextSelectedRunKey(runs, current));
       })
       .catch((error: unknown) => {
         setRunsState({ status: "error", message: normalizeStudioApiError(error).message });
-        setSelectedRunId(undefined);
+        setSelectedRunKey(undefined);
       });
   }
 
@@ -217,11 +219,11 @@ export function App(): ReactElement {
     void loadStudioCalls(client)
       .then(({ calls }) => {
         setCallsState({ status: "ready", calls });
-        setSelectedCallId((current) => nextSelectedCallId(calls, current));
+        setSelectedCallKey((current) => nextSelectedCallKey(calls, current));
       })
       .catch((error: unknown) => {
         setCallsState({ status: "error", message: normalizeStudioApiError(error).message });
-        setSelectedCallId(undefined);
+        setSelectedCallKey(undefined);
       });
   }
 
@@ -356,21 +358,26 @@ export function App(): ReactElement {
   }, [apiClient, autoRefreshSeconds, navigatorView]);
 
   useEffect(() => {
-    const previousRunId = previousSelectedRunIdRef.current;
-    previousSelectedRunIdRef.current = selectedRunId;
-    setRunDetailTab((current) => runDetailTabAfterRunSelection(previousRunId, selectedRunId, current));
-  }, [selectedRunId]);
+    const previousRunKey = previousSelectedRunKeyRef.current;
+    previousSelectedRunKeyRef.current = selectedRunKey;
+    setRunDetailTab((current) => runDetailTabAfterRunSelection(previousRunKey, selectedRunKey, current));
+  }, [selectedRunKey]);
+
+  const selectedRun = runsState.status === "ready"
+    ? runsState.runs.find((run) => studioRunKey(run) === selectedRunKey)
+    : undefined;
 
   useEffect(() => {
-    if (!apiClient || !selectedRunId) {
+    if (!apiClient || !selectedRun) {
       setRunDetailState({ status: "empty" });
       return;
     }
     let active = true;
     setRunDetailState({ status: "loading" });
-    void loadStudioRunDetail(apiClient, selectedRunId, {
+    void loadStudioRunDetail(apiClient, selectedRun.run_id, {
       ...(eventOffset !== undefined ? { eventOffset } : {}),
       eventLimit: EVENT_PAGE_LIMIT,
+      workspaceId: selectedRun.workspace.id,
     })
       .then((detail) => {
         if (active) {
@@ -385,16 +392,20 @@ export function App(): ReactElement {
     return () => {
       active = false;
     };
-  }, [apiClient, selectedRunId, eventOffset, runDetailReloadKey]);
+  }, [apiClient, selectedRun?.run_id, selectedRun?.workspace.id, eventOffset, runDetailReloadKey]);
+
+  const selectedCall = callsState.status === "ready"
+    ? callsState.calls.find((call) => studioCallKey(call) === selectedCallKey)
+    : undefined;
 
   useEffect(() => {
-    if (!apiClient || !selectedCallId) {
+    if (!apiClient || !selectedCall) {
       setCallDetailState({ status: "empty" });
       return;
     }
     let active = true;
     setCallDetailState({ status: "loading" });
-    void loadStudioCallDetail(apiClient, selectedCallId)
+    void loadStudioCallDetail(apiClient, selectedCall.id, selectedCall.workspace.id)
       .then((detail) => {
         if (active) {
           setCallDetailState({ status: "ready", detail });
@@ -408,10 +419,11 @@ export function App(): ReactElement {
     return () => {
       active = false;
     };
-  }, [apiClient, selectedCallId]);
+  }, [apiClient, selectedCall?.id, selectedCall?.workspace.id]);
 
   const selectedDetail = runDetailState.status === "ready" ? runDetailState.detail : undefined;
   const selectedDetailRunId = selectedDetail?.summary.run_id;
+  const selectedDetailWorkspaceId = selectedDetail?.summary.workspace.id;
   const artifactNamesKey = useMemo(() => {
     return selectedDetail
       ? sortStudioArtifacts(selectedDetail).map((artifact) => artifact.name).join("\0")
@@ -433,13 +445,18 @@ export function App(): ReactElement {
   }, [selectedDetailRunId, artifactNamesKey]);
 
   useEffect(() => {
-    if (!apiClient || !selectedDetailRunId || !selectedArtifactName) {
+    if (!apiClient || !selectedDetailRunId || !selectedDetailWorkspaceId || !selectedArtifactName) {
       setArtifactPreviewState({ status: "idle" });
       return;
     }
     let active = true;
     setArtifactPreviewState({ status: "loading", artifactName: selectedArtifactName });
-    void loadStudioArtifactPreview(apiClient, selectedDetailRunId, selectedArtifactName)
+    void loadStudioArtifactPreview(
+      apiClient,
+      selectedDetailRunId,
+      selectedArtifactName,
+      selectedDetailWorkspaceId,
+    )
       .then((preview) => {
         if (active) {
           setArtifactPreviewState({ status: "ready", preview });
@@ -457,7 +474,7 @@ export function App(): ReactElement {
     return () => {
       active = false;
     };
-  }, [apiClient, selectedDetailRunId, selectedArtifactName]);
+  }, [apiClient, selectedDetailRunId, selectedDetailWorkspaceId, selectedArtifactName]);
 
   const overviewState: RunOverviewState = bootstrapState.status === "loading"
     ? { status: "loading" }
@@ -568,10 +585,15 @@ export function App(): ReactElement {
   async function submitCallAdoption(
     request: StudioCallAdoptionRequest,
   ): Promise<StudioCallAdoptionResponse> {
-    if (!apiClient || !selectedCallId) {
+    if (!apiClient || !selectedCall) {
       throw new Error("AgentMesh API is not ready.");
     }
-    const response = await submitStudioCallAdoption(apiClient, selectedCallId, request);
+    const response = await submitStudioCallAdoption(
+      apiClient,
+      selectedCall.id,
+      request,
+      selectedCall.workspace.id,
+    );
     if (response.ok && "call" in response.payload) {
       setCallDetailState({ status: "ready", detail: response.payload });
       loadCallsWithClient(apiClient);
@@ -692,7 +714,7 @@ export function App(): ReactElement {
             {navigatorView === "calls" ? (
               <CallNavigator
                 state={callsState}
-                selectedCallId={workspaceView === "calls" ? selectedCallId : undefined}
+                selectedCallKey={workspaceView === "calls" ? selectedCallKey : undefined}
                 query={callQuery}
                 toolbar={navigatorToolbar}
                 autoRefreshSeconds={autoRefreshSeconds}
@@ -703,8 +725,8 @@ export function App(): ReactElement {
                     loadCallsWithClient(apiClient);
                   }
                 }}
-                onSelectCall={(callId) => {
-                  setSelectedCallId(callId);
+                onSelectCall={(callKey) => {
+                  setSelectedCallKey(callKey);
                   setNavigatorView("calls");
                   setWorkspaceView("calls");
                 }}
@@ -712,7 +734,7 @@ export function App(): ReactElement {
             ) : (
               <RunNavigator
                 state={runsState}
-                selectedRunId={workspaceView === "runs" ? selectedRunId : undefined}
+                selectedRunKey={workspaceView === "runs" ? selectedRunKey : undefined}
                 query={runQuery}
                 toolbar={navigatorToolbar}
                 autoRefreshSeconds={autoRefreshSeconds}
@@ -723,9 +745,9 @@ export function App(): ReactElement {
                     loadRunsWithClient(apiClient);
                   }
                 }}
-                onSelectRun={(runId) => {
-                  setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunId, runId, current));
-                  setSelectedRunId(runId);
+                onSelectRun={(runKey) => {
+                  setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunKey, runKey, current));
+                  setSelectedRunKey(runKey);
                   setEventOffset(undefined);
                   setNavigatorView("runs");
                   setWorkspaceView("runs");
@@ -769,7 +791,7 @@ export function App(): ReactElement {
                 </Tabs.Panel>
                 <Tabs.Panel value="actions" pt="md">
                   <SafeActionsPanel
-                    selectedRunId={selectedRunId}
+                    selectedRunId={selectedRun?.workspace.current ? selectedRun.run_id : undefined}
                     onSubmit={submitSafeAction}
                     onSettled={refreshAfterMutation}
                   />

@@ -47,7 +47,8 @@ import {
   loadStudioArtifactPreview,
   loadStudioRunDetail,
   loadStudioRuns,
-  nextSelectedRunId,
+  nextSelectedRunKey,
+  studioRunKey,
   type StudioArtifactPreview,
   type StudioRunDetail,
   type StudioRunSummary,
@@ -55,7 +56,8 @@ import {
 import {
   loadStudioCallDetail,
   loadStudioCalls,
-  nextSelectedCallId,
+  nextSelectedCallKey,
+  studioCallKey,
   submitStudioCallAdoption,
   type StudioCallDetail,
   type StudioCallSummary,
@@ -499,7 +501,8 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
 });
 
 test("Run and call navigators render search, refresh, selection and empty states", () => {
-  const runs = renderRunNavigator({ status: "ready", runs: studioRunSummariesFixture() }, "run-2", "review");
+  const runKey = studioRunKey(studioRunSummariesFixture()[1]);
+  const runs = renderRunNavigator({ status: "ready", runs: studioRunSummariesFixture() }, runKey, "review");
   assert.match(runs, /aria-label="搜索运行"/);
   assert.match(runs, /title="刷新运行"/);
   assert.match(runs, /data-studio-section="navigator-auto-refresh"/);
@@ -514,7 +517,8 @@ test("Run and call navigators render search, refresh, selection and empty states
   assert.match(renderRunNavigator({ status: "ready", runs: [] }, undefined, ""), /暂无运行。/);
   assert.match(renderRunNavigator({ status: "error", message: "no runs" }, undefined, ""), /运行加载失败/);
 
-  const calls = renderCallNavigator({ status: "ready", calls: studioCallSummariesFixture() }, "call-1", "review");
+  const callKey = studioCallKey(studioCallSummariesFixture()[0]);
+  const calls = renderCallNavigator({ status: "ready", calls: studioCallSummariesFixture() }, callKey, "review");
   assert.match(calls, /aria-label="搜索调用"/);
   assert.match(calls, /title="刷新调用"/);
   assert.match(calls, /data-studio-section="navigator-auto-refresh"/);
@@ -1229,10 +1233,12 @@ test("Studio API clients encode ids and preserve non-2xx mutation payloads", asy
 });
 
 test("Selection helpers preserve current ids when still present", () => {
-  assert.equal(nextSelectedRunId(studioRunSummariesFixture(), "run-2"), "run-2");
-  assert.equal(nextSelectedRunId(studioRunSummariesFixture(), "missing"), "run-1");
-  assert.equal(nextSelectedCallId(studioCallSummariesFixture(), "call-1"), "call-1");
-  assert.equal(nextSelectedCallId(studioCallSummariesFixture(), "missing"), "call-1");
+  const runKey = studioRunKey(studioRunSummariesFixture()[1]);
+  assert.equal(nextSelectedRunKey(studioRunSummariesFixture(), runKey), runKey);
+  assert.equal(nextSelectedRunKey(studioRunSummariesFixture(), "missing"), studioRunKey(studioRunSummariesFixture()[0]));
+  const callKey = studioCallKey(studioCallSummariesFixture()[0]);
+  assert.equal(nextSelectedCallKey(studioCallSummariesFixture(), callKey), callKey);
+  assert.equal(nextSelectedCallKey(studioCallSummariesFixture(), "missing"), callKey);
   assert.equal(runDetailTabAfterRunSelection("run-1", "run-1", "artifacts"), "artifacts");
   assert.equal(runDetailTabAfterRunSelection("run-1", "run-2", "artifacts"), "details");
   assert.equal(runDetailTabAfterRunSelection(undefined, "run-1", "events"), "details");
@@ -1374,12 +1380,12 @@ function renderPresetManualFields(): string {
 
 function renderRunNavigator(
   state: RunNavigatorState,
-  selectedRunId: string | undefined,
+  selectedRunKey: string | undefined,
   query: string,
 ): string {
   return renderStudioElement(React.createElement(RunNavigator, {
     state,
-    selectedRunId,
+    selectedRunKey,
     query,
     toolbar: React.createElement("div", { "data-studio-section": "test-switch" }, "Runs Calls"),
     autoRefreshSeconds: 0,
@@ -1392,12 +1398,12 @@ function renderRunNavigator(
 
 function renderCallNavigator(
   state: CallNavigatorState,
-  selectedCallId: string | undefined,
+  selectedCallKey: string | undefined,
   query: string,
 ): string {
   return renderStudioElement(React.createElement(CallNavigator, {
     state,
-    selectedCallId,
+    selectedCallKey,
     query,
     toolbar: React.createElement("div", { "data-studio-section": "test-switch" }, "Runs Calls"),
     autoRefreshSeconds: 0,
@@ -1558,6 +1564,12 @@ function studioRunSummariesFixture(): StudioRunSummary[] {
   return [
     {
       run_id: "run-1",
+      workspace: {
+        id: "ws-project",
+        label: "project",
+        path: "/workspace/project",
+        current: true,
+      },
       status: "running",
       workflow: "w-7db15660",
       latest_event: "stage.started",
@@ -1567,6 +1579,12 @@ function studioRunSummariesFixture(): StudioRunSummary[] {
     },
     {
       run_id: "run-2",
+      workspace: {
+        id: "ws-project",
+        label: "project",
+        path: "/workspace/project",
+        current: true,
+      },
       status: "needs_decision",
       workflow: "w-9d94d0db",
       latest_event: "review.completed",
@@ -1776,6 +1794,12 @@ function studioCallSummaryFixture(): StudioCallSummary {
   return {
     schema_version: 1,
     id: "call-1",
+    workspace: {
+      id: "ws-project",
+      label: "project",
+      path: "/workspace/project",
+      current: true,
+    },
     agent_id: "reviewer",
     adapter: "codex",
     model: "gpt-5.5",
@@ -2166,7 +2190,13 @@ function mutationResponseFixture(): StudioMutationResponse {
 
 function apiPayloadFor(pathname: string): unknown {
   if (pathname === "/api/runs") {
-    return { runs: studioRunSummariesFixture() };
+    return {
+      schema_version: 1,
+      total: studioRunSummariesFixture().length,
+      runs: studioRunSummariesFixture(),
+      workspaces: [studioRunSummariesFixture()[0].workspace],
+      diagnostics: [],
+    };
   }
   if (pathname === "/api/runs/run-1") {
     return studioRunDetailFixture();
@@ -2187,6 +2217,8 @@ function apiPayloadFor(pathname: string): unknown {
       total: 1,
       calls: studioCallSummariesFixture(),
       groups: [],
+      workspaces: [studioCallSummaryFixture().workspace],
+      diagnostics: [],
     };
   }
   if (pathname === "/api/calls/call-1" || pathname === "/api/calls/call-1/adoption") {

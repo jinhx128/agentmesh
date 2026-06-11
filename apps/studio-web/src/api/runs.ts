@@ -1,11 +1,29 @@
 import type { StudioApiClient } from "./client.js";
 
 export interface StudioRunsPayload {
+  schema_version?: 1;
+  total?: number;
   runs: StudioRunSummary[];
+  workspaces?: StudioWorkspaceRef[];
+  diagnostics?: StudioRunDiagnostic[];
+}
+
+export interface StudioWorkspaceRef {
+  id: string;
+  label: string;
+  path: string;
+  current: boolean;
+}
+
+export interface StudioRunDiagnostic {
+  code: string;
+  message: string;
+  workspace?: StudioWorkspaceRef;
 }
 
 export interface StudioRunSummary {
   run_id: string;
+  workspace: StudioWorkspaceRef;
   status: string;
   workflow?: string;
   latest_event?: string;
@@ -145,6 +163,7 @@ export interface StudioMarkdownSectionView {
 export interface StudioRunDetailOptions {
   eventOffset?: number;
   eventLimit?: number;
+  workspaceId?: string;
 }
 
 export function loadStudioRuns(client: StudioApiClient): Promise<StudioRunsPayload> {
@@ -163,6 +182,9 @@ export function loadStudioRunDetail(
   if (options.eventLimit !== undefined) {
     params.set("event_limit", String(options.eventLimit));
   }
+  if (options.workspaceId) {
+    params.set("workspace_id", options.workspaceId);
+  }
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return client.getJson<StudioRunDetail>(`/api/runs/${encodeURIComponent(runId)}${query}`);
 }
@@ -171,18 +193,26 @@ export function loadStudioArtifactPreview(
   client: StudioApiClient,
   runId: string,
   artifactName: string,
+  workspaceId?: string,
 ): Promise<StudioArtifactPreview> {
+  const query = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
   return client.getJson<StudioArtifactPreview>(
-    `/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactName)}`,
+    `/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactName)}${query}`,
   );
 }
 
-export function nextSelectedRunId(
-  runs: StudioRunSummary[],
-  currentRunId: string | undefined,
-): string | undefined {
-  if (currentRunId && runs.some((run) => run.run_id === currentRunId)) {
-    return currentRunId;
-  }
-  return runs[0]?.run_id;
+export function studioRunKey(run: StudioRunSummary): string {
+  return `${run.workspace.id}:${run.run_id}`;
 }
+
+export function nextSelectedRunKey(
+  runs: StudioRunSummary[],
+  currentRunKey: string | undefined,
+): string | undefined {
+  if (currentRunKey && runs.some((run) => studioRunKey(run) === currentRunKey)) {
+    return currentRunKey;
+  }
+  return runs[0] ? studioRunKey(runs[0]) : undefined;
+}
+
+export const nextSelectedRunId = nextSelectedRunKey;

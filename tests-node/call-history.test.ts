@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -21,6 +22,7 @@ import {
   readCallAdoptionEvents,
   readCallRecord,
 } from "../packages/runtime/src/calls/history.js";
+import { listRegisteredWorkspaces } from "../packages/runtime/src/workspaces/registry.js";
 import { cliPath, runCli } from "./helpers/write-side-runtime.js";
 
 function makeWorkspace(): string {
@@ -141,6 +143,16 @@ test("agentmesh call records successful direct call evidence in the workspace", 
   assert.match(readFileSync(path.join(callDir, "prompt.md"), "utf-8"), /hello call history/);
   assert.match(readFileSync(path.join(callDir, "output.md"), "utf-8"), /# Call Output/);
   assert.deepEqual(listCallRecords(workspace).map((item) => item.id), [call.id]);
+  assert.deepEqual(
+    listRegisteredWorkspaces({
+      registryPath: path.join(workspace, ".home", ".config", "agentmesh", "workspaces.json"),
+    }).map((entry) => ({
+      path: entry.path,
+      enabled: entry.enabled,
+      recorded: Boolean(entry.last_recorded_at),
+    })),
+    [{ path: realpathSync(workspace), enabled: true, recorded: true }],
+  );
 });
 
 test("agentmesh call records prompt-file evidence while adapters receive file content", () => {

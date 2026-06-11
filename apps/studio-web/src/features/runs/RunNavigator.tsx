@@ -17,6 +17,7 @@ import {
   AutoRefreshSelect,
   type AutoRefreshSeconds,
 } from "../navigation/AutoRefreshSelect.js";
+import { studioRunKey } from "../../api/runs.js";
 
 export type RunNavigatorState =
   | { status: "loading" }
@@ -25,14 +26,14 @@ export type RunNavigatorState =
 
 export interface RunNavigatorProps {
   state: RunNavigatorState;
-  selectedRunId?: string;
+  selectedRunKey?: string;
   query: string;
   toolbar?: ReactNode;
   autoRefreshSeconds: AutoRefreshSeconds;
   onQueryChange: (query: string) => void;
   onAutoRefreshSecondsChange: (seconds: AutoRefreshSeconds) => void;
   onRefresh: () => void;
-  onSelectRun: (runId: string) => void;
+  onSelectRun: (runKey: string) => void;
 }
 
 interface RunGroup {
@@ -42,7 +43,7 @@ interface RunGroup {
 
 export function RunNavigator({
   state,
-  selectedRunId,
+  selectedRunKey,
   query,
   toolbar,
   autoRefreshSeconds,
@@ -94,7 +95,7 @@ export function RunNavigator({
         <ScrollArea className="studio-nav-scroll" aria-label={t("runs")}>
           <RunListContent
             state={state}
-            selectedRunId={selectedRunId}
+            selectedRunKey={selectedRunKey}
             query={query}
             onSelectRun={onSelectRun}
           />
@@ -106,14 +107,14 @@ export function RunNavigator({
 
 function RunListContent({
   state,
-  selectedRunId,
+  selectedRunKey,
   query,
   onSelectRun,
 }: {
   state: RunNavigatorState;
-  selectedRunId: string | undefined;
+  selectedRunKey: string | undefined;
   query: string;
-  onSelectRun: (runId: string) => void;
+  onSelectRun: (runKey: string) => void;
 }): ReactElement {
   const { t } = useStudioCopy();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
@@ -155,9 +156,9 @@ function RunListContent({
             />
             {collapsed ? null : group.runs.map((run) => (
               <RunButton
-                key={run.run_id}
+                key={studioRunKey(run)}
                 run={run}
-                selected={run.run_id === selectedRunId}
+                selected={studioRunKey(run) === selectedRunKey}
                 onSelectRun={onSelectRun}
               />
             ))}
@@ -213,11 +214,12 @@ function RunButton({
 }: {
   run: StudioRunSummary;
   selected: boolean;
-  onSelectRun: (runId: string) => void;
+  onSelectRun: (runKey: string) => void;
 }): ReactElement {
   const { t } = useStudioCopy();
   const updatedAt = runListTimestamp(run);
   const meta = [
+    run.workspace.label,
     run.workflow ?? "unknown",
     run.status,
     run.latest_event ?? t("latestEventFallback"),
@@ -233,8 +235,9 @@ function RunButton({
       py={8}
       px="sm"
       data-run={run.run_id}
+      data-workspace={run.workspace.id}
       aria-current={selected ? "true" : undefined}
-      onClick={() => onSelectRun(run.run_id)}
+      onClick={() => onSelectRun(studioRunKey(run))}
     >
       <Stack gap={2} align="stretch" w="100%">
         <Text className="studio-nav-item-title" size="sm" fw={800} ta="left" truncate="end">{run.run_id}</Text>
@@ -276,6 +279,8 @@ function filterRunSummaries(runs: StudioRunSummary[], query: string): StudioRunS
     run.workflow,
     run.status,
     run.latest_event,
+    run.workspace.label,
+    run.workspace.path,
   ].some((value) => String(value ?? "").toLocaleLowerCase().includes(normalized)));
 }
 

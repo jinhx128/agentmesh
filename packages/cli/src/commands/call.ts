@@ -14,6 +14,7 @@ import {
   validateWorkspaceOutputPath,
   type CallRecordStatus,
 } from "@agentmesh/runtime/src/calls/history.js";
+import { recordWorkspaceActivity } from "@agentmesh/runtime/src/workspaces/registry.js";
 import { optionValue } from "../flags.js";
 
 export async function call(args: string[], configPath?: string): Promise<number> {
@@ -56,6 +57,9 @@ export async function call(args: string[], configPath?: string): Promise<number>
           ? readFileSync(promptFile, { encoding: "utf-8" })
           : prompt,
       });
+  if (created) {
+    recordCallWorkspaceActivity(process.cwd());
+  }
 
   try {
     const result = await runAgentCallAsync({
@@ -92,6 +96,14 @@ export async function call(args: string[], configPath?: string): Promise<number>
       });
     }
     throw error;
+  }
+}
+
+function recordCallWorkspaceActivity(workspace: string): void {
+  try {
+    recordWorkspaceActivity(workspace);
+  } catch {
+    // Registry visibility is best-effort; the call record itself is the source of truth.
   }
 }
 

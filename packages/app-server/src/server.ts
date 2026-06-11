@@ -3,9 +3,13 @@ import type { AddressInfo } from "node:net";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import {
+  isInvalidStudioRunIdError,
+  isMissingStudioArtifactError,
+  isMissingStudioRunError,
   readStudioArtifactPreview,
   readStudioCompatibility,
   readStudioRun,
+  listStudioRunIndex,
   listStudioRuns,
 } from "./packet-browser.js";
 import {
@@ -227,14 +231,20 @@ function handleStudioRequest(
     if (!requireMethod(request, response, "GET")) {
       return;
     }
-    sendJson(response, 200, { runs: listStudioRuns({ cwd }) });
+    sendJson(response, 200, listStudioRunIndex({
+      cwd,
+      ...studioWorkspaceQueryOptions(url.searchParams),
+    }));
     return;
   }
   if (url.pathname === "/api/calls") {
     if (!requireMethod(request, response, "GET")) {
       return;
     }
-    sendJson(response, 200, listStudioCalls({ cwd }));
+    sendJson(response, 200, listStudioCalls({
+      cwd,
+      ...studioWorkspaceQueryOptions(url.searchParams),
+    }));
     return;
   }
   if (url.pathname === "/api/catalog") {
@@ -673,10 +683,23 @@ function handleStudioRequest(
     if (!requireMethod(request, response, "GET")) {
       return;
     }
-    sendJson(response, 200, readStudioRun(decodeURIComponent(runMatch[1]), {
-      cwd,
-      ...eventPageOptions(url.searchParams),
-    }));
+    try {
+      sendJson(response, 200, readStudioRun(decodeURIComponent(runMatch[1]), {
+        cwd,
+        ...eventPageOptions(url.searchParams),
+        ...studioWorkspaceQueryOptions(url.searchParams),
+      }));
+    } catch (error) {
+      if (isInvalidStudioRunIdError(error)) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      if (isMissingStudioRunError(error)) {
+        sendJson(response, 404, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
   const callAdoptionMatch = rawPathname.match(/^\/api\/calls\/([^/]+)\/adoption$/);
@@ -695,6 +718,7 @@ function handleStudioRequest(
       .then((body) => {
         sendJson(response, 200, adoptStudioCall(callId, body as Record<string, unknown>, {
           cwd,
+          ...studioWorkspaceQueryOptions(url.searchParams),
         }));
       })
       .catch((error) => {
@@ -726,7 +750,10 @@ function handleStudioRequest(
       return;
     }
     try {
-      sendJson(response, 200, readStudioCall(callId, { cwd }));
+      sendJson(response, 200, readStudioCall(callId, {
+        cwd,
+        ...studioWorkspaceQueryOptions(url.searchParams),
+      }));
     } catch (error) {
       if (isInvalidStudioCallIdError(error)) {
         sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -745,15 +772,30 @@ function handleStudioRequest(
     if (!requireMethod(request, response, "GET")) {
       return;
     }
-    sendJson(
-      response,
-      200,
-      readStudioArtifactPreview(
-        decodeURIComponent(artifactMatch[1]),
-        decodeURIComponent(artifactMatch[2]),
-        { cwd },
-      ),
-    );
+    try {
+      sendJson(
+        response,
+        200,
+        readStudioArtifactPreview(
+          decodeURIComponent(artifactMatch[1]),
+          decodeURIComponent(artifactMatch[2]),
+          {
+            cwd,
+            ...studioWorkspaceQueryOptions(url.searchParams),
+          },
+        ),
+      );
+    } catch (error) {
+      if (isInvalidStudioRunIdError(error)) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      if (isMissingStudioRunError(error) || isMissingStudioArtifactError(error)) {
+        sendJson(response, 404, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+    }
     return;
   }
   if (url.pathname === "/api/mutations") {
@@ -784,6 +826,18 @@ function handleStudioRequest(
     return;
   }
   sendJson(response, 404, { error: "not found" });
+}
+
+function studioWorkspaceQueryOptions(searchParams: URLSearchParams): {
+  scope?: "all" | "current" | "workspace";
+  workspaceId?: string;
+} {
+  const scope = searchParams.get("scope");
+  const workspaceId = searchParams.get("workspace_id") ?? undefined;
+  return {
+    ...(scope === "all" || scope === "current" || scope === "workspace" ? { scope } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+  };
 }
 
 function mutationStatusCode(result: { exit_code: number | null; error_code?: string }): number {
@@ -988,7 +1042,7 @@ function rejectGlobalResourceScopeQuery(searchParams: URLSearchParams, resource:
 }
 
 function activeAgentDeletionRefusal(agentId: string, cwd: string): string | undefined {
-  for (const run of listStudioRuns({ cwd })) {
+  for (const run of listStudioRuns({ cwd, scope: "current" })) {
     if (!String(run.status ?? "").includes("running")) {
       continue;
     }

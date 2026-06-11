@@ -17,9 +17,23 @@ export interface StudioCallWarning {
   path?: string;
 }
 
+export interface StudioWorkspaceRef {
+  id: string;
+  label: string;
+  path: string;
+  current: boolean;
+}
+
+export interface StudioCallDiagnostic {
+  code: string;
+  message: string;
+  workspace?: StudioWorkspaceRef;
+}
+
 export interface StudioCallSummary {
   schema_version: number;
   id: string;
+  workspace: StudioWorkspaceRef;
   agent_id: string | null;
   adapter: string;
   model: string | null;
@@ -63,6 +77,8 @@ export interface StudioCallsPayload {
   total: number;
   calls: StudioCallSummary[];
   groups: StudioCallGroup[];
+  workspaces: StudioWorkspaceRef[];
+  diagnostics: StudioCallDiagnostic[];
 }
 
 export interface StudioCallPreview {
@@ -121,27 +137,45 @@ export function loadStudioCalls(client: StudioApiClient): Promise<StudioCallsPay
 export function loadStudioCallDetail(
   client: StudioApiClient,
   callId: string,
+  workspaceId?: string,
 ): Promise<StudioCallDetail> {
-  return client.getJson<StudioCallDetail>(`/api/calls/${encodeURIComponent(callId)}`);
+  return client.getJson<StudioCallDetail>(
+    withWorkspaceId(`/api/calls/${encodeURIComponent(callId)}`, workspaceId),
+  );
 }
 
 export function submitStudioCallAdoption(
   client: StudioApiClient,
   callId: string,
   request: StudioCallAdoptionRequest,
+  workspaceId?: string,
 ): Promise<StudioCallAdoptionResponse> {
   return client.postJsonWithStatus<StudioCallDetail | StudioCallAdoptionError>(
-    `/api/calls/${encodeURIComponent(callId)}/adoption`,
+    withWorkspaceId(`/api/calls/${encodeURIComponent(callId)}/adoption`, workspaceId),
     request,
   );
 }
 
-export function nextSelectedCallId(
+export function studioCallKey(call: StudioCallSummary): string {
+  return `${call.workspace.id}:${call.id}`;
+}
+
+export function nextSelectedCallKey(
   calls: StudioCallSummary[],
-  currentCallId: string | undefined,
+  currentCallKey: string | undefined,
 ): string | undefined {
-  if (currentCallId && calls.some((call) => call.id === currentCallId)) {
-    return currentCallId;
+  if (currentCallKey && calls.some((call) => studioCallKey(call) === currentCallKey)) {
+    return currentCallKey;
   }
-  return calls[0]?.id;
+  return calls[0] ? studioCallKey(calls[0]) : undefined;
+}
+
+export const nextSelectedCallId = nextSelectedCallKey;
+
+function withWorkspaceId(url: string, workspaceId: string | undefined): string {
+  if (!workspaceId) {
+    return url;
+  }
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}workspace_id=${encodeURIComponent(workspaceId)}`;
 }

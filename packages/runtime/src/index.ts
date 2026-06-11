@@ -12,3 +12,4 @@ export * from "./packet/validate.js";
 export * from "./release/check.js";
 export * from "./spec/index.js";
 export * from "./workflow/registry.js";
+export * from "./workspaces/registry.js";

@@ -50,6 +50,7 @@ import { specCheck } from "./commands/spec.js";
 import { studio } from "./commands/studio.js";
 import { updateCommand } from "./commands/update.js";
 import { versionCommand } from "./commands/version.js";
+import { workspacesCommand } from "./commands/workspaces.js";
 import { workflowsAdd, workflowsList, workflowsRemove, workflowsShow, workflowsUpdate } from "./commands/workflows.js";
 import { parseGlobalArgs } from "./flags.js";
 
@@ -71,6 +72,10 @@ const COMMAND_USAGE_LINES = [
   "call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--no-record]",
   "cli detect [--json]",
   "calls adopt <call-id> --status accepted|rejected|superseded [--entrypoint <name>] [--reason <text>] [--related-commit <commit>] [--related-run-id <run-id>] [--superseded-by-call-id <call-id>] [--json]",
+  "workspaces list [--json]",
+  "workspaces add <path> [--label <label>] [--json]",
+  "workspaces enable <workspace-id> [--json]",
+  "workspaces disable <workspace-id> [--json]",
   "correction add --scope <scope> --statement <text> [--id <id>] [--source <source>] [--owner <owner>] [--json]",
   "correction list [--status <active|superseded>] [--scope <scope>] [--json]",
   "correction supersede <correction-id> --statement <text> [--scope <scope>] [--id <replacement-id>] [--source <source>] [--owner <owner>] [--json]",
@@ -171,6 +176,9 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     if (command === "calls" && subcommand === "adopt") {
       return callsAdopt(rest);
+    }
+    if (command === "workspaces") {
+      return workspacesCommand([subcommand, ...rest].filter((arg): arg is string => Boolean(arg)));
     }
     if (command === "correction" && subcommand === "add") {
       return correctionAdd(rest);

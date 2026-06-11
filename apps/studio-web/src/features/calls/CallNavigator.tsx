@@ -10,7 +10,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
-import type { StudioCallSummary } from "../../api/calls.js";
+import { studioCallKey, type StudioCallSummary } from "../../api/calls.js";
 import { useStudioCopy } from "../../app/copy.js";
 import { formatLocalDate, formatLocalTime } from "../../app/time.js";
 import {
@@ -25,14 +25,14 @@ export type CallNavigatorState =
 
 export interface CallNavigatorProps {
   state: CallNavigatorState;
-  selectedCallId?: string;
+  selectedCallKey?: string;
   query: string;
   toolbar?: ReactNode;
   autoRefreshSeconds: AutoRefreshSeconds;
   onQueryChange: (query: string) => void;
   onAutoRefreshSecondsChange: (seconds: AutoRefreshSeconds) => void;
   onRefresh: () => void;
-  onSelectCall: (callId: string) => void;
+  onSelectCall: (callKey: string) => void;
 }
 
 interface CallGroup {
@@ -42,7 +42,7 @@ interface CallGroup {
 
 export function CallNavigator({
   state,
-  selectedCallId,
+  selectedCallKey,
   query,
   toolbar,
   autoRefreshSeconds,
@@ -94,7 +94,7 @@ export function CallNavigator({
         <ScrollArea className="studio-nav-scroll" aria-label={t("calls")}>
           <CallListContent
             state={state}
-            selectedCallId={selectedCallId}
+            selectedCallKey={selectedCallKey}
             query={query}
             onSelectCall={onSelectCall}
           />
@@ -106,14 +106,14 @@ export function CallNavigator({
 
 function CallListContent({
   state,
-  selectedCallId,
+  selectedCallKey,
   query,
   onSelectCall,
 }: {
   state: CallNavigatorState;
-  selectedCallId: string | undefined;
+  selectedCallKey: string | undefined;
   query: string;
-  onSelectCall: (callId: string) => void;
+  onSelectCall: (callKey: string) => void;
 }): ReactElement {
   const { t } = useStudioCopy();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
@@ -155,9 +155,9 @@ function CallListContent({
             />
             {collapsed ? null : group.calls.map((call) => (
               <CallButton
-                key={call.id}
+                key={studioCallKey(call)}
                 call={call}
-                selected={call.id === selectedCallId}
+                selected={studioCallKey(call) === selectedCallKey}
                 onSelectCall={onSelectCall}
               />
             ))}
@@ -213,10 +213,11 @@ function CallButton({
 }: {
   call: StudioCallSummary;
   selected: boolean;
-  onSelectCall: (callId: string) => void;
+  onSelectCall: (callKey: string) => void;
 }): ReactElement {
   const { t } = useStudioCopy();
   const meta = [
+    call.workspace.label,
     call.agent_id ?? t("unknown"),
     call.adapter,
     call.status,
@@ -233,8 +234,9 @@ function CallButton({
       py={8}
       px="sm"
       data-call={call.id}
+      data-workspace={call.workspace.id}
       aria-current={selected ? "true" : undefined}
-      onClick={() => onSelectCall(call.id)}
+      onClick={() => onSelectCall(studioCallKey(call))}
     >
       <Stack gap={4} align="stretch" w="100%">
         <Text className="studio-nav-item-title" size="sm" fw={800} ta="left" truncate="end">{call.id}</Text>
@@ -244,6 +246,7 @@ function CallButton({
         </Group>
         <Group gap={4}>
           {call.unsupported_schema ? <Badge size="xs" color="orange">{t("unsupportedSchema")}</Badge> : null}
+          <Badge size="xs" variant="light">{call.workspace.label}</Badge>
           {call.warnings.some((warning) => warning.code === "dangling_output_path") ? <Badge size="xs" color="yellow">{t("danglingOutput")}</Badge> : null}
           {call.status === "stale" ? <Badge size="xs" color="gray">stale</Badge> : null}
         </Group>
@@ -284,6 +287,8 @@ function filterCallSummaries(calls: StudioCallSummary[], query: string): StudioC
     call.purpose,
     call.status,
     call.adoption_status,
+    call.workspace.label,
+    call.workspace.path,
     call.output_path,
     ...call.related_files,
     ...call.related_run_ids,
