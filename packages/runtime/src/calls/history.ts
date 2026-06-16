@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -11,6 +11,7 @@ import {
 import path from "node:path";
 
 import type { AgentCallResult } from "../adapters.js";
+import { formatLocalTimestamp, reserveTimestampedId } from "../generated-id.js";
 import { writeFileAtomic } from "../packet/io.js";
 
 export const CALL_RECORD_SCHEMA_VERSION = 1 as const;
@@ -103,6 +104,7 @@ export interface CreateCallRecordInput {
   purpose?: string;
   promptSource: CallPromptSource;
   promptContent?: string;
+  createdAt?: Date | string;
 }
 
 export interface CreatedCallRecord {
@@ -148,11 +150,11 @@ export function validateWorkspaceOutputPath(workspace: string, outputFile: strin
 }
 
 export function createCallRecord(input: CreateCallRecordInput): CreatedCallRecord {
-  const createdAt = new Date();
-  const id = `call-${formatCallIdTimestamp(createdAt)}-${randomUUID().slice(0, 8)}`;
-  const callDir = path.join(input.workspace, CALLS_RELATIVE_DIR, id);
+  const createdAt = input.createdAt === undefined ? new Date() : new Date(input.createdAt);
+  const reservation = reserveTimestampedId("call", path.join(input.workspace, CALLS_RELATIVE_DIR), createdAt);
+  const id = reservation.id;
+  const callDir = reservation.path;
   const now = createdAt.toISOString();
-  mkdirSync(callDir, { recursive: true });
 
   let promptRef: CallArtifactRef | null = null;
   if (input.promptContent !== undefined) {
@@ -197,18 +199,7 @@ export function createCallRecord(input: CreateCallRecordInput): CreatedCallRecor
 }
 
 export function formatCallIdTimestamp(date: Date): string {
-  return [
-    String(date.getFullYear()).padStart(4, "0"),
-    twoDigit(date.getMonth() + 1),
-    twoDigit(date.getDate()),
-    twoDigit(date.getHours()),
-    twoDigit(date.getMinutes()),
-    twoDigit(date.getSeconds()),
-  ].join("-");
-}
-
-function twoDigit(value: number): string {
-  return String(value).padStart(2, "0");
+  return formatLocalTimestamp(date);
 }
 
 export function completeCallRecord(

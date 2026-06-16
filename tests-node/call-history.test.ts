@@ -73,7 +73,7 @@ test("direct call ids use local second precision without ISO separators", () => 
     process.env.TZ = "Asia/Shanghai";
     assert.equal(
       formatCallIdTimestamp(new Date("2026-05-18T08:59:12.861Z")),
-      "2026-05-18-16-59-12",
+      "20260518165912",
     );
 
     const workspace = makeWorkspace();
@@ -86,8 +86,18 @@ test("direct call ids use local second precision without ISO separators", () => 
       agentId: "agent",
       adapter: "command",
       promptSource: "inline",
+      createdAt: new Date(2026, 5, 16, 10, 42, 52),
     });
-    assert.match(created.record.id, /^call-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{8}$/);
+    const second = createCallRecord({
+      workspace,
+      cwd: workspace,
+      agentId: "agent",
+      adapter: "command",
+      promptSource: "inline",
+      createdAt: new Date(2026, 5, 16, 10, 42, 52),
+    });
+    assert.equal(created.record.id, "call-20260616104252");
+    assert.equal(second.record.id, "call-20260616104252-1");
     assert.doesNotMatch(created.record.id, /T|Z|\.\d/);
   } finally {
     if (previousTimezone === undefined) {
@@ -153,6 +163,35 @@ test("agentmesh call records successful direct call evidence in the workspace", 
     })),
     [{ path: realpathSync(workspace), enabled: true, recorded: true }],
   );
+});
+
+test("agentmesh call default id uses call timestamp prefix", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const agent = path.join(workspace, "echo-agent.sh");
+  writeExecutable(
+    agent,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "cat >/dev/null",
+      "printf '# Call Output\\n'",
+      "",
+    ].join("\n"),
+  );
+  writeCommandAgentConfig(workspace, "caller", agent, ["stdin = true"]);
+
+  const result = runCli(workspace, [
+    "call",
+    "--agent",
+    "caller",
+    "--prompt",
+    "hello generated call id",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const call = readCallRecord(onlyCallDir(workspace));
+  assert.match(call.id, /^call-\d{14}$/);
 });
 
 test("agentmesh call records prompt-file evidence while adapters receive file content", () => {

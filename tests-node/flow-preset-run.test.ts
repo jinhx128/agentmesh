@@ -285,6 +285,24 @@ test("preset run records current workspace for Studio visibility", () => {
   assert.match(entries[0].last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("preset run default id uses preset timestamp prefix", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfigAndPreset(workspace);
+
+  const run = runCli(workspace, [
+    "run",
+    "review-duo",
+    "--task",
+    "Review with generated preset id.",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  const match = /^Run: (preset-\d{14})$/m.exec(run.stdout);
+  assert.ok(match, run.stdout);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", match[1])), true);
+});
+
 test("preset assignments must store agent ids instead of names", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

@@ -20,6 +20,19 @@ function makeWorkspace(): string {
   return mkdtempSync(path.join(tmpdir(), "agentmesh-studio-desktop-"));
 }
 
+function isolateHome(home: string): () => void {
+  mkdirSync(home, { recursive: true });
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  return () => {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+  };
+}
+
 function writeRun(workspace: string, runId: string): void {
   const runDir = path.join(workspace, ".agentmesh", "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -217,6 +230,8 @@ test("startStudioDesktopHost starts cookie-authenticated App Server and reads ru
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeRun(workspace, "desktop-run");
+  const restoreHome = isolateHome(path.join(workspace, "home"));
+  test.after(restoreHome);
 
   const started = await startStudioDesktopHost({
     workspace,
@@ -333,6 +348,8 @@ test("desktop App Server rejects unsafe host origin and CORS probes", async () =
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeRun(workspace, "origin-run");
+  const restoreHome = isolateHome(path.join(workspace, "home"));
+  test.after(restoreHome);
 
   const started = await startStudioDesktopHost({
     workspace,
@@ -612,14 +629,14 @@ test("desktop command-line tool install requires confirmation and writes an app-
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.5",
+      version: "0.1.6",
       different: false,
     });
     assert.equal(payload.command_line_tool.path_command.path, existingCommand);
     assert.equal(payload.command_line_tool.path_command.source, "external");
     const wrapper = readFileSync(wrapperPath, "utf-8");
     assert.match(wrapper, /agentmesh_app_managed=true/);
-    assert.match(wrapper, /agentmesh_cli_version=0\.1\.5/);
+    assert.match(wrapper, /agentmesh_cli_version=0\.1\.6/);
 
     const help = execFileSync(wrapperPath, ["--help"], {
       encoding: "utf-8",
@@ -687,7 +704,7 @@ test("desktop command-line tool install requires confirmation before replacing t
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.5",
+      version: "0.1.6",
       different: false,
     });
   } finally {
@@ -734,7 +751,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.5/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.6/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",

@@ -72,7 +72,7 @@ test("version commands report the installed AgentMesh version", () => {
 
   const shortVersion = runCli(workspace, ["--version"]);
   assert.equal(shortVersion.status, 0, shortVersion.stderr);
-  assert.equal(shortVersion.stdout.trim(), "0.1.5");
+  assert.equal(shortVersion.stdout.trim(), "0.1.6");
 
   const jsonVersion = runCli(workspace, ["version", "--json"]);
   assert.equal(jsonVersion.status, 0, jsonVersion.stderr);
@@ -82,14 +82,14 @@ test("version commands report the installed AgentMesh version", () => {
     update_check_hint: string;
   };
   assert.equal(payload.schema_version, 1);
-  assert.equal(payload.current_version, "0.1.5");
+  assert.equal(payload.current_version, "0.1.6");
   assert.equal(payload.update_check_hint, "agentmesh update check --json");
 });
 
 test("update check reports newer CLI and Desktop release assets", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.6"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.7"), async (releaseUrl) => {
     const check = await runCliAsync(workspace, ["update", "check", "--json"], {
       AGENTMESH_UPDATE_RELEASE_URL: releaseUrl,
     });
@@ -112,28 +112,28 @@ test("update check reports newer CLI and Desktop release assets", async () => {
       };
     };
     assert.equal(payload.schema_version, 1);
-    assert.equal(payload.current_version, "0.1.5");
-    assert.equal(payload.latest_version, "0.1.6");
+    assert.equal(payload.current_version, "0.1.6");
+    assert.equal(payload.latest_version, "0.1.7");
     assert.equal(payload.update_available, true);
     assert.equal(payload.cli.status, "update_available");
-    assert.equal(payload.cli.asset_name, "agentmesh-0.1.6.tgz");
-    assert.equal(payload.cli.asset_url, "https://example.invalid/agentmesh-0.1.6.tgz");
+    assert.equal(payload.cli.asset_name, "agentmesh-0.1.7.tgz");
+    assert.equal(payload.cli.asset_url, "https://example.invalid/agentmesh-0.1.7.tgz");
     assert.deepEqual(payload.cli.install_command, [
       "npm",
       "install",
       "-g",
-      "https://example.invalid/agentmesh-0.1.6.tgz",
+      "https://example.invalid/agentmesh-0.1.7.tgz",
     ]);
     assert.equal(payload.desktop.status, "manual_update_available");
-    assert.equal(payload.desktop.asset_name, "AgentMesh_0.1.6_aarch64.dmg");
-    assert.equal(payload.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.6_aarch64.dmg");
+    assert.equal(payload.desktop.asset_name, "AgentMesh_0.1.7_aarch64.dmg");
+    assert.equal(payload.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.7_aarch64.dmg");
   });
 });
 
 test("update check falls back to the release page when the API is rate limited", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleasePageFallbackServer("0.1.6", async ({ apiReleaseUrl, webReleaseUrl }) => {
+  await withReleasePageFallbackServer("0.1.7", async ({ apiReleaseUrl, webReleaseUrl }) => {
     const check = await runCliAsync(workspace, ["update", "check", "--json"], {
       AGENTMESH_UPDATE_RELEASE_URL: apiReleaseUrl,
       AGENTMESH_UPDATE_WEB_RELEASE_URL: webReleaseUrl,
@@ -154,22 +154,22 @@ test("update check falls back to the release page when the API is rate limited",
         asset_url?: string;
       };
     };
-    assert.equal(payload.latest_version, "0.1.6");
+    assert.equal(payload.latest_version, "0.1.7");
     assert.equal(payload.update_available, true);
-    assert.match(payload.release_url, /\/releases\/tag\/v0\.1\.6$/);
+    assert.match(payload.release_url, /\/releases\/tag\/v0\.1\.7$/);
     assert.equal(payload.cli.status, "update_available");
-    assert.equal(payload.cli.asset_name, "agentmesh-0.1.6.tgz");
-    assert.match(payload.cli.asset_url ?? "", /\/releases\/download\/v0\.1\.6\/agentmesh-0\.1\.6\.tgz$/);
+    assert.equal(payload.cli.asset_name, "agentmesh-0.1.7.tgz");
+    assert.match(payload.cli.asset_url ?? "", /\/releases\/download\/v0\.1\.7\/agentmesh-0\.1\.7\.tgz$/);
     assert.equal(payload.desktop.status, "manual_update_available");
-    assert.equal(payload.desktop.asset_name, "AgentMesh_0.1.6_aarch64.dmg");
-    assert.match(payload.desktop.asset_url ?? "", /\/releases\/download\/v0\.1\.6\/AgentMesh_0\.1\.6_aarch64\.dmg$/);
+    assert.equal(payload.desktop.asset_name, "AgentMesh_0.1.7_aarch64.dmg");
+    assert.match(payload.desktop.asset_url ?? "", /\/releases\/download\/v0\.1\.7\/AgentMesh_0\.1\.7_aarch64\.dmg$/);
   });
 });
 
 test("update install dry-run reports CLI command and Desktop manual download", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.6"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.7"), async (releaseUrl) => {
     const cli = await runCliAsync(workspace, ["update", "install", "--target", "cli", "--dry-run", "--json"], {
       AGENTMESH_UPDATE_RELEASE_URL: releaseUrl,
     });
@@ -185,7 +185,7 @@ test("update install dry-run reports CLI command and Desktop manual download", a
       "npm",
       "install",
       "-g",
-      "https://example.invalid/agentmesh-0.1.6.tgz",
+      "https://example.invalid/agentmesh-0.1.7.tgz",
     ]);
 
     const desktop = await runCliAsync(workspace, ["update", "install", "--target", "desktop", "--dry-run", "--json"], {
@@ -200,7 +200,7 @@ test("update install dry-run reports CLI command and Desktop manual download", a
     };
     assert.equal(desktopPayload.target, "desktop");
     assert.equal(desktopPayload.status, "manual_download");
-    assert.equal(desktopPayload.asset_url, "https://example.invalid/AgentMesh_0.1.6_aarch64.dmg");
+    assert.equal(desktopPayload.asset_url, "https://example.invalid/AgentMesh_0.1.7_aarch64.dmg");
     assert.match(desktopPayload.reason, /Desktop auto-update is not enabled/);
   });
 });
@@ -208,7 +208,7 @@ test("update install dry-run reports CLI command and Desktop manual download", a
 test("update install dry-run reports current when the release is not newer", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.5"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.6"), async (releaseUrl) => {
     const cli = await runCliAsync(workspace, ["update", "install", "--target", "cli", "--dry-run", "--json"], {
       AGENTMESH_UPDATE_RELEASE_URL: releaseUrl,
     });
@@ -221,7 +221,7 @@ test("update install dry-run reports current when the release is not newer", asy
     assert.deepEqual(cliPayload, {
       target: "cli",
       status: "current",
-      current_version: "0.1.5",
+      current_version: "0.1.6",
     });
 
     const desktop = await runCliAsync(workspace, ["update", "install", "--target", "desktop", "--dry-run", "--json"], {
@@ -236,7 +236,7 @@ test("update install dry-run reports current when the release is not newer", asy
     assert.deepEqual(desktopPayload, {
       target: "desktop",
       status: "current",
-      current_version: "0.1.5",
+      current_version: "0.1.6",
     });
   });
 });

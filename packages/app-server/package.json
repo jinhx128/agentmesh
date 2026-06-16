@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/app-server",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "AgentMesh local App Server HTTP API.",
@@ -12,8 +12,8 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/runtime": "0.1.5",
-    "@agentmesh/sdk": "0.1.5",
-    "@agentmesh/skills": "0.1.5"
+    "@agentmesh/runtime": "0.1.6",
+    "@agentmesh/sdk": "0.1.6",
+    "@agentmesh/skills": "0.1.6"
   }
 }

@@ -9,6 +9,7 @@ import {
   loadConfigWithSources,
   type DefaultStageAgentsConfig,
 } from "@agentmesh/runtime/src/config.js";
+import { reserveTimestampedId } from "@agentmesh/runtime/src/generated-id.js";
 import {
   attachStageArtifact,
   buildStagePrompt,
@@ -123,7 +124,7 @@ async function presetRun(
   ) {
     throw new Error("--user-gate or execution_policy.require_user_gate requires --decide current");
   }
-  const runId = optionValue(args, "--run-id") ?? `run-${Date.now()}`;
+  const runId = optionValue(args, "--run-id") ?? reserveTimestampedId("preset", path.join(cwd, ".agentmesh", "runs")).id;
   const mcpResources = optionValues(args, "--mcp-resource");
   const mcpResourceSpecs = parseMcpResourceSpecs(mcpResources);
   const excludeCorrections = optionValues(args, "--exclude-correction").map(validateCorrectionId);
@@ -241,7 +242,7 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
   if (workflowFile && workflow) {
     validateTemporaryWorkflowAgents({ plan, execute, verify, review, decide }, configPath);
   }
-  const runId = optionValue(args, "--run-id") ?? `run-${Date.now()}`;
+  const runId = optionValue(args, "--run-id") ?? reserveTimestampedId("workflow", path.join(cwd, ".agentmesh", "runs")).id;
   const mcpResources = optionValues(args, "--mcp-resource");
   const mcpResourceSpecs = parseMcpResourceSpecs(mcpResources);
   const excludeCorrections = optionValues(args, "--exclude-correction").map(validateCorrectionId);

@@ -105,15 +105,15 @@ test("workflow run writes workspace compatibility metadata", () => {
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.schema_version, 1);
   assert.equal(metadata.packet_schema_version, 1);
-  assert.equal(metadata.min_read_runtime_version, "0.1.5");
-  assert.equal(metadata.min_write_runtime_version, "0.1.5");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.5");
+  assert.equal(metadata.min_read_runtime_version, "0.1.6");
+  assert.equal(metadata.min_write_runtime_version, "0.1.6");
+  assert.equal(metadata.last_writer_runtime_version, "0.1.6");
   assert.equal(metadata.last_writer_entrypoint, "cli");
   assert.match(metadata.updated_at, /^\d{4}-\d{2}-\d{2}T/);
 
   const diagnostics = workspaceCompatibilityDiagnostics(workspace, { entrypoint: "cli" });
   assert.equal(diagnostics.decision, "read_write");
-  assert.equal(diagnostics.current_runtime_version, "0.1.5");
+  assert.equal(diagnostics.current_runtime_version, "0.1.6");
   assert.equal(diagnostics.current_entrypoint, "cli");
 });
 
@@ -144,6 +144,31 @@ test("workflow run records current workspace for Studio visibility", () => {
   assert.equal(entries[0].path, realpathSync(workspace));
   assert.equal(entries[0].enabled, true);
   assert.match(entries[0].last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("workflow run default id uses workflow timestamp prefix", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "generate workflow id",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  const match = /^Run: (workflow-\d{14})$/m.exec(run.stdout);
+  assert.ok(match, run.stdout);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", match[1])), true);
 });
 
 test("legacy workspace stays readable and first successful mutation backfills compatibility metadata", () => {
@@ -196,7 +221,7 @@ test("legacy workspace stays readable and first successful mutation backfills co
   assert.equal(attached.status, 0, attached.stderr);
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.last_writer_entrypoint, "cli");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.5");
+  assert.equal(metadata.last_writer_runtime_version, "0.1.6");
 });
 
 test("workspace compatibility diagnostics refuse unsupported reads and newer write runtimes", () => {
@@ -223,9 +248,9 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 99,
-    min_read_runtime_version: "0.1.5",
-    min_write_runtime_version: "0.1.5",
-    last_writer_runtime_version: "0.1.5",
+    min_read_runtime_version: "0.1.6",
+    min_write_runtime_version: "0.1.6",
+    last_writer_runtime_version: "0.1.6",
     last_writer_entrypoint: "desktop",
     updated_at: "2026-05-17T00:00:00.000Z",
   });
@@ -237,7 +262,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.5",
+    min_read_runtime_version: "0.1.6",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -251,7 +276,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   assert.equal(cliDiagnostics.status, 0, cliDiagnostics.stderr);
   const cliCompatibility = JSON.parse(cliDiagnostics.stdout);
   assert.equal(cliCompatibility.decision, "read_only");
-  assert.equal(cliCompatibility.current_runtime_version, "0.1.5");
+  assert.equal(cliCompatibility.current_runtime_version, "0.1.6");
   assert.equal(cliCompatibility.current_entrypoint, "cli");
   assert.equal(cliCompatibility.metadata.last_writer_entrypoint, "desktop");
 

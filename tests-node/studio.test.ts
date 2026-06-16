@@ -1127,6 +1127,7 @@ test("Studio server aggregates direct calls from registered workspaces", async (
       purpose: "review",
       promptSource: "inline",
       promptContent: "current prompt",
+      createdAt: "2026-06-10T08:00:00.000Z",
     });
     completeCallRecord(current, {
       status: "success",
@@ -1147,6 +1148,7 @@ test("Studio server aggregates direct calls from registered workspaces", async (
       purpose: "review",
       promptSource: "inline",
       promptContent: "remote prompt",
+      createdAt: "2026-06-10T09:00:00.000Z",
     });
     completeCallRecord(remote, {
       status: "success",
@@ -1680,7 +1682,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.5",
+    min_read_runtime_version: "0.1.6",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1700,7 +1702,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.5");
+  assert.equal(compatibility.current_runtime_version, "0.1.6");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -1709,7 +1711,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 test("Studio server exposes AgentMesh update diagnostics", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.6"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.7"), async (releaseUrl) => {
     const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
     process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
     const { server, url } = await listen(createStudioServer({ cwd: workspace }));
@@ -1724,18 +1726,18 @@ test("Studio server exposes AgentMesh update diagnostics", async () => {
       };
 
       assert.equal(update.schema_version, 1);
-      assert.equal(update.current_version, "0.1.5");
-      assert.equal(update.latest_version, "0.1.6");
+      assert.equal(update.current_version, "0.1.6");
+      assert.equal(update.latest_version, "0.1.7");
       assert.equal(update.update_available, true);
       assert.equal(update.cli.status, "update_available");
       assert.deepEqual(update.cli.install_command, [
         "npm",
         "install",
         "-g",
-        "https://example.invalid/agentmesh-0.1.6.tgz",
+        "https://example.invalid/agentmesh-0.1.7.tgz",
       ]);
       assert.equal(update.desktop.status, "manual_update_available");
-      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.6_aarch64.dmg");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.7_aarch64.dmg");
     } finally {
       if (previousReleaseUrl === undefined) {
         delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
@@ -1754,7 +1756,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.5",
+    min_read_runtime_version: "0.1.6",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",

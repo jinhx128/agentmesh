@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "AgentMesh command-line interface.",
@@ -11,9 +11,9 @@
     "agentmesh": "./src/cli.ts"
   },
   "dependencies": {
-    "@agentmesh/app-server": "0.1.5",
-    "@agentmesh/runtime": "0.1.5",
-    "@agentmesh/skills": "0.1.5",
-    "@agentmesh/sdk": "0.1.5"
+    "@agentmesh/app-server": "0.1.6",
+    "@agentmesh/runtime": "0.1.6",
+    "@agentmesh/skills": "0.1.6",
+    "@agentmesh/sdk": "0.1.6"
   }
 }
