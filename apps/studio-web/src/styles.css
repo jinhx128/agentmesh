@@ -214,6 +214,23 @@ button:not(:disabled),
   padding-right: 2px;
 }
 
+.run-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 16px;
+  align-items: start;
+}
+
+.run-workspace-main,
+.run-workspace-side {
+  min-width: 0;
+}
+
+.run-workspace-side {
+  position: sticky;
+  top: 0;
+}
+
 .studio-panel,
 .studio-metric {
   min-width: 0;
@@ -237,6 +254,84 @@ button:not(:disabled),
 
 .artifact-preview-panel .studio-code-block {
   max-height: min(70vh, 760px);
+}
+
+.artifact-preview-drawer .studio-code-block {
+  max-height: calc(100vh - 240px);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.artifact-preview-drawer-layout {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.artifact-preview-drawer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.artifact-preview-drawer-main .artifact-info-panel,
+.artifact-preview-drawer-main .studio-code-block {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.artifact-sidebar-panel {
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+}
+
+.artifact-sidebar-current-node {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.artifact-sidebar-list {
+  min-width: 0;
+}
+
+.artifact-sidebar-item {
+  width: 100%;
+  min-height: 42px;
+}
+
+.artifact-sidebar-item .mantine-Button-inner,
+.artifact-sidebar-item .mantine-Button-label {
+  width: 100%;
+  min-width: 0;
+}
+
+.artifact-sidebar-item .mantine-Button-label {
+  padding: 8px 10px;
+}
+
+.artifact-sidebar-item-row {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.artifact-sidebar-item-main {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.artifact-sidebar-item-status {
+  flex: 0 0 auto;
+}
+
+.artifact-sidebar-item[aria-current="true"] {
+  outline: 2px solid var(--mantine-color-agentmesh-6);
+  outline-offset: 1px;
 }
 
 .artifact-list-panel .artifact-flow {
@@ -523,6 +618,18 @@ button:not(:disabled),
 
   .studio-data-navigator {
     height: min(58vh, 460px);
+  }
+
+  .run-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .run-workspace-side {
+    position: static;
+  }
+
+  .artifact-sidebar-panel {
+    max-height: none;
   }
 
   .agent-create-field-grid {

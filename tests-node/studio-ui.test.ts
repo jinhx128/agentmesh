@@ -112,7 +112,10 @@ import {
   type RunOverviewState,
 } from "../apps/studio-web/src/features/runs/RunOverview.js";
 import {
+  ArtifactPreviewDrawer,
   ArtifactPreviewPanel,
+  ArtifactSidebarPanel,
+  artifactDisplayName,
   sortStudioArtifacts,
   type ArtifactPreviewState,
 } from "../apps/studio-web/src/features/artifacts/ArtifactPreviewPanel.js";
@@ -223,11 +226,17 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.match(app, />日志事件</);
   assert.match(app, />诊断</);
 
+  const appSource = readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8");
   const copySource = readFileSync(path.resolve("apps/studio-web/src/app/copy.ts"), "utf-8");
   const mainSource = readFileSync(path.resolve("apps/studio-web/src/main.tsx"), "utf-8");
+  assert.match(appSource, /navbar=\{\{\s*width:\s*300,\s*breakpoint:\s*"xs"\s*\}\}/);
+  assert.match(appSource, /if\s*\(\s*workspaceView !== "runs"\s*\)\s*\{[\s\S]*setArtifactDrawerOpened\(false\)/);
+  assert.match(appSource, /opened=\{artifactDrawerOpened && workspaceView === "runs"\}/);
+  assert.doesNotMatch(appSource, /opened=\{artifactDrawerOpened && runDetailState\.status === "ready"\}/);
   assert.doesNotMatch(copySource, /createContext|StudioI18nProvider|locale:/);
   assert.doesNotMatch(copySource, /StudioI18n|StudioMessage|i18n/i);
   assert.doesNotMatch(copySource, /chineseMessages|\bzh\s*:/);
+  assert.match(copySource, /artifactTotal:/);
   assert.doesNotMatch(mainSource, /StudioI18nProvider/);
 });
 
@@ -246,6 +255,7 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
   assert.match(frontendCss, /\.studio-data-switch\s*\{[^}]*min-height:\s*36px/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(220px,\s*280px\)/s);
   assert.match(frontendCss, /\.mantine-Tabs-list\s*\{[^}]*width:\s*fit-content/s);
   assert.match(frontendCss, /\.mantine-Tabs-list::before\s*\{[^}]*display:\s*none/s);
   assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\]\s*\{[^}]*background:\s*#ffffff/s);
@@ -276,6 +286,22 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.doesNotMatch(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*min-height:\s*122px;/s);
   assert.doesNotMatch(frontendCss, /\.artifact-node\s*\{[^}]*min-height:\s*138px;/s);
   assert.match(frontendCss, /\.artifact-preview-panel\s+\.studio-code-block\s*\{[^}]*max-height:\s*min\(70vh,\s*760px\)/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer\s+\.studio-code-block\s*\{[^}]*white-space:\s*pre;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer\s+\.studio-code-block\s*\{[^}]*overflow-wrap:\s*normal;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-layout\s*\{[^}]*width:\s*100%;/s);
+  assert.doesNotMatch(frontendCss, /--artifact-preview-drawer-main-width/);
+  assert.doesNotMatch(frontendCss, /\.artifact-preview-drawer-layout\s*\{[^}]*grid-template-columns:/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s*\{[^}]*display:\s*flex;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-panel,\s*\.artifact-preview-drawer-main\s+\.studio-code-block\s*\{[^}]*width:\s*100%;/s);
+  assert.doesNotMatch(frontendCss, /\.artifact-preview-drawer-gutter/);
+  assert.match(frontendCss, /\.artifact-sidebar-item\s*\{[^}]*min-height:\s*42px;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item\s+\.mantine-Button-label\s*\{[^}]*padding:\s*8px 10px;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-row\s*\{[^}]*align-items:\s*flex-start;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-row\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-main\s*\{[^}]*flex:\s*1 1 0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-main\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-status\s*\{[^}]*flex:\s*0 0 auto;/s);
   assert.match(frontendCss, /@media \(max-width:\s*36em\)/);
   assert.match(frontendCss, /\.studio-navbar\s*\{[^}]*position:\s*static !important/s);
   assert.match(frontendCss, /\.studio-navbar\s*\{[^}]*height:\s*auto !important/s);
@@ -654,7 +680,8 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(artifactHtml, /路径/);
   assert.match(artifactHtml, /output\.md/);
   assert.match(artifactHtml, /final output/);
-  assert.ok(artifactHtml.indexOf("产物信息") < artifactHtml.indexOf("预览: output.md"));
+  assert.ok(artifactHtml.indexOf("产物信息") < artifactHtml.indexOf("预览: 输出"));
+  assert.doesNotMatch(artifactHtml, /预览: output\.md/);
   assert.match(artifactHtml, /artifact-node/);
   assert.match(artifactHtml, /artifact-step/);
   assert.match(artifactHtml, /artifact-connector/);
@@ -662,6 +689,60 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(artifactHtml, /data-studio-section="artifact-generated-at"/);
   assert.doesNotMatch(artifactHtml, /生成时间 ·/);
   assert.match(artifactHtml, /2026-05-18/);
+  assert.doesNotMatch(artifactHtml, /共 2 个/);
+  assert.match(artifactHtml, /2 个产物/);
+  assert.equal(artifactDisplayName(detail.artifacts[0]), "提示词");
+  assert.equal(artifactDisplayName(detail.artifacts[1]), "输出");
+  assert.equal(artifactDisplayName({
+    name: "scope-confirm",
+    path: "docs/03-Scope确认.md",
+    kind: "markdown",
+    stage: "review",
+  }), "范围确认");
+  const sidebarHtml = renderStudioElement(React.createElement(ArtifactSidebarPanel, {
+    detail,
+    selectedArtifactName: "output.md",
+    onSelectArtifact: () => {},
+  }));
+  assert.match(sidebarHtml, /data-studio-section="current-node-artifacts"/);
+  assert.match(sidebarHtml, /当前节点/);
+  assert.match(sidebarHtml, /review/);
+  assert.match(sidebarHtml, /产物/);
+  assert.match(sidebarHtml, /提示词/);
+  assert.match(sidebarHtml, /输出/);
+  assert.match(sidebarHtml, /data-artifact-sidebar-item="output\.md"/);
+  assert.doesNotMatch(sidebarHtml, />output\.md</);
+  const artifactPreviewSource = readFileSync(
+    path.resolve("apps/studio-web/src/features/artifacts/ArtifactPreviewPanel.tsx"),
+    "utf-8",
+  );
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-item-row"/);
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-item-main"/);
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-item-status"/);
+  assert.match(artifactPreviewSource, /p=\{0\}/);
+  renderStudioElement(React.createElement(ArtifactPreviewDrawer, {
+    opened: true,
+    previewState: {
+      status: "ready",
+      preview: {
+        ...detail.artifacts[1],
+        content: "final output",
+        truncated: false,
+      },
+    },
+    onClose: () => {},
+  }));
+  assert.match(artifactPreviewSource, /size="50vw"/);
+  assert.match(artifactPreviewSource, /offset="clamp\(16px,\s*1\.5vw,\s*32px\)"/);
+  assert.match(artifactPreviewSource, /classNames=\{\{\s*content:\s*"artifact-preview-drawer"\s*\}\}/s);
+  assert.doesNotMatch(artifactPreviewSource, /withinPortal=\{false\}/);
+  assert.match(artifactPreviewSource, /data-studio-section="artifact-preview-drawer"/);
+  assert.match(artifactPreviewSource, /drawerTitle\(previewState,\s*t\)/);
+  assert.match(artifactPreviewSource, /previewContent\(previewState,\s*t\)/);
+  assert.match(artifactPreviewSource, /return artifactDisplayName\(state\.preview\)/);
+  assert.match(artifactPreviewSource, /className="artifact-preview-drawer-layout"/);
+  assert.match(artifactPreviewSource, /className="artifact-preview-drawer-main"/);
+  assert.doesNotMatch(artifactPreviewSource, /artifact-preview-drawer-gutter/);
 
   const eventHtml = renderEventLogView(detail);
   assert.match(eventHtml, /事件分页/);

@@ -90,7 +90,9 @@ import {
   type StudioCallAdoptionResponse,
 } from "../api/calls.js";
 import {
+  ArtifactPreviewDrawer,
   ArtifactPreviewPanel,
+  ArtifactSidebarPanel,
   sortStudioArtifacts,
   type ArtifactPreviewState,
 } from "../features/artifacts/ArtifactPreviewPanel.js";
@@ -184,6 +186,7 @@ export function App(): ReactElement {
   const [callDetailState, setCallDetailState] = useState<CallDetailState>({ status: "empty" });
   const [selectedArtifactName, setSelectedArtifactName] = useState<string | undefined>(undefined);
   const [artifactPreviewState, setArtifactPreviewState] = useState<ArtifactPreviewState>({ status: "idle" });
+  const [artifactDrawerOpened, setArtifactDrawerOpened] = useState(false);
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>(undefined);
   const [selectedCallKey, setSelectedCallKey] = useState<string | undefined>(undefined);
   const [eventOffset, setEventOffset] = useState<number | undefined>(undefined);
@@ -361,7 +364,16 @@ export function App(): ReactElement {
     const previousRunKey = previousSelectedRunKeyRef.current;
     previousSelectedRunKeyRef.current = selectedRunKey;
     setRunDetailTab((current) => runDetailTabAfterRunSelection(previousRunKey, selectedRunKey, current));
+    if (previousRunKey !== selectedRunKey) {
+      setArtifactDrawerOpened(false);
+    }
   }, [selectedRunKey]);
+
+  useEffect(() => {
+    if (workspaceView !== "runs") {
+      setArtifactDrawerOpened(false);
+    }
+  }, [workspaceView]);
 
   const selectedRun = runsState.status === "ready"
     ? runsState.runs.find((run) => studioRunKey(run) === selectedRunKey)
@@ -432,8 +444,11 @@ export function App(): ReactElement {
 
   useEffect(() => {
     if (!selectedDetail) {
-      setSelectedArtifactName(undefined);
-      setArtifactPreviewState({ status: "idle" });
+      if (runDetailState.status === "empty" || runDetailState.status === "error") {
+        setSelectedArtifactName(undefined);
+        setArtifactPreviewState({ status: "idle" });
+        setArtifactDrawerOpened(false);
+      }
       return;
     }
     const artifacts = sortStudioArtifacts(selectedDetail);
@@ -657,6 +672,11 @@ export function App(): ReactElement {
   const workspaceTitle = workspaceLabel(workspaceView, t);
   const advancedAgentOptions = agentLifecycleState.status === "ready" ? agentLifecycleState.agents : [];
 
+  function openArtifactDrawer(artifactName: string): void {
+    setSelectedArtifactName(artifactName);
+    setArtifactDrawerOpened(true);
+  }
+
   const navigatorToolbar = (
     <SegmentedControl
       className="studio-data-switch"
@@ -680,7 +700,7 @@ export function App(): ReactElement {
     <AppShell
       className="studio-shell"
       data-studio-section="react-baseline"
-      navbar={{ width: 344, breakpoint: "xs" }}
+      navbar={{ width: 300, breakpoint: "xs" }}
       padding={0}
     >
       <AppShell.Navbar className="studio-navbar" data-studio-section="run-navigator">
@@ -770,59 +790,79 @@ export function App(): ReactElement {
 
           <Box className="studio-workspace-scroll">
             <Stack data-studio-section="run-workspace" hidden={workspaceView !== "runs"} gap="md">
-              <Tabs
-                value={runDetailTab}
-                onChange={(value) => setRunDetailTab(isRunDetailTab(value) ? value : "details")}
-                data-studio-section="run-detail-tabs"
-              >
-                <Tabs.List aria-label={t("runsSubtitle")} grow>
-                  {RUN_DETAIL_TABS.map((tab) => (
-                    <Tabs.Tab
-                      value={tab.id}
-                      key={tab.id}
-                      onKeyDown={(event) => selectRelativeRunDetailTab(event, tab.id, setRunDetailTab)}
-                    >
-                      {t(tab.labelKey)}
-                    </Tabs.Tab>
-                  ))}
-                </Tabs.List>
-                <Tabs.Panel value="details" pt="md">
-                  <RunOverview state={overviewState} view="details" />
-                </Tabs.Panel>
-                <Tabs.Panel value="actions" pt="md">
-                  <SafeActionsPanel
-                    selectedRunId={selectedRun?.workspace.current ? selectedRun.run_id : undefined}
-                    onSubmit={submitSafeAction}
-                    onSettled={refreshAfterMutation}
-                  />
-                </Tabs.Panel>
-                <Tabs.Panel value="release" pt="md">
-                  {runDetailState.status === "ready"
-                    ? <ReviewReleaseView view={runDetailState.detail.review_release} />
-                    : <RunDetailPlaceholder state={runDetailState} />}
-                </Tabs.Panel>
-                <Tabs.Panel value="artifacts" pt="md">
+              <Box className="run-workspace-layout">
+                <Box className="run-workspace-main">
+                  <Tabs
+                    value={runDetailTab}
+                    onChange={(value) => setRunDetailTab(isRunDetailTab(value) ? value : "details")}
+                    data-studio-section="run-detail-tabs"
+                  >
+                    <Tabs.List aria-label={t("runsSubtitle")} grow>
+                      {RUN_DETAIL_TABS.map((tab) => (
+                        <Tabs.Tab
+                          value={tab.id}
+                          key={tab.id}
+                          onKeyDown={(event) => selectRelativeRunDetailTab(event, tab.id, setRunDetailTab)}
+                        >
+                          {t(tab.labelKey)}
+                        </Tabs.Tab>
+                      ))}
+                    </Tabs.List>
+                    <Tabs.Panel value="details" pt="md">
+                      <RunOverview state={overviewState} view="details" />
+                    </Tabs.Panel>
+                    <Tabs.Panel value="actions" pt="md">
+                      <SafeActionsPanel
+                        selectedRunId={selectedRun?.workspace.current ? selectedRun.run_id : undefined}
+                        onSubmit={submitSafeAction}
+                        onSettled={refreshAfterMutation}
+                      />
+                    </Tabs.Panel>
+                    <Tabs.Panel value="release" pt="md">
+                      {runDetailState.status === "ready"
+                        ? <ReviewReleaseView view={runDetailState.detail.review_release} />
+                        : <RunDetailPlaceholder state={runDetailState} />}
+                    </Tabs.Panel>
+                    <Tabs.Panel value="artifacts" pt="md">
+                      {runDetailState.status === "ready" ? (
+                        <ArtifactPreviewPanel
+                          detail={runDetailState.detail}
+                          selectedArtifactName={selectedArtifactName}
+                          previewState={artifactPreviewState}
+                          onSelectArtifact={setSelectedArtifactName}
+                        />
+                      ) : <RunDetailPlaceholder state={runDetailState} />}
+                    </Tabs.Panel>
+                    <Tabs.Panel value="events" pt="md">
+                      {runDetailState.status === "ready" ? (
+                        <EventLogView
+                          detail={runDetailState.detail}
+                          onSelectEventOffset={setEventOffset}
+                        />
+                      ) : <RunDetailPlaceholder state={runDetailState} />}
+                    </Tabs.Panel>
+                    <Tabs.Panel value="diagnostics" pt="md">
+                      <RunOverview state={overviewState} view="diagnostics" />
+                    </Tabs.Panel>
+                  </Tabs>
+                </Box>
+                <Box className="run-workspace-side">
                   {runDetailState.status === "ready" ? (
-                    <ArtifactPreviewPanel
+                    <ArtifactSidebarPanel
                       detail={runDetailState.detail}
                       selectedArtifactName={selectedArtifactName}
-                      previewState={artifactPreviewState}
-                      onSelectArtifact={setSelectedArtifactName}
+                      onSelectArtifact={openArtifactDrawer}
                     />
-                  ) : <RunDetailPlaceholder state={runDetailState} />}
-                </Tabs.Panel>
-                <Tabs.Panel value="events" pt="md">
-                  {runDetailState.status === "ready" ? (
-                    <EventLogView
-                      detail={runDetailState.detail}
-                      onSelectEventOffset={setEventOffset}
-                    />
-                  ) : <RunDetailPlaceholder state={runDetailState} />}
-                </Tabs.Panel>
-                <Tabs.Panel value="diagnostics" pt="md">
-                  <RunOverview state={overviewState} view="diagnostics" />
-                </Tabs.Panel>
-              </Tabs>
+                  ) : (
+                    <RunArtifactSidebarPlaceholder state={runDetailState} />
+                  )}
+                </Box>
+              </Box>
+              <ArtifactPreviewDrawer
+                opened={artifactDrawerOpened && workspaceView === "runs"}
+                previewState={artifactPreviewState}
+                onClose={() => setArtifactDrawerOpened(false)}
+              />
             </Stack>
 
             <Stack data-studio-section="calls-workspace" hidden={workspaceView !== "calls"} gap="md">
@@ -883,6 +923,27 @@ function RunDetailPlaceholder({ state }: { state: RunOverviewState }): ReactElem
     <Alert color={state.status === "error" ? "red" : "gray"} variant="light">
       {runDetailPlaceholderMessage(state, t)}
     </Alert>
+  );
+}
+
+function RunArtifactSidebarPlaceholder({ state }: { state: RunOverviewState }): ReactElement {
+  const { t } = useStudioCopy();
+  return (
+    <Paper
+      component="aside"
+      className="studio-panel artifact-sidebar-panel"
+      data-studio-section="current-node-artifacts-placeholder"
+      withBorder
+      radius="md"
+      p="md"
+    >
+      <Stack gap="xs">
+        <Text size="sm" fw={800}>{t("currentNode")}</Text>
+        <Alert color={state.status === "error" ? "red" : "gray"} variant="light">
+          {runDetailPlaceholderMessage(state, t)}
+        </Alert>
+      </Stack>
+    </Paper>
   );
 }
 
