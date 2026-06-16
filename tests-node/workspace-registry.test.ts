@@ -99,6 +99,34 @@ test("workspace registry resolves enabled entries and current workspace scope", 
   assert.equal(resolveRegisteredWorkspace(remoteEntry.id, { registryPath })?.enabled, true);
 });
 
+test("workspace activity can preserve disabled entries", () => {
+  const root = makeSandbox();
+  test.after(() => rmSync(root, { recursive: true, force: true }));
+  const registryPath = path.join(root, "workspaces.json");
+  const workspace = makeWorkspace(root, "hidden-project");
+
+  const registered = registerWorkspace(workspace, {
+    registryPath,
+    label: "Hidden Project",
+    now: "2026-06-10T12:00:00.000Z",
+  });
+  disableRegisteredWorkspace(registered.id, {
+    registryPath,
+    now: "2026-06-10T12:01:00.000Z",
+  });
+
+  const recorded = recordWorkspaceActivity(workspace, {
+    registryPath,
+    preserveDisabled: true,
+    now: "2026-06-10T12:02:00.000Z",
+  });
+
+  assert.equal(recorded.enabled, false);
+  assert.equal(recorded.last_seen_at, "2026-06-10T12:02:00.000Z");
+  assert.equal(recorded.last_recorded_at, "2026-06-10T12:02:00.000Z");
+  assert.equal(resolveRegisteredWorkspace(registered.id, { registryPath }), undefined);
+});
+
 test("workspace registry reports invalid registry files clearly", () => {
   const root = makeSandbox();
   test.after(() => rmSync(root, { recursive: true, force: true }));

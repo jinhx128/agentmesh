@@ -9,7 +9,12 @@ import {
   workspaceCompatibilityDiagnostics,
   writeWorkspaceCompatibilityMetadata,
 } from "../packages/runtime/src/packet/compatibility.js";
+import { listRegisteredWorkspaces } from "../packages/runtime/src/workspaces/registry.js";
 import { makeWorkspace, runCli, workflowHash, writeConfig } from "./helpers/write-side-runtime.js";
+
+function workspaceRegistry(workspace: string): string {
+  return path.join(workspace, ".home", ".config", "agentmesh", "workspaces.json");
+}
 
 test("workflow run accepts a temporary workflow file with packet provenance", () => {
   const workspace = makeWorkspace();
@@ -110,6 +115,35 @@ test("workflow run writes workspace compatibility metadata", () => {
   assert.equal(diagnostics.decision, "read_write");
   assert.equal(diagnostics.current_runtime_version, "0.1.5");
   assert.equal(diagnostics.current_entrypoint, "cli");
+});
+
+test("workflow run records current workspace for Studio visibility", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "record workspace",
+    "--run-id",
+    "record-workspace-flow",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  const entries = listRegisteredWorkspaces({ registryPath: workspaceRegistry(workspace) });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].path, realpathSync(workspace));
+  assert.equal(entries[0].enabled, true);
+  assert.match(entries[0].last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
 });
 
 test("legacy workspace stays readable and first successful mutation backfills compatibility metadata", () => {

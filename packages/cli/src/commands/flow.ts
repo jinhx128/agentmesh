@@ -52,6 +52,7 @@ import {
   positionalArgs,
   readOptionFile,
 } from "../flags.js";
+import { recordCliWorkspaceActivity } from "../workspace-activity.js";
 
 export async function workflowRun(args: string[], configPath?: string): Promise<number> {
   if (optionValue(args, "--workflow") || optionValue(args, "--workflow-file")) {
@@ -94,7 +95,8 @@ async function presetRun(
     console.error(`preset runs do not accept role flags: ${unsupportedRole}`);
     return 2;
   }
-  const workflow = getWorkflow(preset.workflowId, workflowSearchDirs(process.cwd(), configPath));
+  const cwd = process.cwd();
+  const workflow = getWorkflow(preset.workflowId, workflowSearchDirs(cwd, configPath));
   const taskInput = resolveTaskInput(args);
   if (taskInput.error) {
     console.error(taskInput.error);
@@ -130,43 +132,47 @@ async function presetRun(
     const config = resolvedConfig?.config ?? loadConfig(configPath);
     assertMcpResourceServersConfigured(mcpResourceSpecs, config);
   }
-  const runDir = await createFlowRun({
-    plan: null,
-    execute: null,
-    review: [],
-    decide: null,
-    stageAssignments: preset.stageAssignments,
-    task,
-    runId,
-    userGate,
-    workflow: workflow.workflowId,
-    workflowCompatibility: workflowCompatibilityForRun(workflow),
-    preset: preset.presetId,
-    presetSource: presetSourceForRun(preset),
-    presetDefaultStageAgents: preset.defaultStageAgents,
-    globalDefaultStageAgents: resolvedConfig?.config.default_stage_agents,
-    workflowFailurePolicy: workflow.failurePolicy,
-    presetFailurePolicy: preset.failurePolicy,
-    presetFallback: preset.fallback,
-    globalFallback: resolvedConfig?.config.fallback,
-    agentTimeoutSeconds: agentTimeoutsForConfig(resolvedConfig),
-    timeoutSeconds: optionalInteger(args, "--timeout-seconds"),
-    agentCapabilities: agentCapabilitiesForConfig(resolvedConfig),
-    stages: workflow.stages,
-    contextFiles: optionValues(args, "--context-file"),
-    diffFile: optionValue(args, "--diff-file"),
-    verificationFile: optionValue(args, "--verification-file"),
-    scopes: optionValues(args, "--scope"),
-    mcpResources: mcpResourceSpecs,
-    mcpServers: resolvedConfig?.config.mcp_servers,
-    contextPolicy: resolvedConfig?.config.context_policy,
-    reviewReleasePolicy,
-    executionPolicy,
-    configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
-    runtimeTiming,
-    includeSpec: args.includes("--include-spec"),
-    excludeCorrections,
-  });
+  const runDir = await createFlowRun(
+    {
+      plan: null,
+      execute: null,
+      review: [],
+      decide: null,
+      stageAssignments: preset.stageAssignments,
+      task,
+      runId,
+      userGate,
+      workflow: workflow.workflowId,
+      workflowCompatibility: workflowCompatibilityForRun(workflow),
+      preset: preset.presetId,
+      presetSource: presetSourceForRun(preset),
+      presetDefaultStageAgents: preset.defaultStageAgents,
+      globalDefaultStageAgents: resolvedConfig?.config.default_stage_agents,
+      workflowFailurePolicy: workflow.failurePolicy,
+      presetFailurePolicy: preset.failurePolicy,
+      presetFallback: preset.fallback,
+      globalFallback: resolvedConfig?.config.fallback,
+      agentTimeoutSeconds: agentTimeoutsForConfig(resolvedConfig),
+      timeoutSeconds: optionalInteger(args, "--timeout-seconds"),
+      agentCapabilities: agentCapabilitiesForConfig(resolvedConfig),
+      stages: workflow.stages,
+      contextFiles: optionValues(args, "--context-file"),
+      diffFile: optionValue(args, "--diff-file"),
+      verificationFile: optionValue(args, "--verification-file"),
+      scopes: optionValues(args, "--scope"),
+      mcpResources: mcpResourceSpecs,
+      mcpServers: resolvedConfig?.config.mcp_servers,
+      contextPolicy: resolvedConfig?.config.context_policy,
+      reviewReleasePolicy,
+      executionPolicy,
+      configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
+      runtimeTiming,
+      includeSpec: args.includes("--include-spec"),
+      excludeCorrections,
+    },
+    cwd,
+  );
+  recordCliWorkspaceActivity(cwd);
   for (const warning of preset.validationWarnings) {
     console.warn(`warning: ${warning}`);
   }
@@ -176,6 +182,7 @@ async function presetRun(
 }
 
 export async function flowRun(args: string[], configPath?: string): Promise<number> {
+  const cwd = process.cwd();
   const workflowId = optionValue(args, "--workflow");
   const workflowFile = optionValue(args, "--workflow-file");
   if (workflowId && workflowFile) {
@@ -183,9 +190,9 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
     return 2;
   }
   const workflow = workflowId
-    ? getWorkflow(workflowId, workflowSearchDirs(process.cwd(), configPath))
+    ? getWorkflow(workflowId, workflowSearchDirs(cwd, configPath))
     : workflowFile
-      ? loadWorkflowFile(workflowFile, process.cwd())
+      ? loadWorkflowFile(workflowFile, cwd)
     : undefined;
   const stages = workflow?.stages ?? ["plan", "execute", "review", "decide"];
   const configLoadStartedAt = Date.now();
@@ -246,39 +253,43 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
   const workflowSource = workflowFile
     ? temporaryWorkflowSource(requireWorkflowPath(workflow), workflow)
     : undefined;
-  const runDir = await createFlowRun({
-    plan: firstOrNull(plan),
-    execute: firstOrNull(execute),
-    review,
-    decide: firstOrNull(decide),
-    stageAssignments: stageAssignments(stages, { plan, execute, verify, review, decide }),
-    task,
-    runId,
-    userGate,
-    workflow: workflow?.workflowId ?? workflowId,
-    workflowSource,
-    workflowCompatibility: workflow ? workflowCompatibilityForRun(workflow) : undefined,
-    stages,
-    globalDefaultStageAgents: resolvedConfig?.config.default_stage_agents,
-    workflowFailurePolicy: workflow?.failurePolicy,
-    globalFallback: resolvedConfig?.config.fallback,
-    agentTimeoutSeconds: agentTimeoutsForConfig(resolvedConfig),
-    timeoutSeconds: optionalInteger(args, "--timeout-seconds"),
-    agentCapabilities: agentCapabilitiesForConfig(resolvedConfig),
-    contextFiles: optionValues(args, "--context-file"),
-    diffFile: optionValue(args, "--diff-file"),
-    verificationFile: optionValue(args, "--verification-file"),
-    scopes: optionValues(args, "--scope"),
-    mcpResources: mcpResourceSpecs,
-    mcpServers: resolvedConfig?.config.mcp_servers,
-    contextPolicy: resolvedConfig?.config.context_policy,
-    reviewReleasePolicy,
-    executionPolicy,
-    configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
-    runtimeTiming,
-    includeSpec: args.includes("--include-spec"),
-    excludeCorrections,
-  });
+  const runDir = await createFlowRun(
+    {
+      plan: firstOrNull(plan),
+      execute: firstOrNull(execute),
+      review,
+      decide: firstOrNull(decide),
+      stageAssignments: stageAssignments(stages, { plan, execute, verify, review, decide }),
+      task,
+      runId,
+      userGate,
+      workflow: workflow?.workflowId ?? workflowId,
+      workflowSource,
+      workflowCompatibility: workflow ? workflowCompatibilityForRun(workflow) : undefined,
+      stages,
+      globalDefaultStageAgents: resolvedConfig?.config.default_stage_agents,
+      workflowFailurePolicy: workflow?.failurePolicy,
+      globalFallback: resolvedConfig?.config.fallback,
+      agentTimeoutSeconds: agentTimeoutsForConfig(resolvedConfig),
+      timeoutSeconds: optionalInteger(args, "--timeout-seconds"),
+      agentCapabilities: agentCapabilitiesForConfig(resolvedConfig),
+      contextFiles: optionValues(args, "--context-file"),
+      diffFile: optionValue(args, "--diff-file"),
+      verificationFile: optionValue(args, "--verification-file"),
+      scopes: optionValues(args, "--scope"),
+      mcpResources: mcpResourceSpecs,
+      mcpServers: resolvedConfig?.config.mcp_servers,
+      contextPolicy: resolvedConfig?.config.context_policy,
+      reviewReleasePolicy,
+      executionPolicy,
+      configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
+      runtimeTiming,
+      includeSpec: args.includes("--include-spec"),
+      excludeCorrections,
+    },
+    cwd,
+  );
+  recordCliWorkspaceActivity(cwd);
   console.log(`Run: ${runId}`);
   console.log(`Packet: ${runDir}`);
   return 0;

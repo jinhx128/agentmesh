@@ -31,6 +31,7 @@ export interface WorkspaceRegistryOptions {
   registryPath?: string;
   now?: Date | string;
   label?: string;
+  preserveDisabled?: boolean;
 }
 
 export interface WorkspaceRegistryReadOptions {
@@ -115,7 +116,9 @@ export function recordWorkspaceActivity(
     if (existing) {
       existing.last_seen_at = now;
       existing.last_recorded_at = now;
-      existing.enabled = true;
+      if (!options.preserveDisabled) {
+        existing.enabled = true;
+      }
       if (options.label !== undefined) {
         existing.label = normalizeLabel(options.label, realWorkspacePath);
       }

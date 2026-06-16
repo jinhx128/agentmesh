@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,11 @@ import {
   DEFAULT_INVOCATION_TIMEOUT_SECONDS,
   PacketStatusSchema,
 } from "../packages/core/src/index.js";
+import {
+  disableRegisteredWorkspace,
+  listRegisteredWorkspaces,
+  registerWorkspace,
+} from "../packages/runtime/src/workspaces/registry.js";
 
 const cliPath = fileURLToPath(new URL("../packages/cli/src/cli.js", import.meta.url));
 
@@ -39,6 +44,10 @@ function userPreset(workspace: string, presetId: string): string {
 
 function userWorkflow(workspace: string, workflowId: string): string {
   return path.join(workspace, ".home", ".config", "agentmesh", "workflows", `${workflowId}.toml`);
+}
+
+function workspaceRegistry(workspace: string): string {
+  return path.join(workspace, ".home", ".config", "agentmesh", "workspaces.json");
 }
 
 function writeConfigAndPreset(workspace: string, presetId = "review-duo"): void {
@@ -254,6 +263,28 @@ test("bare run resolves preset namespace and writes preset provenance", () => {
   });
 });
 
+test("preset run records current workspace for Studio visibility", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfigAndPreset(workspace);
+
+  const run = runCli(workspace, [
+    "run",
+    "review-duo",
+    "--task",
+    "Review the current change.",
+    "--run-id",
+    "preset-record-workspace",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  const entries = listRegisteredWorkspaces({ registryPath: workspaceRegistry(workspace) });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].path, realpathSync(workspace));
+  assert.equal(entries[0].enabled, true);
+  assert.match(entries[0].last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
+});
+
 test("preset assignments must store agent ids instead of names", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -293,6 +324,60 @@ test("preset run rejects inline task and task file together", () => {
   assert.equal(run.status, 2);
   assert.match(run.stderr, /--task and --task-file are mutually exclusive/);
   assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "preset-task-conflict")), false);
+  assert.deepEqual(listRegisteredWorkspaces({ registryPath: workspaceRegistry(workspace) }), []);
+});
+
+test("preset run does not fail when workspace registry is invalid", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfigAndPreset(workspace);
+  const registryPath = workspaceRegistry(workspace);
+  mkdirSync(path.dirname(registryPath), { recursive: true });
+  writeFileSync(registryPath, "{nope\n");
+
+  const run = runCli(workspace, [
+    "run",
+    "review-duo",
+    "--task",
+    "Review despite invalid registry.",
+    "--run-id",
+    "preset-invalid-registry",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "preset-invalid-registry")), true);
+  assert.match(run.stdout, /Packet:/);
+});
+
+test("preset run does not re-enable a disabled workspace entry", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfigAndPreset(workspace);
+  const registryPath = workspaceRegistry(workspace);
+  const registered = registerWorkspace(workspace, {
+    registryPath,
+    label: "Hidden Project",
+    now: "2026-06-10T13:00:00.000Z",
+  });
+  disableRegisteredWorkspace(registered.id, {
+    registryPath,
+    now: "2026-06-10T13:01:00.000Z",
+  });
+
+  const run = runCli(workspace, [
+    "run",
+    "review-duo",
+    "--task",
+    "Review without re-enabling.",
+    "--run-id",
+    "preset-disabled-registry",
+  ]);
+
+  assert.equal(run.status, 0, run.stderr);
+  const [entry] = listRegisteredWorkspaces({ registryPath });
+  assert.equal(entry.id, registered.id);
+  assert.equal(entry.enabled, false);
+  assert.match(entry.last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
 });
 
 test("preset run resolves preset defaults before global defaults", () => {
