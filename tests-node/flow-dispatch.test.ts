@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 import { loadArtifacts } from "../packages/runtime/src/packet/io.js";
 import { withRunMutationLockAsync } from "../packages/runtime/src/packet/lock.js";
+import {
+  listRegisteredWorkspaces,
+  recordWorkspaceActivity,
+} from "../packages/runtime/src/workspaces/registry.js";
 import {
   makeWorkspace,
   runCli,
@@ -16,6 +20,247 @@ import {
 function bashString(value: string): string {
   return JSON.stringify(value);
 }
+
+function workspaceRegistry(workspace: string): string {
+  return path.join(workspace, ".home", ".config", "agentmesh", "workspaces.json");
+}
+
+function resetRecordedAt(workspace: string, timestamp: string): void {
+  recordWorkspaceActivity(workspace, {
+    registryPath: workspaceRegistry(workspace),
+    now: timestamp,
+  });
+}
+
+function assertWorkspaceRecordRefreshed(workspace: string, staleTimestamp: string): void {
+  const entries = listRegisteredWorkspaces({ registryPath: workspaceRegistry(workspace) });
+  const entry = entries.find((item) => item.path === realpathSync(workspace));
+  assert.ok(entry, "workspace should be registered");
+  assert.equal(entry.enabled, true);
+  assert.notEqual(entry.last_recorded_at, staleTimestamp);
+  assert.match(entry.last_recorded_at ?? "", /^\d{4}-\d{2}-\d{2}T/);
+}
+
+function writeOutputAgent(scriptPath: string, body: string): void {
+  writeExecutable(
+    scriptPath,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "output_file=''",
+      "while [[ $# -gt 0 ]]; do",
+      "  case \"$1\" in",
+      "    --output-file) output_file=\"$2\"; shift 2 ;;",
+      "    *) shift ;;",
+      "  esac",
+      "done",
+      "mkdir -p \"$(dirname \"$output_file\")\"",
+      body,
+      "",
+    ].join("\n"),
+  );
+}
+
+test("flow dispatch refreshes current workspace registry activity", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const staleTimestamp = "2026-06-10T00:00:00.000Z";
+  const planner = path.join(workspace, "planner.sh");
+  writeOutputAgent(planner, "printf '# Plan\\n\\nDispatched.\\n' > \"$output_file\"");
+  const config = writeConfig(
+    workspace,
+    [
+      "[agents.planner]",
+      'adapter = "command"',
+      `command = "${planner}"`,
+      "args = []",
+      'capabilities = ["plan"]',
+      'output_file_arg = "--output-file"',
+      "",
+    ].join("\n"),
+  );
+  const run = runCli(workspace, [
+    "--config",
+    config,
+    "flow",
+    "run",
+    "--plan",
+    "planner",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "dispatch records workspace",
+    "--run-id",
+    "dispatch-records-workspace",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  resetRecordedAt(workspace, staleTimestamp);
+
+  const dispatch = runCli(workspace, [
+    "--config",
+    config,
+    "flow",
+    "dispatch",
+    "dispatch-records-workspace",
+    "--stage",
+    "plan",
+  ]);
+
+  assert.equal(dispatch.status, 0, dispatch.stderr);
+  assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
+});
+
+test("flow attach refreshes current workspace registry activity", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const staleTimestamp = "2026-06-10T00:01:00.000Z";
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "attach records workspace",
+    "--run-id",
+    "attach-records-workspace",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  resetRecordedAt(workspace, staleTimestamp);
+
+  const attach = runCli(workspace, [
+    "flow",
+    "attach",
+    "attach-records-workspace",
+    "--stage",
+    "plan",
+    "--text",
+    "# Plan\n\nAttached.",
+  ]);
+
+  assert.equal(attach.status, 0, attach.stderr);
+  assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
+});
+
+test("flow resume refreshes current workspace registry activity", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const staleTimestamp = "2026-06-10T00:02:00.000Z";
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "resume records workspace",
+    "--run-id",
+    "resume-records-workspace",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  resetRecordedAt(workspace, staleTimestamp);
+
+  const resume = runCli(workspace, [
+    "flow",
+    "resume",
+    "resume-records-workspace",
+    "--stage",
+    "plan",
+  ]);
+
+  assert.equal(resume.status, 0, resume.stderr);
+  assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
+});
+
+test("flow retry refreshes current workspace registry activity", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const staleTimestamp = "2026-06-10T00:03:00.000Z";
+  const planner = path.join(workspace, "retry-planner.sh");
+  const modeFile = path.join(workspace, "retry-mode.txt");
+  writeFileSync(modeFile, "fail\n");
+  writeOutputAgent(
+    planner,
+    [
+      `mode_file=${bashString(modeFile)}`,
+      "if grep -q fail \"$mode_file\"; then",
+      "  echo 'planned failure' >&2",
+      "  exit 7",
+      "fi",
+      "printf '# Plan\\n\\nRetried.\\n' > \"$output_file\"",
+    ].join("\n"),
+  );
+  const config = writeConfig(
+    workspace,
+    [
+      "[agents.planner]",
+      'adapter = "command"',
+      `command = "${planner}"`,
+      "args = []",
+      'capabilities = ["plan"]',
+      'output_file_arg = "--output-file"',
+      "",
+    ].join("\n"),
+  );
+  const run = runCli(workspace, [
+    "--config",
+    config,
+    "flow",
+    "run",
+    "--plan",
+    "planner",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "retry records workspace",
+    "--run-id",
+    "retry-records-workspace",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const failedDispatch = runCli(workspace, [
+    "--config",
+    config,
+    "flow",
+    "dispatch",
+    "retry-records-workspace",
+    "--stage",
+    "plan",
+  ]);
+  assert.equal(failedDispatch.status, 1);
+  writeFileSync(modeFile, "pass\n");
+  resetRecordedAt(workspace, staleTimestamp);
+
+  const retry = runCli(workspace, [
+    "--config",
+    config,
+    "flow",
+    "retry",
+    "retry-records-workspace",
+    "--stage",
+    "plan",
+  ]);
+
+  assert.equal(retry.status, 0, retry.stderr);
+  assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
+});
 
 test("plan fanout writes isolated outputs and synthesizes canonical plan", () => {
   const workspace = makeWorkspace();

@@ -530,6 +530,7 @@ function validateTemporaryWorkflowAgents(
 }
 
 export async function flowDispatch(args: string[], configPath?: string): Promise<number> {
+  const cwd = process.cwd();
   const run = positionalArgs(args)[0];
   const stage = optionValue(args, "--stage");
   if (!run || !stage) {
@@ -540,12 +541,15 @@ export async function flowDispatch(args: string[], configPath?: string): Promise
     run,
     stage,
     { configPath, timeoutSecs: optionalInteger(args, "--timeout-secs") },
+    cwd,
   );
+  recordCliWorkspaceActivity(cwd);
   printDispatchResult(result);
   return 0;
 }
 
 export async function flowRetry(args: string[], configPath?: string): Promise<number> {
+  const cwd = process.cwd();
   const run = positionalArgs(args)[0];
   if (!run) {
     console.error("usage: agentmesh flow retry <run> [--stage <stage>]");
@@ -555,12 +559,15 @@ export async function flowRetry(args: string[], configPath?: string): Promise<nu
     run,
     optionValue(args, "--stage"),
     { configPath, timeoutSecs: optionalInteger(args, "--timeout-secs") },
+    cwd,
   );
+  recordCliWorkspaceActivity(cwd);
   printDispatchResult(result);
   return 0;
 }
 
 export async function flowResume(args: string[], configPath?: string): Promise<number> {
+  const cwd = process.cwd();
   const run = positionalArgs(args)[0];
   if (!run) {
     console.error("usage: agentmesh flow resume <run> [--stage <stage>]");
@@ -570,7 +577,9 @@ export async function flowResume(args: string[], configPath?: string): Promise<n
     run,
     optionValue(args, "--stage"),
     { configPath, timeoutSecs: optionalInteger(args, "--timeout-secs") },
+    cwd,
   );
+  recordCliWorkspaceActivity(cwd);
   printDispatchResult(result);
   return 0;
 }
@@ -643,6 +652,7 @@ export function flowPrompt(args: string[]): number {
 }
 
 export function flowAttach(args: string[]): number {
+  const cwd = process.cwd();
   const run = positionalArgs(args)[0];
   const stage = optionValue(args, "--stage");
   const text = optionValue(args, "--text") ?? readOptionFile(args, "--file");
@@ -650,7 +660,8 @@ export function flowAttach(args: string[]): number {
     console.error("usage: agentmesh flow attach <run> --stage <stage> [--text <text>] [--file <path>]");
     return 2;
   }
-  console.log(`Attached: ${attachStageArtifact(run, stage, text, optionValue(args, "--agent") ?? "current")}`);
+  console.log(`Attached: ${attachStageArtifact(run, stage, text, optionValue(args, "--agent") ?? "current", cwd)}`);
+  recordCliWorkspaceActivity(cwd);
   return 0;
 }
 
