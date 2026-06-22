@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/skills",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "description": "AgentMesh skill templates, install targets, and verification contracts.",
@@ -12,6 +12,6 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/core": "0.1.6"
+    "@agentmesh/core": "0.1.7"
   }
 }

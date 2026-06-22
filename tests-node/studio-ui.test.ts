@@ -71,6 +71,9 @@ import {
   formatLocalDateTime,
   formatLocalTime,
 } from "../apps/studio-web/src/app/time.js";
+import {
+  workflowStageLabel,
+} from "../apps/studio-web/src/app/stages.js";
 import type { StudioCopyKey } from "../apps/studio-web/src/app/copy.js";
 import { StudioThemeProvider } from "../apps/studio-web/src/app/StudioThemeProvider.js";
 import {
@@ -108,7 +111,7 @@ import {
   workflowStageExitLabel,
   workflowStageIds,
   workflowStageStatus,
-  workflowStageNodeAgentLabel,
+  workflowStageNodeTimeLabel,
   type RunOverviewState,
 } from "../apps/studio-web/src/features/runs/RunOverview.js";
 import {
@@ -221,9 +224,10 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(app, /mantine-Tabs-tabLabel">总览</);
   assert.doesNotMatch(app, /mantine-Tabs-tabLabel">阶段</);
   assert.match(app, />操作</);
-  assert.match(app, />审查发布</);
-  assert.match(app, />产物</);
-  assert.match(app, />日志事件</);
+  assert.doesNotMatch(app, />审查发布</);
+  assert.doesNotMatch(app, />产物</);
+  assert.match(app, />日志</);
+  assert.doesNotMatch(app, />日志事件</);
   assert.match(app, />诊断</);
 
   const appSource = readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8");
@@ -233,6 +237,26 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.match(appSource, /if\s*\(\s*workspaceView !== "runs"\s*\)\s*\{[\s\S]*setArtifactDrawerOpened\(false\)/);
   assert.match(appSource, /opened=\{artifactDrawerOpened && workspaceView === "runs"\}/);
   assert.doesNotMatch(appSource, /opened=\{artifactDrawerOpened && runDetailState\.status === "ready"\}/);
+  assert.match(appSource, /className="studio-topbar-copy"/);
+  assert.match(appSource, /className="studio-topbar-title"/);
+  assert.match(appSource, /className="studio-topbar-subtitle"/);
+  assert.match(appSource, /className=\{workspaceScrollClassName\(workspaceView\)\}/);
+  assert.match(appSource, /className="run-detail-tabs"/);
+  assert.match(appSource, /function workspaceScrollClassName\(workspaceView: WorkspaceView\): string/);
+  assert.match(appSource, /workspaceView === "runs" \? "studio-workspace-scroll run-workspace-scroll" : "studio-workspace-scroll"/);
+  assert.match(appSource, /const STUDIO_RUN_EVENT_LIMIT = 200;/);
+  assert.match(appSource, /eventLimit:\s*STUDIO_RUN_EVENT_LIMIT/);
+  assert.doesNotMatch(appSource, /EVENT_PAGE_LIMIT|eventOffset|setEventOffset|onSelectEventOffset/);
+  assert.doesNotMatch(appSource, /<Box>\s*<Title order=\{2\} size="h3">\{workspaceTitle\}<\/Title>\s*<Text size="sm" c="dimmed">\{workspaceSubtitle\(workspaceView,\s*t\)\}<\/Text>\s*<\/Box>/s);
+  assert.doesNotMatch(appSource, /\{ id: "artifacts", labelKey: "artifacts" \}/);
+  assert.doesNotMatch(appSource, /<Tabs\.Panel value="artifacts"/);
+  assert.doesNotMatch(appSource, /ReviewReleaseView/);
+  assert.doesNotMatch(appSource, /\{ id: "release", labelKey: "reviewPublish" \}/);
+  assert.doesNotMatch(appSource, /<Tabs\.Panel value="release"/);
+  assert.doesNotMatch(copySource, /查看详情、操作、审查发布、产物、日志事件和诊断。/);
+  assert.doesNotMatch(copySource, /查看详情、操作、审查发布、日志事件和诊断。/);
+  assert.doesNotMatch(copySource, /查看详情、操作、审查发布、日志和诊断。/);
+  assert.match(copySource, /查看详情、操作、日志和诊断。/);
   assert.doesNotMatch(copySource, /createContext|StudioI18nProvider|locale:/);
   assert.doesNotMatch(copySource, /StudioI18n|StudioMessage|i18n/i);
   assert.doesNotMatch(copySource, /chineseMessages|\bzh\s*:/);
@@ -247,6 +271,13 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   );
 
   assert.match(frontendCss, /\.studio-workspace-scroll\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(frontendCss, /\.studio-workspace-scroll\.run-workspace-scroll\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(frontendCss, /\.studio-workspace-scroll\.run-workspace-scroll\s*\{[^}]*padding-right:\s*0;/s);
+  assert.match(frontendCss, /\.studio-topbar-copy\s*\{[^}]*flex:\s*1 1 auto;/s);
+  assert.match(frontendCss, /\.studio-topbar-copy\s*\{[^}]*flex-wrap:\s*nowrap;/s);
+  assert.match(frontendCss, /\.studio-topbar-title\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(frontendCss, /\.studio-topbar-subtitle\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(frontendCss, /\.studio-topbar-subtitle\s*\{[^}]*text-overflow:\s*ellipsis;/s);
   assert.match(frontendCss, /\.studio-nav-scroll\s*\{/);
   assert.match(frontendCss, /\.studio-data-navigator\s*\{[^}]*overflow:\s*hidden/s);
   assert.match(frontendCss, /\.studio-nav-item\s+\.mantine-Button-label\s*\{[^}]*justify-content:\s*flex-start/s);
@@ -255,15 +286,80 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
   assert.match(frontendCss, /\.studio-data-switch\s*\{[^}]*min-height:\s*36px/s);
-  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(220px,\s*280px\)/s);
+  assert.match(frontendCss, /\.studio-resource-card-layout\s*\{[^}]*flex-wrap:\s*nowrap;/s);
+  assert.match(frontendCss, /\.studio-resource-card-main\s*\{[^}]*flex:\s*1 1 auto;/s);
+  assert.match(frontendCss, /\.studio-resource-card-main\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(frontendCss, /\.studio-resource-card-actions\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.studio-resource-card-actions\s*\{[^}]*margin-left:\s*auto;/s);
+  assert.match(frontendCss, /\.event-field-badge\s+\.mantine-Badge-label\s*\{[^}]*text-transform:\s*none;/s);
+  assert.match(frontendCss, /\.run-summary-row\s*\{[^}]*display:\s*grid;/s);
+  assert.match(frontendCss, /\.run-summary-row\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*display:\s*grid;/s);
+  assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*grid-template-columns:\s*72px\s+minmax\(0,\s*1fr\);/s);
+  assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*justify-items:\s*start;/s);
+  assert.match(frontendCss, /\.run-summary-value\s*\{[^}]*text-align:\s*left;/s);
+  assert.match(frontendCss, /@media \(max-width:\s*36em\)[\s\S]*\.run-summary-row\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+  assert.match(frontendCss, /\[data-studio-section="run-workspace"\]\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\[data-studio-section="run-workspace"\]\s*\{[^}]*min-height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(210px,\s*260px\)/s);
+  assert.doesNotMatch(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(220px,\s*280px\)/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*min-height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*align-items:\s*stretch;/s);
+  assert.match(frontendCss, /\.run-workspace-main,\s*\.run-workspace-side\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(frontendCss, /\.run-workspace-main\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-main\s*\{[^}]*display:\s*flex;/s);
+  assert.match(frontendCss, /\.run-workspace-main\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(frontendCss, /\.run-workspace-main\s*\{[^}]*overflow-x:\s*hidden;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*\{[^}]*display:\s*flex;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*>\s*\.mantine-Tabs-panel\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*>\s*\.mantine-Tabs-panel\s*\{[^}]*flex:\s*1 1 0;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*>\s*\.mantine-Tabs-panel\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(frontendCss, /\.run-detail-tabs\s*>\s*\.mantine-Tabs-panel\s*\{[^}]*overflow-x:\s*hidden;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s*\{[^}]*display:\s*flex;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s*\{[^}]*align-self:\s*stretch;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s*\{[^}]*max-height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.doesNotMatch(frontendCss, /\.run-workspace-side\s*\{[^}]*position:\s*sticky;/s);
+  assert.doesNotMatch(frontendCss, /--run-workspace-fixed-height:\s*calc\(100vh - 176px\);/s);
+  assert.match(frontendCss, /\.artifact-sidebar-panel\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s+\.artifact-sidebar-panel\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.run-workspace-side\s+\.artifact-sidebar-panel\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-panel\s*>\s*\.mantine-Stack-root\s*\{[^}]*height:\s*100%;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-summary\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-list-heading\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-artifacts\s*\{[^}]*flex:\s*1 1 0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-artifacts\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*flex:\s*1 1 0;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*overflow-y:\s*auto;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*padding:\s*3px 4px 4px;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*box-sizing:\s*border-box;/s);
+  assert.match(frontendCss, /\.studio-nav-item\[aria-current="true"\],\s*\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--mantine-color-agentmesh-6\);/s);
+  assert.doesNotMatch(frontendCss, /\.studio-nav-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--mantine-color-agentmesh-6\);/s);
+  assert.doesNotMatch(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
+  assert.doesNotMatch(frontendCss, /\.artifact-sidebar-panel\s*\{[^}]*max-height:\s*calc\(100vh - 160px\);/s);
+  assert.doesNotMatch(frontendCss, /\.run-workspace-side\s+\.artifact-sidebar-panel\s*\{[^}]*min-height:\s*calc\(100vh - 244px\);/s);
   assert.match(frontendCss, /\.mantine-Tabs-list\s*\{[^}]*width:\s*fit-content/s);
   assert.match(frontendCss, /\.mantine-Tabs-list::before\s*\{[^}]*display:\s*none/s);
   assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\]\s*\{[^}]*background:\s*#ffffff/s);
   assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\]::after\s*\{[^}]*display:\s*none/s);
+  assert.match(frontendCss, /\.manual-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*position:\s*sticky;/s);
+  assert.match(frontendCss, /\.manual-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*top:\s*0;/s);
+  assert.match(frontendCss, /\.manual-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*z-index:\s*5;/s);
+  assert.match(frontendCss, /\.settings-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*position:\s*sticky;/s);
+  assert.match(frontendCss, /\.settings-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*top:\s*0;/s);
+  assert.match(frontendCss, /\.settings-section-tabs\s*>\s*\.mantine-Tabs-list\s*\{[^}]*z-index:\s*5;/s);
   assert.doesNotMatch(frontendCss, /\.studio-language-switch/);
   assert.match(frontendCss, /button:not\(:disabled\)[\s\S]*cursor:\s*pointer/s);
   assert.match(frontendCss, /--studio-flow-node-width:\s*156px;/);
   assert.match(frontendCss, /--studio-flow-node-min-height:\s*88px;/);
+  assert.match(frontendCss, /--studio-workflow-node-width:\s*132px;/);
+  assert.match(frontendCss, /--studio-workflow-node-min-height:\s*72px;/);
   assert.match(frontendCss, /--studio-flow-connector-width:\s*28px;/);
   assert.match(frontendCss, /--studio-flow-connector-color:\s*#6f7f96;/);
   assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*display:\s*flex/s);
@@ -271,6 +367,9 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*overflow-y:\s*hidden/s);
   assert.match(frontendCss, /\.workflow-nodes,\s*\.artifact-flow\s*\{[^}]*scroll-snap-type:\s*x proximity/s);
+  assert.doesNotMatch(frontendCss, /\.workflow-step-stack/);
+  assert.doesNotMatch(frontendCss, /\.workflow-step-stack\.selected\s*\{[^}]*flex-basis:\s*min\(560px/s);
+  assert.doesNotMatch(frontendCss, /\.workflow-step-stack\.selected\s*\{[^}]*width:\s*min\(560px/s);
   assert.match(frontendCss, /\.workflow-step,\s*\.artifact-step\s*\{[^}]*display:\s*flex/s);
   assert.match(frontendCss, /\.workflow-step,\s*\.artifact-step\s*\{[^}]*flex:\s*0 0 auto/s);
   assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*flex:\s*0 0 var\(--studio-flow-connector-width\)/s);
@@ -278,22 +377,38 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*background:\s*var\(--studio-flow-connector-color\)/s);
   assert.match(frontendCss, /\.workflow-connector::after,\s*\.artifact-connector::after\s*\{[^}]*right:\s*0/s);
   assert.match(frontendCss, /\.workflow-connector::after,\s*\.artifact-connector::after\s*\{[^}]*border-left:\s*9px solid var\(--studio-flow-connector-color\)/s);
-  assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*min-height:\s*var\(--studio-flow-node-min-height\)/s);
-  assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*width:\s*var\(--studio-flow-node-width\)/s);
-  assert.match(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*max-width:\s*var\(--studio-flow-node-width\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card\s*\{[^}]*min-height:\s*var\(--studio-workflow-node-min-height\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card\s*\{[^}]*width:\s*var\(--studio-workflow-node-width\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card\s*\{[^}]*max-width:\s*var\(--studio-workflow-node-width\)/s);
+  assert.match(frontendCss, /\.workflow-stage-card\s+\*\s*\{[^}]*cursor:\s*pointer;/s);
+  assert.match(frontendCss, /\.artifact-node\s*\{[^}]*min-height:\s*var\(--studio-flow-node-min-height\)/s);
+  assert.match(frontendCss, /\.artifact-node\s*\{[^}]*width:\s*var\(--studio-flow-node-width\)/s);
+  assert.match(frontendCss, /\.artifact-node\s*\{[^}]*max-width:\s*var\(--studio-flow-node-width\)/s);
   assert.doesNotMatch(frontendCss, /\.workflow-connector,\s*\.artifact-connector\s*\{[^}]*display:\s*none/s);
   assert.doesNotMatch(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*width:\s*100%/s);
   assert.doesNotMatch(frontendCss, /\.workflow-stage-card,\s*\.artifact-node\s*\{[^}]*min-height:\s*122px;/s);
   assert.doesNotMatch(frontendCss, /\.artifact-node\s*\{[^}]*min-height:\s*138px;/s);
   assert.match(frontendCss, /\.artifact-preview-panel\s+\.studio-code-block\s*\{[^}]*max-height:\s*min\(70vh,\s*760px\)/s);
+  assert.match(frontendCss, /\.artifact-preview-panel\s+\.artifact-markdown\s*\{[^}]*max-height:\s*min\(70vh,\s*760px\)/s);
   assert.match(frontendCss, /\.artifact-preview-drawer\s+\.studio-code-block\s*\{[^}]*white-space:\s*pre;/s);
   assert.match(frontendCss, /\.artifact-preview-drawer\s+\.studio-code-block\s*\{[^}]*overflow-wrap:\s*normal;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer\s+\.artifact-markdown\s*\{[^}]*max-height:\s*calc\(100vh - 240px\)/s);
   assert.match(frontendCss, /\.artifact-preview-drawer-layout\s*\{[^}]*width:\s*100%;/s);
   assert.doesNotMatch(frontendCss, /--artifact-preview-drawer-main-width/);
   assert.doesNotMatch(frontendCss, /\.artifact-preview-drawer-layout\s*\{[^}]*grid-template-columns:/s);
   assert.match(frontendCss, /\.artifact-preview-drawer-main\s*\{[^}]*display:\s*flex;/s);
   assert.match(frontendCss, /\.artifact-preview-drawer-main\s*\{[^}]*flex-direction:\s*column;/s);
-  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-panel,\s*\.artifact-preview-drawer-main\s+\.studio-code-block\s*\{[^}]*width:\s*100%;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-panel\s*\{[^}]*padding:\s*6px 8px;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-panel\s*\{[^}]*margin-top:\s*0;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-grid\s*\{[^}]*gap:\s*4px;/s);
+  assert.match(frontendCss, /\.artifact-info-item\s*\{[^}]*display:\s*grid;/s);
+  assert.match(frontendCss, /\.artifact-info-item\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0,\s*1fr\);/s);
+  assert.match(frontendCss, /\.artifact-info-item\s*\{[^}]*align-items:\s*center;/s);
+  assert.match(frontendCss, /\.artifact-info-label\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-item\s*\{[^}]*padding:\s*4px 7px;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-value\s*\{[^}]*font-size:\s*13px;/s);
+  assert.match(frontendCss, /\.artifact-preview-drawer-main\s+\.artifact-info-panel,\s*\.artifact-preview-drawer-main\s+\.studio-code-block,\s*\.artifact-preview-drawer-main\s+\.artifact-markdown\s*\{[^}]*width:\s*100%;/s);
   assert.doesNotMatch(frontendCss, /\.artifact-preview-drawer-gutter/);
   assert.match(frontendCss, /\.artifact-sidebar-item\s*\{[^}]*min-height:\s*42px;/s);
   assert.match(frontendCss, /\.artifact-sidebar-item\s+\.mantine-Button-label\s*\{[^}]*padding:\s*8px 10px;/s);
@@ -301,10 +416,14 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.artifact-sidebar-item-row\s*\{[^}]*min-width:\s*0;/s);
   assert.match(frontendCss, /\.artifact-sidebar-item-main\s*\{[^}]*flex:\s*1 1 0;/s);
   assert.match(frontendCss, /\.artifact-sidebar-item-main\s*\{[^}]*min-width:\s*0;/s);
-  assert.match(frontendCss, /\.artifact-sidebar-item-status\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-time\s*\{[^}]*flex:\s*0 0 auto;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-item-time\s*\{[^}]*white-space:\s*nowrap;/s);
+  assert.doesNotMatch(frontendCss, /\.artifact-sidebar-item-status/);
   assert.match(frontendCss, /@media \(max-width:\s*36em\)/);
   assert.match(frontendCss, /\.studio-navbar\s*\{[^}]*position:\s*static !important/s);
   assert.match(frontendCss, /\.studio-navbar\s*\{[^}]*height:\s*auto !important/s);
+  assert.match(frontendCss, /\.studio-workspace-scroll\.run-workspace-scroll\s*\{[^}]*overflow:\s*visible;/s);
+  assert.match(frontendCss, /\.run-workspace-main\s*\{[^}]*height:\s*auto;[^}]*overflow:\s*visible;/s);
   assert.doesNotMatch(frontendCss, /\.navigator-data-tabs|\.run-search-row|\.catalog-row|\.app-tab/);
   assert.doesNotMatch(frontendCss, /font-size:\s*[^;]*vw|orb/i);
 
@@ -417,6 +536,8 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.match(loadedWithLifecycle, />编辑</);
   assert.match(loadedWithLifecycle, />停用</);
   assert.doesNotMatch(loadedWithLifecycle, /Codex GPT-5\.5 · codex</);
+  assert.match(loadedWithLifecycle, /计划, 执行, 审查/);
+  assert.doesNotMatch(loadedWithLifecycle, /plan, execute, review/);
   assert.ok(loadedWithLifecycle.indexOf("创建 Agent") < loadedWithLifecycle.indexOf("Codex GPT-5.5"));
 
   const loadedWorkflowLifecycle = renderReactCatalog({
@@ -426,6 +547,8 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.match(loadedWorkflowLifecycle, /data-studio-section="react-workflow-lifecycle"/);
   assert.match(loadedWorkflowLifecycle, /data-studio-section="workflow-create-open"/);
   assert.match(loadedWorkflowLifecycle, /创建 Workflow/);
+  assert.match(loadedWorkflowLifecycle, /计划 -&gt; 执行 -&gt; 审查/);
+  assert.doesNotMatch(loadedWorkflowLifecycle, /plan -&gt; execute -&gt; review/);
   assert.ok(loadedWorkflowLifecycle.indexOf("创建 Workflow") < loadedWorkflowLifecycle.indexOf("Bug Fix"));
   const workflowCreateFields = renderTomlRegistrationFields("workflow-create", "创建 Workflow");
   assert.doesNotMatch(workflowCreateFields, /保存到/);
@@ -447,6 +570,9 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.doesNotMatch(workflowManualFields, />Workflow 说明</);
   assert.match(workflowManualFields, /data-studio-section="workflow-stage-select"/);
   assert.match(workflowManualFields, /选择阶段/);
+  assert.match(workflowManualFields, /计划/);
+  assert.match(workflowManualFields, /审查/);
+  assert.match(workflowManualFields, /决策/);
   const catalogSource = readFileSync(path.resolve("apps/studio-web/src/features/catalog/CatalogView.tsx"), "utf-8");
   const agentLifecyclePanelSource = readFileSync(path.resolve("apps/studio-web/src/features/agents/AgentLifecyclePanel.tsx"), "utf-8");
   assert.match(agentLifecyclePanelSource, /data-studio-section="agent-delete-confirmation-modal"/);
@@ -456,6 +582,10 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.match(catalogSource, /useState<TomlSourceMode>\("manual"\)/);
   assert.match(catalogSource, /data-studio-section="toml-registration-layout"/);
   assert.match(catalogSource, /<MultiSelect[\s\S]*data-studio-section="workflow-stage-select"/);
+  assert.match(catalogSource, /WORKFLOW_STAGE_OPTIONS[\s\S]*workflowStageLabel\(stage\)/);
+  assert.match(catalogSource, /workflowStageListLabel\(workflow\.stages\)/);
+  assert.match(catalogSource, /workflowStageLabel\(stageId\)/);
+  assert.match(agentLifecyclePanelSource, /workflowStageLabel\(value\)/);
   assert.doesNotMatch(catalogSource, /scopeFixedPathHint|scopeAutoPathHint|importSourceHint/);
 
   const loadedPresets = renderReactCatalog({
@@ -466,6 +596,9 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.match(loadedPresets, /创建 Preset/);
   assert.match(loadedPresets, /data-preset-action="edit"/);
   assert.match(loadedPresets, /data-preset-action="delete"/);
+  assert.match(loadedPresets, /studio-resource-card-layout/);
+  assert.match(loadedPresets, /studio-resource-card-main/);
+  assert.match(loadedPresets, /studio-resource-card-actions/);
   const presetCreateFields = renderTomlRegistrationFields("preset-create", "创建 Preset");
   assert.doesNotMatch(presetCreateFields, /保存到/);
   assert.match(presetCreateFields, /导入来源/);
@@ -485,6 +618,8 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.doesNotMatch(presetManualFields, />Preset 名称</);
   assert.doesNotMatch(presetManualFields, />Preset 说明</);
   assert.match(presetManualFields, />关联 Workflow</);
+  assert.match(presetManualFields, />计划</);
+  assert.match(presetManualFields, />决策</);
   const copySource = readFileSync(path.resolve("apps/studio-web/src/app/copy.ts"), "utf-8");
   assert.doesNotMatch(catalogSource, /StudioPresetScope/);
   assert.doesNotMatch(catalogSource, /aria-label=\{t\("presetId"\)\}/);
@@ -513,7 +648,9 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   assert.match(loadedPresets, /Review Duo/);
   assert.match(loadedPresets, /review-duo/);
   assert.match(loadedPresets, /w-9d94d0db · user/);
-  assert.match(loadedPresets, /review: claude-claude-opus-4-7/);
+  assert.match(loadedPresets, /审查: Claude Opus 4\.7 High · 决策: current/);
+  assert.doesNotMatch(loadedPresets, /review: Claude Opus 4\.7 High · decide: current/);
+  assert.doesNotMatch(loadedPresets, /review: claude-claude-opus-4-7/);
 
   assert.match(renderReactCatalog({ status: "loading" }), /正在加载资源/);
   assert.match(renderReactCatalog({ status: "error", message: "Authentication required" }), /无法加载资源/);
@@ -563,20 +700,67 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   const overview = renderRunOverview({ status: "ready", detail });
   assert.match(overview, /Workflow Flow/);
   assert.doesNotMatch(overview, /工作流流程/);
-  assert.match(overview, /execute/);
+  assert.match(overview, />执行</);
+  assert.match(overview, />审查</);
   assert.match(overview, /data-workflow-stage="review"/);
   assert.match(overview, /workflow-step/);
   assert.match(overview, /workflow-connector/);
   assert.equal(preferredWorkflowStage(detail.summary), "review");
   assert.equal(workflowStageStatus(detail.summary, "execute"), "completed");
   assert.equal(workflowStageStatus(detail.summary, "review"), "current");
+  assert.equal(workflowStageLabel("review"), "审查");
+  assert.equal(workflowStageLabel("execute"), "执行");
+  assert.equal(workflowStageLabel("custom_stage"), "custom_stage");
   const details = renderRunOverview({ status: "ready", detail }, "details");
+  const overviewIndex = details.indexOf('data-studio-section="current-run-overview"');
+  const workflowIndex = details.indexOf('data-studio-section="workflow-flow"');
+  assert.ok(overviewIndex >= 0);
+  assert.ok(workflowIndex >= 0);
+  assert.ok(overviewIndex < workflowIndex);
+  const summaryHtml = details.slice(overviewIndex, workflowIndex);
+  assert.match(summaryHtml, /data-studio-section="run-summary-row"/);
+  assert.match(summaryHtml, /data-summary-field="workspace"[\s\S]*工作区[\s\S]*project/);
+  assert.match(summaryHtml, /data-summary-field="run"[\s\S]*运行[\s\S]*run-1/);
+  assert.match(summaryHtml, /data-summary-field="workflow"[\s\S]*Workflow[\s\S]*w-7db15660/);
+  assert.match(summaryHtml, /data-summary-field="workspace"[\s\S]*data-summary-field="status"[\s\S]*data-summary-field="run"[\s\S]*data-summary-field="workflow"/);
+  assert.doesNotMatch(summaryHtml, /class="[^"]*studio-metric/);
   assert.match(details, /data-studio-section="workflow-flow"/);
   assert.match(details, /data-studio-section="workflow-flow-node-metrics"/);
-  assert.match(details, /title="review"/);
-  assert.match(details, /padding:var\(--mantine-spacing-xs\)/);
+  assert.match(details, /title="审查"/);
+  assert.match(details, /审查 · 当前/);
+  assert.match(details, /data-workflow-stage="review"/);
+  assert.match(details, /data-workflow-stage="execute"/);
+  assert.doesNotMatch(details, /workflow-step-stack/);
+  const stageDetailIndex = details.indexOf('data-studio-section="workflow-stage-detail"');
+  const stageEvidenceIndex = details.indexOf('data-studio-section="review-stage-evidence"', stageDetailIndex);
+  assert.ok(stageDetailIndex >= 0);
+  assert.ok(stageEvidenceIndex > stageDetailIndex);
+  const stageDetailHtml = details.slice(stageDetailIndex, stageEvidenceIndex);
+  assert.match(stageDetailHtml, /data-studio-section="workflow-stage-summary-row"/);
+  assert.match(stageDetailHtml, /data-stage-field="stage"[\s\S]*阶段[\s\S]*审查/);
+  assert.match(stageDetailHtml, /data-stage-field="status"[\s\S]*状态[\s\S]*当前/);
+  assert.match(stageDetailHtml, /data-stage-field="agent"[\s\S]*Agent[\s\S]*current/);
+  assert.match(stageDetailHtml, /data-stage-field="type"[\s\S]*类型[\s\S]*审查/);
+  assert.doesNotMatch(stageDetailHtml, /title="review"[^>]*>review/);
+  assert.match(stageDetailHtml, /data-stage-field="stage"[\s\S]*data-stage-field="status"[\s\S]*data-stage-field="type"[\s\S]*data-stage-field="agent"/);
+  assert.doesNotMatch(stageDetailHtml, /class="[^"]*studio-metric/);
+  assert.doesNotMatch(stageDetailHtml, /问题/);
+  assert.doesNotMatch(stageDetailHtml, /原始审查/);
+  const stageEvidenceHtml = details.slice(stageEvidenceIndex);
+  assert.match(stageEvidenceHtml, /data-studio-section="review-stage-evidence"[\s\S]*审查 \/ 发布/);
+  assert.match(stageEvidenceHtml, /问题[\s\S]*已接受 #1[\s\S]*fix run scroll/);
+  assert.match(stageEvidenceHtml, /原始审查[\s\S]*Cursor Reviewer/);
+  const runOverviewSource = readFileSync(path.resolve("apps/studio-web/src/features/runs/RunOverview.tsx"), "utf-8");
+  const workflowStageDetailSource = runOverviewSource.slice(
+    runOverviewSource.indexOf("function WorkflowStageDetail"),
+    runOverviewSource.indexOf("function OverviewMetric"),
+  );
+  assert.doesNotMatch(workflowStageDetailSource, /ReviewReleaseStageEvidence/);
+  assert.match(details, /padding:calc\(0\.375rem \* var\(--mantine-scale\)\)/);
   assert.match(details, /300\.0s · 2 次尝试/);
-  assert.match(details, /data-studio-section="workflow-flow-node-agents"/);
+  assert.match(details, /data-studio-section="workflow-flow-node-time"/);
+  assert.match(details, /data-workflow-stage="execute"[\s\S]*data-studio-section="workflow-flow-node-time"[\s\S]*14:55:00/);
+  assert.doesNotMatch(details, /data-studio-section="workflow-flow-node-agents"/);
   assert.match(details, /Agent[\s\S]*current/);
   assert.match(details, /退出码[\s\S]*无外部进程/);
   assert.doesNotMatch(details, /退出码[\s\S]*未知/);
@@ -584,6 +768,15 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.doesNotMatch(details, /尝试次数 · 2 次尝试/);
   assert.match(details, /data-studio-section="current-run-overview"/);
   assert.doesNotMatch(details, /data-studio-section="run-diagnostics"/);
+  const namedWorkflowDetails = renderRunOverview(
+    { status: "ready", detail },
+    "details",
+    undefined,
+    { "w-7db15660": "Bug Fix" },
+  );
+  assert.match(namedWorkflowDetails, /title="Bug Fix"[^>]*>Bug Fix/);
+  assert.match(namedWorkflowDetails, /Workflow[\s\S]*Bug Fix/);
+  assert.doesNotMatch(namedWorkflowDetails, /title="w-7db15660"[^>]*>w-7db15660/);
   const executeDetails = renderRunOverview({
     status: "ready",
     detail: {
@@ -596,6 +789,44 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   }, "details");
   assert.match(executeDetails, /Agent[\s\S]*worker/);
   assert.match(executeDetails, /退出码[\s\S]*exit=0/);
+  const agentLabels = {
+    builder: "Builder Agent",
+    current: "当前入口",
+    fallback: "Fallback Agent",
+    planner: "Planner Agent",
+    worker: "Worker Agent",
+  };
+  const namedDetails = renderRunOverview({ status: "ready", detail }, "details", agentLabels);
+  assert.match(namedDetails, /data-studio-section="workflow-flow-node-time"/);
+  assert.doesNotMatch(namedDetails, /data-studio-section="workflow-flow-node-agents"/);
+  assert.match(namedDetails, /title="当前入口"[^>]*>当前入口/);
+  assert.doesNotMatch(namedDetails, /title="current"[^>]*>current/);
+  const longAgentDetails = renderRunOverview({ status: "ready", detail }, "details", {
+    ...agentLabels,
+    current: "Claude Code Opus 4.8 High, Cursor Composer 2.5, Antigravity Current",
+  });
+  const longAgentFieldStart = longAgentDetails.indexOf('data-stage-field="agent"');
+  const longAgentFieldEnd = longAgentDetails.indexOf('data-stage-field="startedAt"', longAgentFieldStart);
+  assert.ok(longAgentFieldStart >= 0);
+  assert.ok(longAgentFieldEnd > longAgentFieldStart);
+  const longAgentFieldHtml = longAgentDetails.slice(longAgentFieldStart, longAgentFieldEnd);
+  assert.match(longAgentFieldHtml, /run-summary-value wrap/);
+  assert.doesNotMatch(longAgentFieldHtml, /data-truncate/);
+  assert.match(longAgentFieldHtml, /Claude Code Opus 4\.8 High, Cursor Composer 2\.5, Antigravity Current/);
+  const namedExecuteDetails = renderRunOverview({
+    status: "ready",
+    detail: {
+      ...detail,
+      summary: {
+        ...detail.summary,
+        current_stage: "execute",
+      },
+    },
+  }, "details", agentLabels);
+  assert.match(namedExecuteDetails, /data-studio-section="workflow-flow-node-time"[\s\S]*14:55:00/);
+  assert.doesNotMatch(namedExecuteDetails, /data-studio-section="workflow-flow-node-agents"/);
+  assert.match(namedExecuteDetails, /title="Worker Agent"[^>]*>Worker Agent/);
+  assert.doesNotMatch(namedExecuteDetails, /title="worker"[^>]*>worker/);
 
   const attemptsOnlySummary = {
     ...detail.summary,
@@ -621,7 +852,13 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   };
   assert.deepEqual(workflowStageIds(attemptsOnlySummary), ["build"]);
   assert.equal(workflowStageAgentLabel(attemptsOnlySummary, "build", testStudioCopy), "builder, fallback");
-  assert.equal(workflowStageNodeAgentLabel(attemptsOnlySummary, "build", testStudioCopy), "2 Agents");
+  assert.equal(workflowStageAgentLabel(attemptsOnlySummary, "build", testStudioCopy, agentLabels), "Builder Agent, Fallback Agent");
+  assert.equal(workflowStageNodeTimeLabel(detail.summary, "execute", testStudioCopy), "14:55:00");
+  assert.equal(workflowStageNodeTimeLabel(attemptsOnlySummary, "build", testStudioCopy), "未知");
+  assert.equal(workflowStageNodeTimeLabel({
+    ...attemptsOnlySummary,
+    stage_timing: [{ stage: "build", attempt_count: 1, started_at: "2026-05-18T08:03:04.000Z", completed_at: "2026-05-18T08:08:09.000Z" }],
+  }, "build", testStudioCopy), "16:03:04");
   assert.equal(workflowStageExitLabel(attemptsOnlySummary, "build", testStudioCopy), "exit=1, exit=2");
   assert.equal(workflowStageExitLabel({
     ...attemptsOnlySummary,
@@ -699,6 +936,189 @@ test("Run overview, artifacts, events and review release render Mantine panels",
     kind: "markdown",
     stage: "review",
   }), "范围确认");
+  const assignmentHtml = renderArtifactPreviewPanel({
+    ...detail,
+    artifacts: [
+      ...detail.artifacts,
+      {
+        name: "assignment.toml",
+        path: "assignment.toml",
+        kind: "assignment",
+        stage: "run",
+        written_at: "2026-05-18T06:00:00.000Z",
+      },
+    ],
+  }, "assignment.toml", {
+    status: "ready",
+    preview: {
+      name: "assignment.toml",
+      path: "assignment.toml",
+      kind: "assignment",
+      stage: "run",
+      content: [
+        "schema_version = 1",
+        "workflow = \"w-9d94d0db\"",
+        "stages = [\"review\", \"decide\"]",
+        "",
+        "[[stage_nodes]]",
+        "id = \"review\"",
+        "type = \"review\"",
+        "occurrence = 1",
+        "",
+        "[[stage_nodes]]",
+        "id = \"decide\"",
+        "type = \"decide\"",
+        "occurrence = 1",
+        "",
+        "[stage_assignments]",
+        "review = [\"a-a9d455aa\", \"a-32c98ad9\"]",
+        "decide = [\"a-a9d455aa\"]",
+      ].join("\n"),
+      truncated: false,
+    },
+  }, {
+    "a-32c98ad9": "Cursor Composer 2.5",
+    "a-a9d455aa": "Claude Code Opus 4.8 High",
+  });
+  assert.match(assignmentHtml, /data-studio-section="artifact-assignment-summary"/);
+  assert.match(assignmentHtml, /任务分配摘要/);
+  assert.match(assignmentHtml, /类型[\s\S]*任务分配/);
+  assert.match(assignmentHtml, /阶段[\s\S]*运行/);
+  assert.match(assignmentHtml, /Agent[\s\S]*运行级产物/);
+  assert.match(assignmentHtml, /Workflow[\s\S]*w-9d94d0db/);
+  assert.match(assignmentHtml, /阶段顺序[\s\S]*审查 -&gt; 决策/);
+  assert.match(assignmentHtml, /节点[\s\S]*审查[\s\S]*类型：审查[\s\S]*第 1 次/);
+  assert.match(assignmentHtml, /Agent 分配[\s\S]*审查：Claude Code Opus 4\.8 High、Cursor Composer 2\.5/);
+  assert.match(assignmentHtml, /决策：Claude Code Opus 4\.8 High/);
+  assert.match(assignmentHtml, /运行调度生成/);
+  assert.doesNotMatch(assignmentHtml, /artifact-info-item wide/);
+  assert.doesNotMatch(assignmentHtml, /schema_version = 1/);
+  assert.doesNotMatch(assignmentHtml, /a-a9d455aa/);
+  assert.doesNotMatch(assignmentHtml, /a-32c98ad9/);
+  assert.doesNotMatch(assignmentHtml, /Agent[\s\S]*未知/);
+  const statusHtml = renderArtifactPreviewPanel({
+    ...detail,
+    artifacts: [
+      ...detail.artifacts,
+      {
+        name: "status",
+        path: "status.json",
+        kind: "status",
+        stage: "run",
+        written_at: "2026-05-18T06:01:04.460Z",
+      },
+    ],
+  }, "status", {
+    status: "ready",
+    preview: {
+      name: "status",
+      path: "status.json",
+      kind: "status",
+      stage: "run",
+      content: JSON.stringify({
+        schema_version: 1,
+        run_id: "workflow-20260617140101",
+        created_at: "2026-06-17T06:01:01.057Z",
+        updated_at: "2026-06-17T06:01:04.460Z",
+        status: "review_running",
+        stage_assignments: {
+          review: ["a-a9d455aa", "a-32c98ad9"],
+          decide: ["a-a9d455aa"],
+        },
+        stage_invocations: {
+          review: [
+            { lane_id: "review:a-a9d455aa", kind: "primary", agent: "a-a9d455aa" },
+          ],
+        },
+        stage_attempts: {
+          review: [
+            {
+              agent: "a-a9d455aa",
+              actual_agent: "a-a9d455aa",
+              status: "running",
+              started_at: "2026-06-17T06:01:04.000Z",
+            },
+          ],
+        },
+      }, null, 2),
+      truncated: false,
+    },
+  }, {
+    "a-32c98ad9": "Cursor Composer 2.5",
+    "a-a9d455aa": "Claude Code Opus 4.8 High",
+  });
+  assert.match(statusHtml, /data-studio-section="artifact-status-summary"/);
+  assert.match(statusHtml, /运行状态摘要/);
+  assert.match(statusHtml, /名称[\s\S]*运行状态/);
+  assert.match(statusHtml, /类型[\s\S]*运行状态/);
+  assert.match(statusHtml, /Agent[\s\S]*运行级产物/);
+  assert.match(statusHtml, /运行 ID[\s\S]*workflow-20260617140101/);
+  assert.match(statusHtml, /当前状态[\s\S]*审查中/);
+  assert.match(statusHtml, /创建时间[\s\S]*2026-06-17/);
+  assert.match(statusHtml, /更新时间[\s\S]*2026-06-17/);
+  assert.match(statusHtml, /阶段分配[\s\S]*审查：Claude Code Opus 4\.8 High、Cursor Composer 2\.5/);
+  assert.match(statusHtml, /调用记录[\s\S]*审查：主分配，Claude Code Opus 4\.8 High/);
+  assert.match(statusHtml, /尝试记录[\s\S]*审查：运行中，Claude Code Opus 4\.8 High/);
+  assert.doesNotMatch(statusHtml, /"schema_version"/);
+  assert.doesNotMatch(statusHtml, /a-a9d455aa/);
+  const contextHtml = renderArtifactPreviewPanel({
+    ...detail,
+    artifacts: [
+      ...detail.artifacts,
+      {
+        name: "context",
+        path: "context.md",
+        kind: "context",
+        stage: "run",
+        written_at: "2026-06-17T05:56:45.680Z",
+      },
+    ],
+  }, "context", {
+    status: "ready",
+    preview: {
+      name: "context",
+      path: "context.md",
+      kind: "context",
+      stage: "run",
+      content: [
+        "# Context",
+        "",
+        "## Scoped Git Diff",
+        "",
+        "### Provenance",
+        "",
+        "```toml",
+        "schema_version = 1",
+        "source_type = \"scoped_git_diff\"",
+        "source = \"recycle_superman/service/src/main/java/com/zhuanzhuan/recycle\"",
+        "source_command = \"git diff HEAD -- recycle_superman/service/src/main/java/com/zhuanzhuan/recycle\"",
+        "capture_timestamp = \"2026-06-17T05:56:45.680Z\"",
+        "freshness = \"unknown\"",
+        "owner = \"unknown\"",
+        "validation_state = \"failed\"",
+        "ingestion_error = \"git diff failed with exit code 129\\nwarning: Not a git repository.\"",
+        "redaction_state = \"none\"",
+        "```",
+        "",
+        "### Content",
+        "",
+        "(no scoped diff captured)",
+      ].join("\n"),
+      truncated: false,
+    },
+  });
+  assert.match(contextHtml, /data-studio-section="artifact-context-summary"/);
+  assert.match(contextHtml, /上下文摘要/);
+  assert.match(contextHtml, /名称[\s\S]*上下文/);
+  assert.match(contextHtml, /类型[\s\S]*上下文/);
+  assert.match(contextHtml, /范围 Git Diff/);
+  assert.match(contextHtml, /抓取失败/);
+  assert.match(contextHtml, /命令[\s\S]*git diff HEAD -- recycle_superman/);
+  assert.match(contextHtml, /失败原因[\s\S]*git diff 执行失败/);
+  assert.match(contextHtml, /not a git repository/i);
+  assert.doesNotMatch(contextHtml, /source_type/);
+  assert.doesNotMatch(contextHtml, /validation_state/);
+  assert.doesNotMatch(contextHtml, /ingestion_error/);
   const sidebarHtml = renderStudioElement(React.createElement(ArtifactSidebarPanel, {
     detail,
     selectedArtifactName: "output.md",
@@ -712,13 +1132,19 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(sidebarHtml, /输出/);
   assert.match(sidebarHtml, /data-artifact-sidebar-item="output\.md"/);
   assert.doesNotMatch(sidebarHtml, />output\.md</);
+  assert.match(sidebarHtml, /15:01:00/);
+  assert.doesNotMatch(sidebarHtml, /已生成/);
   const artifactPreviewSource = readFileSync(
     path.resolve("apps/studio-web/src/features/artifacts/ArtifactPreviewPanel.tsx"),
     "utf-8",
   );
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-summary"/);
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-artifacts"[\s\S]*className="artifact-sidebar-list-heading"/);
   assert.match(artifactPreviewSource, /className="artifact-sidebar-item-row"/);
   assert.match(artifactPreviewSource, /className="artifact-sidebar-item-main"/);
-  assert.match(artifactPreviewSource, /className="artifact-sidebar-item-status"/);
+  assert.match(artifactPreviewSource, /className="artifact-sidebar-item-time"/);
+  assert.doesNotMatch(artifactPreviewSource, /className="artifact-sidebar-item-status"/);
+  assert.doesNotMatch(artifactPreviewSource, /t\("generated"\)/);
   assert.match(artifactPreviewSource, /p=\{0\}/);
   renderStudioElement(React.createElement(ArtifactPreviewDrawer, {
     opened: true,
@@ -738,24 +1164,172 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.doesNotMatch(artifactPreviewSource, /withinPortal=\{false\}/);
   assert.match(artifactPreviewSource, /data-studio-section="artifact-preview-drawer"/);
   assert.match(artifactPreviewSource, /drawerTitle\(previewState,\s*t\)/);
-  assert.match(artifactPreviewSource, /previewContent\(previewState,\s*t\)/);
+  assert.match(artifactPreviewSource, /<ArtifactPreviewContent state=\{previewState\} t=\{t\} agentLabels=\{agentLabels\} \/>/);
   assert.match(artifactPreviewSource, /return artifactDisplayName\(state\.preview\)/);
   assert.match(artifactPreviewSource, /className="artifact-preview-drawer-layout"/);
   assert.match(artifactPreviewSource, /className="artifact-preview-drawer-main"/);
   assert.doesNotMatch(artifactPreviewSource, /artifact-preview-drawer-gutter/);
 
   const eventHtml = renderEventLogView(detail);
-  assert.match(eventHtml, /事件分页/);
-  assert.match(eventHtml, /stage.completed/);
-  assert.match(eventHtml, /更早/);
+  assert.match(eventHtml, /显示 1-4 \/ 共 120 个事件/);
+  assert.doesNotMatch(eventHtml, />120 个事件</);
+  assert.match(eventHtml, /阶段完成/);
+  assert.match(eventHtml, /产物写入/);
+  assert.match(eventHtml, /阶段: 执行/);
+  assert.match(eventHtml, /产物: output\.md/);
+  assert.match(eventHtml, /路径: artifacts\/output\.md/);
+  assert.match(eventHtml, /运行创建/);
+  assert.match(eventHtml, /阶段列表: 计划, 执行/);
+  assert.match(eventHtml, /阶段节点: 节点=计划, 类型=计划, 序号=1/);
+  assert.doesNotMatch(eventHtml, /stage\.completed/);
+  assert.doesNotMatch(eventHtml, /artifact\.written/);
+  assert.doesNotMatch(eventHtml, /stage_nodes/);
+  assert.doesNotMatch(eventHtml, /stages:/);
+  assert.doesNotMatch(eventHtml, /STAGE:/);
+  assert.doesNotMatch(eventHtml, /PATH:/);
+  assert.doesNotMatch(eventHtml, /事件分页/);
+  assert.doesNotMatch(eventHtml, /data-event-offset/);
+  assert.doesNotMatch(eventHtml, />最新</);
+  assert.doesNotMatch(eventHtml, />更新</);
+  assert.doesNotMatch(eventHtml, />更早</);
   assert.equal(sortStudioEventsDescending(detail.events)[0].event, "artifact.written");
+  const namedEventHtml = renderEventLogView({
+    ...detail,
+    events: [
+      ...detail.events,
+      {
+        event: "stage.agent_completed",
+        timestamp: "2026-05-18T07:02:00.000Z",
+        started_at: "2026-05-18T06:58:00.000Z",
+        stage: "review",
+        agent: "reviewer-id",
+        actual_agent: "worker",
+        agents: ["reviewer-id", "worker"],
+      },
+    ],
+  }, {
+    "reviewer-id": "Reviewer Agent",
+    worker: "Worker Agent",
+  });
+  assert.match(namedEventHtml, /智能体完成/);
+  assert.match(namedEventHtml, /智能体: Reviewer Agent/);
+  assert.match(namedEventHtml, /实际智能体: Worker Agent/);
+  assert.match(namedEventHtml, /智能体列表: Reviewer Agent, Worker Agent/);
+  assert.match(namedEventHtml, /2026-05-18 14:58:00/);
+  assert.doesNotMatch(namedEventHtml, /2026-05-18 15:02:00/);
+  assert.doesNotMatch(namedEventHtml, /智能体: reviewer-id/);
+  assert.doesNotMatch(namedEventHtml, /实际智能体: worker/);
 
   const releaseHtml = renderReviewReleaseView(detail);
   assert.match(releaseHtml, /审查 \/ 发布/);
   assert.match(releaseHtml, /needs_decision/);
   assert.match(releaseHtml, /manual approval required/);
+  assert.match(releaseHtml, /data-studio-section="review-finding-item"/);
+  assert.match(releaseHtml, /已接受 #1[\s\S]*fix run scroll/);
+  assert.match(releaseHtml, /需要决策 #1[\s\S]*ship now\?/);
   assert.match(releaseHtml, /原始审查/);
   assert.match(releaseHtml, /Cursor Reviewer/);
+});
+
+test("Review release keeps structured sections visible with empty classified findings", () => {
+  const detail: StudioRunDetail = {
+    ...studioRunDetailFixture(),
+    review_release: {
+      findings: {
+        present: true,
+        accepted: [],
+        rejected: [],
+        needs_decision: [],
+      },
+      raw_reviews: [
+        {
+          reviewer: "claude",
+          reviewer_label: "Claude Code Opus 4.6 Hight",
+          path: "reviews/claude.md",
+          content: "[Must Fix] src/app.ts:1 - Needs follow-up.",
+          truncated: false,
+        },
+      ],
+      release_summary: {
+        present: false,
+        path: "release-summary.md",
+        truncated: false,
+        sections: [],
+      },
+      skipped_checks: [],
+      residual_risk: [],
+    },
+  };
+
+  const html = renderReviewReleaseView(detail);
+  assert.match(html, /Claude Code Opus 4\.6 Hight/);
+  assert.match(html, /Needs follow-up/);
+  assert.match(html, /aria-label="发布结论"/);
+  assert.match(html, /aria-label="问题"/);
+  assert.match(html, /aria-label="发布摘要"/);
+  assert.match(html, /aria-label="跳过的检查"/);
+  assert.match(html, /aria-label="剩余风险"/);
+  assert.match(html, /已接受 · 0/);
+  assert.match(html, /已拒绝 · 0/);
+  assert.match(html, /需要决策 · 0/);
+  assert.doesNotMatch(html, /仅原始审查/);
+});
+
+test("Review release ignores placeholder finding labels in the UI", () => {
+  const detail: StudioRunDetail = {
+    ...studioRunDetailFixture(),
+    review_release: {
+      ...studioRunDetailFixture().review_release,
+      findings: {
+        present: true,
+        accepted: ["TBD"],
+        rejected: ["TBD"],
+        needs_decision: [
+          "Reviewer a-a9d455aa failed during review dispatch (exit 1); decider must classify partial review evidence before completion.",
+        ],
+      },
+    },
+  };
+
+  const html = renderReviewReleaseView(detail);
+  assert.match(html, /已接受 · 0/);
+  assert.match(html, /已拒绝 · 0/);
+  assert.match(html, /需要决策 · 1/);
+  assert.match(html, /需要决策 #1[\s\S]*Reviewer a-a9d455aa failed during review dispatch/);
+  assert.doesNotMatch(html, /已接受 #1[\s\S]*TBD/);
+  assert.doesNotMatch(html, /已拒绝 #1[\s\S]*TBD/);
+});
+
+test("Artifact preview renders markdown artifacts as formatted content", () => {
+  const detail = studioRunDetailFixture();
+  const markdownHtml = renderArtifactPreviewPanel(detail, "output.md", {
+    status: "ready",
+    preview: {
+      ...detail.artifacts[1],
+      content: [
+        "## Review",
+        "",
+        "Overall **looks good** with `preset-YYYYMMDDHHmmss`.",
+        "",
+        "| Requirement | Status |",
+        "|---|---|",
+        "| Preset id | Met |",
+        "",
+        "- Keep collision suffixes",
+      ].join("\n"),
+      truncated: false,
+    },
+  });
+
+  assert.match(markdownHtml, /class="[^"]*artifact-markdown/);
+  assert.match(markdownHtml, /<h2>Review<\/h2>/);
+  assert.match(markdownHtml, /<strong>looks good<\/strong>/);
+  assert.match(markdownHtml, /<code>preset-YYYYMMDDHHmmss<\/code>/);
+  assert.match(markdownHtml, /<table>/);
+  assert.match(markdownHtml, /<th>Requirement<\/th>/);
+  assert.match(markdownHtml, /<td>Preset id<\/td>/);
+  assert.match(markdownHtml, /<li>Keep collision suffixes<\/li>/);
+  assert.doesNotMatch(markdownHtml, />## Review</);
 });
 
 test("Call detail renders previews, warnings, adoption controls and history", () => {
@@ -816,20 +1390,20 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
   assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.6/);
+  assert.match(settings, /Codex（codex） · 运行时 0\.1\.7/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
   assert.match(settings, /版本更新/);
   assert.match(settings, /重新检查/);
   assert.match(settings, /当前版本/);
-  assert.match(settings, /0\.1\.6/);
-  assert.match(settings, /最新版本/);
   assert.match(settings, /0\.1\.7/);
+  assert.match(settings, /最新版本/);
+  assert.match(settings, /0\.1\.8/);
   assert.match(settings, /CLI 更新/);
-  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.7\.tgz/);
+  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.8\.tgz/);
   assert.match(settings, /桌面端更新/);
-  assert.match(settings, /AgentMesh_0\.1\.7_aarch64\.dmg/);
-  assert.doesNotMatch(settings, /Runtime 0\.1\.6|entrypoint|Last writer|Metadata ·/);
+  assert.match(settings, /AgentMesh_0\.1\.8_aarch64\.dmg/);
+  assert.doesNotMatch(settings, /Runtime 0\.1\.7|entrypoint|Last writer|Metadata ·/);
   const updateError = renderSettingsAboutPanel({
     status: "ready",
     compatibility: compatibilityFixture(),
@@ -876,6 +1450,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
 
   const settingsResources = renderSettingsView("resources");
   assert.match(settingsResources, /data-studio-section="studio-settings-view"/);
+  assert.match(settingsResources, /settings-section-tabs/);
   assert.match(settingsResources, />资源</);
   assert.match(settingsResources, />高级</);
   assert.match(settingsResources, />环境</);
@@ -1041,8 +1616,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(editModal, /data-studio-section="agent-edit-capabilities-select"/);
   assert.doesNotMatch(editModal, /<input[^>]*data-studio-section="agent-edit-capabilities-select"[^>]*(?:readOnly|readonly)/);
   assert.match(editModal, /claude-code-cli/);
-  assert.match(editModal, /plan/);
-  assert.match(editModal, /decide/);
+  assert.match(editModal, /计划/);
+  assert.match(editModal, /决策/);
   const editModalWithoutModels = renderAgentEditModalWithoutModels();
   assert.match(editModalWithoutModels, /<input[^>]*data-studio-section="agent-edit-tool-select"[^>]*disabled=""/);
   assert.match(editModalWithoutModels, /data-studio-section="agent-edit-model-select"/);
@@ -1112,6 +1687,13 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(manual, />快速上手</);
   assert.match(manual, />核心概念</);
   assert.match(manual, />操作与排障</);
+  assert.doesNotMatch(manual, /个章节/);
+  assert.match(manual, /manual-section-tabs/);
+  const manualTabsIndex = manual.indexOf('aria-label="手册章节"');
+  const manualPanelIndex = manual.indexOf('data-studio-section="react-manual"');
+  assert.ok(manualTabsIndex >= 0);
+  assert.ok(manualPanelIndex >= 0);
+  assert.ok(manualTabsIndex < manualPanelIndex);
   assert.doesNotMatch(manual, />组件</);
   assert.doesNotMatch(manual, />Packet</);
   assert.doesNotMatch(manual, />使用教程</);
@@ -1320,8 +1902,8 @@ test("Selection helpers preserve current ids when still present", () => {
   const callKey = studioCallKey(studioCallSummariesFixture()[0]);
   assert.equal(nextSelectedCallKey(studioCallSummariesFixture(), callKey), callKey);
   assert.equal(nextSelectedCallKey(studioCallSummariesFixture(), "missing"), callKey);
-  assert.equal(runDetailTabAfterRunSelection("run-1", "run-1", "artifacts"), "artifacts");
-  assert.equal(runDetailTabAfterRunSelection("run-1", "run-2", "artifacts"), "details");
+  assert.equal(runDetailTabAfterRunSelection("run-1", "run-1", "events"), "events");
+  assert.equal(runDetailTabAfterRunSelection("run-1", "run-2", "events"), "details");
   assert.equal(runDetailTabAfterRunSelection(undefined, "run-1", "events"), "details");
 });
 
@@ -1448,7 +2030,7 @@ function renderPresetManualFields(): string {
   return renderStudioElement(React.createElement(PresetManualFieldsForm, {
     fields: {
       name: "",
-      workflowId: "w-9d94d0db",
+      workflowId: "custom-flow",
       description: "",
       defaultAgents: [],
       stageAssignments: {},
@@ -1498,27 +2080,31 @@ function renderCallNavigator(
 function renderRunOverview(
   state: RunOverviewState,
   view?: "all" | "details" | "summary" | "stages" | "diagnostics",
+  agentLabels?: Record<string, string>,
+  workflowLabels?: Record<string, string>,
 ): string {
-  return renderStudioElement(React.createElement(RunOverview, { state, view }));
+  return renderStudioElement(React.createElement(RunOverview, { state, view, agentLabels, workflowLabels }));
 }
 
 function renderArtifactPreviewPanel(
   detail: StudioRunDetail,
   selectedArtifactName: string | undefined,
   previewState: ArtifactPreviewState,
+  agentLabels?: Record<string, string>,
 ): string {
   return renderStudioElement(React.createElement(ArtifactPreviewPanel, {
     detail,
     selectedArtifactName,
     previewState,
+    agentLabels,
     onSelectArtifact: () => {},
   }));
 }
 
-function renderEventLogView(detail: StudioRunDetail): string {
+function renderEventLogView(detail: StudioRunDetail, agentLabels?: Record<string, string>): string {
   return renderStudioElement(React.createElement(EventLogView, {
     detail,
-    onSelectEventOffset: () => {},
+    agentLabels,
   }));
 }
 
@@ -1721,6 +2307,14 @@ function studioRunDetailFixture(): StudioRunDetail {
       ],
     },
     events: [
+      {
+        event: "run.created",
+        timestamp: "2026-05-18T06:40:00.000Z",
+        run_id: "run-1",
+        workflow: "w-1",
+        stages: ["plan", "execute"],
+        stage_nodes: [{ id: "plan", type: "plan", occurrence: 1 }],
+      },
       { event: "stage.started", timestamp: "2026-05-18T06:50:00.000Z", stage: "plan" },
       { event: "stage.completed", timestamp: "2026-05-18T07:00:00.000Z", stage: "execute", exit_code: 0 },
       { event: "artifact.written", timestamp: "2026-05-18T07:01:00.000Z", stage: "execute", artifact: "output.md", path: "artifacts/output.md" },
@@ -1978,15 +2572,15 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   return {
     decision: "read_write",
     metadata_state: "ok",
-    current_runtime_version: "0.1.6",
+    current_runtime_version: "0.1.7",
     current_entrypoint: "studio",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
       packet_schema_version: 1,
-      min_read_runtime_version: "0.1.6",
-      min_write_runtime_version: "0.1.6",
-      last_writer_runtime_version: "0.1.6",
+      min_read_runtime_version: "0.1.7",
+      min_write_runtime_version: "0.1.7",
+      last_writer_runtime_version: "0.1.7",
       last_writer_entrypoint: "codex",
       updated_at: "2026-05-18T07:00:00.000Z",
     },
@@ -1997,21 +2591,21 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
 function updateFixture(): StudioUpdateReport {
   return {
     schema_version: 1,
-    current_version: "0.1.6",
-    latest_version: "0.1.7",
+    current_version: "0.1.7",
+    latest_version: "0.1.8",
     update_available: true,
-    release_url: "https://example.invalid/releases/tag/v0.1.7",
+    release_url: "https://example.invalid/releases/tag/v0.1.8",
     checked_at: "2026-05-23T13:00:00.000Z",
     cli: {
       status: "update_available",
-      asset_name: "agentmesh-0.1.7.tgz",
-      asset_url: "https://example.invalid/agentmesh-0.1.7.tgz",
-      install_command: ["npm", "install", "-g", "https://example.invalid/agentmesh-0.1.7.tgz"],
+      asset_name: "agentmesh-0.1.8.tgz",
+      asset_url: "https://example.invalid/agentmesh-0.1.8.tgz",
+      install_command: ["npm", "install", "-g", "https://example.invalid/agentmesh-0.1.8.tgz"],
     },
     desktop: {
       status: "manual_update_available",
-      asset_name: "AgentMesh_0.1.7_aarch64.dmg",
-      asset_url: "https://example.invalid/AgentMesh_0.1.7_aarch64.dmg",
+      asset_name: "AgentMesh_0.1.8_aarch64.dmg",
+      asset_url: "https://example.invalid/AgentMesh_0.1.8_aarch64.dmg",
       reason: "Desktop auto-update is not enabled for this release channel; download and install the DMG manually.",
     },
   };
@@ -2021,7 +2615,7 @@ function legacyCompatibilityFixture(): Extract<SettingsAboutState, { status: "re
   return {
     decision: "read_write",
     metadata_state: "missing_legacy",
-    current_runtime_version: "0.1.6",
+    current_runtime_version: "0.1.7",
     current_entrypoint: "cli",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: null,
@@ -2045,19 +2639,19 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         found: true,
         path: "/usr/local/bin/agentmesh",
         source: "app_wrapper",
-        version: "0.1.6",
+        version: "0.1.7",
       },
       target_file: {
         exists: true,
         source: "app_wrapper",
-        version: "0.1.6",
+        version: "0.1.7",
         different: false,
       },
       app_wrapper: {
         node_path: "/Applications/AgentMesh.app/node",
         cli_path: "/Applications/AgentMesh.app/cli.js",
         channel: "dev",
-        version: "0.1.6",
+        version: "0.1.7",
       },
     },
     skills: {

@@ -52,6 +52,7 @@ export function SettingsView({
 
   return (
     <Tabs
+      className="settings-section-tabs"
       data-studio-section="studio-settings-view"
       value={selectedTab}
       onChange={(value) => setSelectedTab(isSettingsTab(value) ? value : "resources")}

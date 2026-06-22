@@ -629,14 +629,14 @@ test("desktop command-line tool install requires confirmation and writes an app-
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.6",
+      version: "0.1.7",
       different: false,
     });
     assert.equal(payload.command_line_tool.path_command.path, existingCommand);
     assert.equal(payload.command_line_tool.path_command.source, "external");
     const wrapper = readFileSync(wrapperPath, "utf-8");
     assert.match(wrapper, /agentmesh_app_managed=true/);
-    assert.match(wrapper, /agentmesh_cli_version=0\.1\.6/);
+    assert.match(wrapper, /agentmesh_cli_version=0\.1\.7/);
 
     const help = execFileSync(wrapperPath, ["--help"], {
       encoding: "utf-8",
@@ -704,7 +704,7 @@ test("desktop command-line tool install requires confirmation before replacing t
     assert.deepEqual(payload.command_line_tool.target_file, {
       exists: true,
       source: "app_wrapper",
-      version: "0.1.6",
+      version: "0.1.7",
       different: false,
     });
   } finally {
@@ -751,7 +751,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.6/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.7/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",

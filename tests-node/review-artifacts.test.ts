@@ -47,6 +47,7 @@ test("review artifact helpers record raw output and refresh controller findings"
   const findings = readFileSync(path.join(runDir, "findings.md"), "utf-8");
   assert.equal(findings.match(/## Raw Review Outputs/g)?.length, 1);
   assert.doesNotMatch(findings, /\n\n\n## Raw Review Outputs/);
+  assert.doesNotMatch(findings, /- TBD/);
   assert.match(findings, /## Accepted/);
   assert.match(findings, /Example finding/);
 });

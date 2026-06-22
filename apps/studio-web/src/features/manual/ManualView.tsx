@@ -293,25 +293,26 @@ export function ManualView(): ReactElement {
   const [selectedSectionId, setSelectedSectionId] = useState<ManualSectionId>("overview");
 
   return (
-    <Paper component="section" className="studio-panel" data-studio-section="react-manual" withBorder radius="md" p="lg">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <Title order={2} size="h3">手册</Title>
-        <Text size="sm" c="dimmed" fw={700}>{MANUAL_SECTIONS.length} 个章节</Text>
-      </Group>
-      <Tabs mt="md" value={selectedSectionId} onChange={(value) => setSelectedSectionId(isManualSection(value) ? value : "overview")} keepMounted={false}>
-        <Tabs.List aria-label="手册章节" grow>
-          {MANUAL_SECTIONS.map((section) => (
-            <Tabs.Tab
-              value={section.id}
-              id={`definition-tab-${section.id}`}
-              key={section.id}
-            >
-              {section.label}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+    <Tabs
+      className="manual-section-tabs"
+      value={selectedSectionId}
+      onChange={(value) => setSelectedSectionId(isManualSection(value) ? value : "overview")}
+      keepMounted={false}
+    >
+      <Tabs.List aria-label="手册章节" grow>
         {MANUAL_SECTIONS.map((section) => (
-          <Tabs.Panel value={section.id} pt="md" key={section.id}>
+          <Tabs.Tab
+            value={section.id}
+            id={`definition-tab-${section.id}`}
+            key={section.id}
+          >
+            {section.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+      <Paper component="section" className="studio-panel" data-studio-section="react-manual" withBorder radius="md" p="lg" mt="md">
+        {MANUAL_SECTIONS.map((section) => (
+          <Tabs.Panel value={section.id} key={section.id}>
             <Stack gap="md">
               <Title order={3} size="h4">{section.title}</Title>
               {section.id === "architecture" ? <ArchitectureDiagram /> : null}
@@ -327,8 +328,8 @@ export function ManualView(): ReactElement {
             </Stack>
           </Tabs.Panel>
         ))}
-      </Tabs>
-    </Paper>
+      </Paper>
+    </Tabs>
   );
 }
 

@@ -91,7 +91,6 @@ import {
 } from "../api/calls.js";
 import {
   ArtifactPreviewDrawer,
-  ArtifactPreviewPanel,
   ArtifactSidebarPanel,
   sortStudioArtifacts,
   type ArtifactPreviewState,
@@ -121,14 +120,13 @@ import {
   ManualView,
 } from "../features/manual/ManualView.js";
 import {
-  ReviewReleaseView,
-} from "../features/review-release/ReviewReleaseView.js";
-import {
   EventLogView,
 } from "../features/runs/EventLogView.js";
 import {
   RunOverview,
+  type AgentDisplayNames,
   type RunOverviewState,
+  type WorkflowDisplayNames,
 } from "../features/runs/RunOverview.js";
 import {
   RunNavigator,
@@ -152,7 +150,7 @@ type BootstrapViewState =
   | { status: "error"; error: StudioApiError };
 
 type WorkspaceView = "runs" | "calls" | "settings" | "definitions";
-export type RunDetailTab = "details" | "actions" | "release" | "artifacts" | "events" | "diagnostics";
+export type RunDetailTab = "details" | "actions" | "events" | "diagnostics";
 
 const RUN_DETAIL_TABS: Array<{
   id: RunDetailTab;
@@ -160,13 +158,11 @@ const RUN_DETAIL_TABS: Array<{
 }> = [
   { id: "details", labelKey: "details" },
   { id: "actions", labelKey: "action" },
-  { id: "release", labelKey: "reviewPublish" },
-  { id: "artifacts", labelKey: "artifacts" },
   { id: "events", labelKey: "logEvents" },
   { id: "diagnostics", labelKey: "diagnostics" },
 ];
 
-const EVENT_PAGE_LIMIT = 50;
+const STUDIO_RUN_EVENT_LIMIT = 200;
 
 interface NavigatorLoadOptions {
   showLoading?: boolean;
@@ -189,7 +185,6 @@ export function App(): ReactElement {
   const [artifactDrawerOpened, setArtifactDrawerOpened] = useState(false);
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>(undefined);
   const [selectedCallKey, setSelectedCallKey] = useState<string | undefined>(undefined);
-  const [eventOffset, setEventOffset] = useState<number | undefined>(undefined);
   const [runQuery, setRunQuery] = useState("");
   const [callQuery, setCallQuery] = useState("");
   const [apiClient, setApiClient] = useState<StudioApiClient | undefined>(undefined);
@@ -387,8 +382,7 @@ export function App(): ReactElement {
     let active = true;
     setRunDetailState({ status: "loading" });
     void loadStudioRunDetail(apiClient, selectedRun.run_id, {
-      ...(eventOffset !== undefined ? { eventOffset } : {}),
-      eventLimit: EVENT_PAGE_LIMIT,
+      eventLimit: STUDIO_RUN_EVENT_LIMIT,
       workspaceId: selectedRun.workspace.id,
     })
       .then((detail) => {
@@ -404,7 +398,7 @@ export function App(): ReactElement {
     return () => {
       active = false;
     };
-  }, [apiClient, selectedRun?.run_id, selectedRun?.workspace.id, eventOffset, runDetailReloadKey]);
+  }, [apiClient, selectedRun?.run_id, selectedRun?.workspace.id, runDetailReloadKey]);
 
   const selectedCall = callsState.status === "ready"
     ? callsState.calls.find((call) => studioCallKey(call) === selectedCallKey)
@@ -671,6 +665,29 @@ export function App(): ReactElement {
 
   const workspaceTitle = workspaceLabel(workspaceView, t);
   const advancedAgentOptions = agentLifecycleState.status === "ready" ? agentLifecycleState.agents : [];
+  const agentDisplayNames = useMemo<AgentDisplayNames>(() => {
+    const entries = new Map<string, string>();
+    if (catalogState.status === "ready") {
+      for (const agent of catalogState.catalog.agents ?? []) {
+        entries.set(agent.id, agent.label?.trim() || agent.id);
+      }
+    }
+    if (agentLifecycleState.status === "ready") {
+      for (const agent of agentLifecycleState.agents) {
+        entries.set(agent.id, agent.label?.trim() || agent.id);
+      }
+    }
+    return Object.fromEntries(entries);
+  }, [catalogState, agentLifecycleState]);
+  const workflowDisplayNames = useMemo<WorkflowDisplayNames>(() => {
+    const entries = new Map<string, string>();
+    if (catalogState.status === "ready") {
+      for (const workflow of catalogState.catalog.workflows ?? []) {
+        entries.set(workflow.workflowId, workflow.name?.trim() || workflow.workflowId);
+      }
+    }
+    return Object.fromEntries(entries);
+  }, [catalogState]);
 
   function openArtifactDrawer(artifactName: string): void {
     setSelectedArtifactName(artifactName);
@@ -768,7 +785,6 @@ export function App(): ReactElement {
                 onSelectRun={(runKey) => {
                   setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunKey, runKey, current));
                   setSelectedRunKey(runKey);
-                  setEventOffset(undefined);
                   setNavigatorView("runs");
                   setWorkspaceView("runs");
                 }}
@@ -779,16 +795,18 @@ export function App(): ReactElement {
       </AppShell.Navbar>
       <AppShell.Main className="studio-main">
         <Stack className="studio-workspace-shell" gap="md">
-          <Paper className="studio-topbar" withBorder radius="md" p="md">
+          <Paper className="studio-topbar" withBorder radius="md" p="sm">
             <Group justify="space-between" align="center" gap="md">
-              <Box>
-                <Title order={2} size="h3">{workspaceTitle}</Title>
-                <Text size="sm" c="dimmed">{workspaceSubtitle(workspaceView, t)}</Text>
-              </Box>
+              <Group className="studio-topbar-copy" align="baseline" gap="sm" wrap="nowrap">
+                <Title className="studio-topbar-title" order={2} size="h3">{workspaceTitle}</Title>
+                <Text className="studio-topbar-subtitle" size="sm" c="dimmed" title={workspaceSubtitle(workspaceView, t)}>
+                  {workspaceSubtitle(workspaceView, t)}
+                </Text>
+              </Group>
             </Group>
           </Paper>
 
-          <Box className="studio-workspace-scroll">
+          <Box className={workspaceScrollClassName(workspaceView)}>
             <Stack data-studio-section="run-workspace" hidden={workspaceView !== "runs"} gap="md">
               <Box className="run-workspace-layout">
                 <Box className="run-workspace-main">
@@ -796,6 +814,7 @@ export function App(): ReactElement {
                     value={runDetailTab}
                     onChange={(value) => setRunDetailTab(isRunDetailTab(value) ? value : "details")}
                     data-studio-section="run-detail-tabs"
+                    className="run-detail-tabs"
                   >
                     <Tabs.List aria-label={t("runsSubtitle")} grow>
                       {RUN_DETAIL_TABS.map((tab) => (
@@ -809,7 +828,12 @@ export function App(): ReactElement {
                       ))}
                     </Tabs.List>
                     <Tabs.Panel value="details" pt="md">
-                      <RunOverview state={overviewState} view="details" />
+                      <RunOverview
+                        state={overviewState}
+                        view="details"
+                        agentLabels={agentDisplayNames}
+                        workflowLabels={workflowDisplayNames}
+                      />
                     </Tabs.Panel>
                     <Tabs.Panel value="actions" pt="md">
                       <SafeActionsPanel
@@ -818,31 +842,21 @@ export function App(): ReactElement {
                         onSettled={refreshAfterMutation}
                       />
                     </Tabs.Panel>
-                    <Tabs.Panel value="release" pt="md">
-                      {runDetailState.status === "ready"
-                        ? <ReviewReleaseView view={runDetailState.detail.review_release} />
-                        : <RunDetailPlaceholder state={runDetailState} />}
-                    </Tabs.Panel>
-                    <Tabs.Panel value="artifacts" pt="md">
-                      {runDetailState.status === "ready" ? (
-                        <ArtifactPreviewPanel
-                          detail={runDetailState.detail}
-                          selectedArtifactName={selectedArtifactName}
-                          previewState={artifactPreviewState}
-                          onSelectArtifact={setSelectedArtifactName}
-                        />
-                      ) : <RunDetailPlaceholder state={runDetailState} />}
-                    </Tabs.Panel>
                     <Tabs.Panel value="events" pt="md">
                       {runDetailState.status === "ready" ? (
                         <EventLogView
                           detail={runDetailState.detail}
-                          onSelectEventOffset={setEventOffset}
+                          agentLabels={agentDisplayNames}
                         />
                       ) : <RunDetailPlaceholder state={runDetailState} />}
                     </Tabs.Panel>
                     <Tabs.Panel value="diagnostics" pt="md">
-                      <RunOverview state={overviewState} view="diagnostics" />
+                      <RunOverview
+                        state={overviewState}
+                        view="diagnostics"
+                        agentLabels={agentDisplayNames}
+                        workflowLabels={workflowDisplayNames}
+                      />
                     </Tabs.Panel>
                   </Tabs>
                 </Box>
@@ -861,6 +875,7 @@ export function App(): ReactElement {
               <ArtifactPreviewDrawer
                 opened={artifactDrawerOpened && workspaceView === "runs"}
                 previewState={artifactPreviewState}
+                agentLabels={agentDisplayNames}
                 onClose={() => setArtifactDrawerOpened(false)}
               />
             </Stack>
@@ -991,6 +1006,10 @@ function workspaceSubtitle(workspace: WorkspaceView, t: (key: StudioCopyKey) => 
     settings: t("settingsSubtitle"),
     definitions: t("definitionsSubtitle"),
   }[workspace];
+}
+
+function workspaceScrollClassName(workspaceView: WorkspaceView): string {
+  return workspaceView === "runs" ? "studio-workspace-scroll run-workspace-scroll" : "studio-workspace-scroll";
 }
 
 function selectRelativeRunDetailTab(

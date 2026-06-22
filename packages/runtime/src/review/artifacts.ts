@@ -181,15 +181,9 @@ export function defaultFindingsMarkdown(): string {
     "",
     "## Accepted",
     "",
-    "- TBD",
-    "",
     "## Rejected",
     "",
-    "- TBD",
-    "",
     "## Needs Decision",
-    "",
-    "- TBD",
     "",
   ].join("\n");
 }

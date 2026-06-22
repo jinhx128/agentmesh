@@ -23,6 +23,11 @@ export interface ReviewReleaseViewProps {
   view: StudioReviewReleaseView;
 }
 
+export interface ReviewReleaseStageEvidenceProps {
+  view: StudioReviewReleaseView;
+  stageType: string;
+}
+
 export function ReviewReleaseView({ view }: ReviewReleaseViewProps): ReactElement {
   const { t } = useStudioCopy();
   return (
@@ -32,15 +37,7 @@ export function ReviewReleaseView({ view }: ReviewReleaseViewProps): ReactElemen
         <VerdictBadge view={view} />
       </Group>
       <SimpleGrid mt="md" cols={{ base: 1, lg: 2 }} spacing="md">
-        <Card withBorder radius="md" p="md" aria-label={t("releaseVerdict")}>
-          <Title order={3} size="h4" mb="sm">{t("releaseVerdict")}</Title>
-          {view.release_verdict ? (
-            <Stack gap="xs">
-              <Badge color={verdictColor(view.release_verdict.value)}>{view.release_verdict.value ?? "invalid"}</Badge>
-              {view.release_verdict.diagnostic ? <p>{view.release_verdict.diagnostic}</p> : null}
-            </Stack>
-          ) : <Text c="dimmed">{t("noVerdict")}</Text>}
-        </Card>
+        <ReleaseVerdictCard view={view} />
         <FindingsSection view={view} />
         <ReleaseSummarySection view={view} />
         <EvidenceList title={t("skippedChecks")} items={view.skipped_checks} />
@@ -48,6 +45,49 @@ export function ReviewReleaseView({ view }: ReviewReleaseViewProps): ReactElemen
       </SimpleGrid>
       <RawReviews rawReviews={view.raw_reviews} />
     </Paper>
+  );
+}
+
+export function ReviewReleaseStageEvidence({ view, stageType }: ReviewReleaseStageEvidenceProps): ReactElement | null {
+  const { t } = useStudioCopy();
+  const normalizedStageType = stageType.toLowerCase();
+  if (normalizedStageType === "review") {
+    return (
+      <Stack mt="md" gap="sm" data-studio-section="review-stage-evidence">
+        <Title order={4} size="h5">{t("reviewRelease")}</Title>
+        <FindingsSection view={view} />
+        <RawReviews rawReviews={view.raw_reviews} />
+      </Stack>
+    );
+  }
+  if (normalizedStageType === "decide") {
+    return (
+      <Stack mt="md" gap="sm" data-studio-section="decide-stage-evidence">
+        <Title order={4} size="h5">{t("reviewRelease")}</Title>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
+          <ReleaseVerdictCard view={view} />
+          <ReleaseSummarySection view={view} />
+          <EvidenceList title={t("skippedChecks")} items={view.skipped_checks} />
+          <EvidenceList title={t("residualRisk")} items={view.residual_risk} />
+        </SimpleGrid>
+      </Stack>
+    );
+  }
+  return null;
+}
+
+function ReleaseVerdictCard({ view }: { view: StudioReviewReleaseView }): ReactElement {
+  const { t } = useStudioCopy();
+  return (
+    <Card withBorder radius="md" p="md" aria-label={t("releaseVerdict")}>
+      <Title order={3} size="h4" mb="sm">{t("releaseVerdict")}</Title>
+      {view.release_verdict ? (
+        <Stack gap="xs">
+          <Badge color={verdictColor(view.release_verdict.value)}>{view.release_verdict.value ?? "invalid"}</Badge>
+          {view.release_verdict.diagnostic ? <p>{view.release_verdict.diagnostic}</p> : null}
+        </Stack>
+      ) : <Text c="dimmed">{t("noVerdict")}</Text>}
+    </Card>
   );
 }
 
@@ -74,10 +114,33 @@ function FindingsSection({ view }: { view: StudioReviewReleaseView }): ReactElem
 
 function FindingGroup({ title, items }: { title: string; items: string[] }): ReactElement {
   const { t } = useStudioCopy();
+  const visibleItems = items.filter((item) => !isPlaceholderFindingItem(item));
   return (
-    <Stack gap={4}>
-      <Text fw={800}>{title} · {items.length}</Text>
-      <ItemList items={items} emptyLabel={t("noRelatedItems")} />
+    <Stack gap={6}>
+      <Text fw={800}>{title} · {visibleItems.length}</Text>
+      <FindingItemList title={title} items={visibleItems} emptyLabel={t("noRelatedItems")} />
+    </Stack>
+  );
+}
+
+function FindingItemList({ title, items, emptyLabel }: { title: string; items: string[]; emptyLabel: string }): ReactElement {
+  if (items.length === 0) {
+    return <Text size="sm" c="dimmed">{emptyLabel}</Text>;
+  }
+  return (
+    <Stack gap={6}>
+      {items.map((item, index) => (
+        <Paper
+          key={`${title}:${item}:${index}`}
+          withBorder
+          radius="sm"
+          p="xs"
+          data-studio-section="review-finding-item"
+        >
+          <Text size="xs" c="dimmed" fw={800}>{title} #{index + 1}</Text>
+          <Text size="sm" fw={600}>{item}</Text>
+        </Paper>
+      ))}
     </Stack>
   );
 }
@@ -186,4 +249,8 @@ function verdictColor(verdict: string | null | undefined): string {
     return "yellow";
   }
   return "gray";
+}
+
+function isPlaceholderFindingItem(item: string): boolean {
+  return item.trim().toLowerCase() === "tbd";
 }

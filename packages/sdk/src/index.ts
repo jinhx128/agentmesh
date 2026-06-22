@@ -930,7 +930,7 @@ function workspaceCompatibilityDiagnostics(
 ): WorkspaceCompatibilityDiagnostics {
   const compatibilityPath = path.join(path.resolve(workspace), WORKSPACE_COMPATIBILITY_RELATIVE_PATH);
   const base = {
-    current_runtime_version: options.runtimeVersion ?? "0.1.6",
+    current_runtime_version: options.runtimeVersion ?? "0.1.7",
     current_entrypoint: options.entrypoint ?? "cli",
     compatibility_path: compatibilityPath,
   };
@@ -1562,7 +1562,11 @@ function markdownItems(content: string): string[] {
     .map((line) => line.trim())
     .filter((line) => line.startsWith("- "))
     .map((line) => line.slice(2).trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0 && !isPlaceholderMarkdownItem(line));
+}
+
+function isPlaceholderMarkdownItem(item: string): boolean {
+  return item.trim().toLowerCase() === "tbd";
 }
 
 function markdownSectionContent(content: string, heading: string): string {

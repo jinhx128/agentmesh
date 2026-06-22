@@ -14,12 +14,14 @@ import {
 } from "@mantine/core";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
-import { formatLocalDateTime } from "../../app/time.js";
+import { workflowStageLabel } from "../../app/stages.js";
+import { formatLocalDateTime, formatLocalTime } from "../../app/time.js";
 import type {
   StudioRunDetail,
   StudioRunDetailSummary,
   StudioStageTimingSummary,
 } from "../../api/runs.js";
+import { ReviewReleaseStageEvidence } from "../review-release/ReviewReleaseView.js";
 
 export type RunOverviewState =
   | { status: "empty" }
@@ -28,31 +30,36 @@ export type RunOverviewState =
   | { status: "error"; message: string };
 
 export type WorkflowStageStatus = "pending" | "current" | "completed" | "failed";
+export type AgentDisplayNames = Record<string, string>;
+export type WorkflowDisplayNames = Record<string, string>;
+export { workflowStageLabel };
 
 export interface RunOverviewProps {
   state: RunOverviewState;
   view?: "all" | "details" | "summary" | "stages" | "diagnostics";
+  agentLabels?: AgentDisplayNames;
+  workflowLabels?: WorkflowDisplayNames;
 }
 
-export function RunOverview({ state, view = "all" }: RunOverviewProps): ReactElement {
+export function RunOverview({ state, view = "all", agentLabels, workflowLabels }: RunOverviewProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "ready") {
-    return <ReadyRunOverview detail={state.detail} view={view} />;
+    return <ReadyRunOverview detail={state.detail} view={view} agentLabels={agentLabels} workflowLabels={workflowLabels} />;
   }
   const message = runOverviewMessage(state, t);
   return (
     <Stack data-studio-section="react-run-overview" gap="md">
-      {shouldRenderRunPanel(view, "stages") ? (
-        <Paper className="studio-panel" data-studio-section="workflow-flow" withBorder radius="md" p="lg">
-          <PanelHeader title={t("workflowFlow")} meta={state.status === "error" ? "Error" : ""} />
-          <Alert mt="md" color={state.status === "error" ? "red" : "gray"} variant="light">
+      {shouldRenderRunPanel(view, "summary") ? (
+        <Paper className="studio-panel" data-studio-section="current-run-overview" withBorder radius="md" p="lg">
+          <Alert color={state.status === "error" ? "red" : "gray"} title={state.status === "error" ? t("runDetailsFailed") : undefined} variant="light">
             {message}
           </Alert>
         </Paper>
       ) : null}
-      {shouldRenderRunPanel(view, "summary") ? (
-        <Paper className="studio-panel" data-studio-section="current-run-overview" withBorder radius="md" p="lg">
-          <Alert color={state.status === "error" ? "red" : "gray"} title={state.status === "error" ? t("runDetailsFailed") : undefined} variant="light">
+      {shouldRenderRunPanel(view, "stages") ? (
+        <Paper className="studio-panel" data-studio-section="workflow-flow" withBorder radius="md" p="lg">
+          <PanelHeader title={t("workflowFlow")} meta={state.status === "error" ? "Error" : ""} />
+          <Alert mt="md" color={state.status === "error" ? "red" : "gray"} variant="light">
             {message}
           </Alert>
         </Paper>
@@ -72,9 +79,13 @@ export function RunOverview({ state, view = "all" }: RunOverviewProps): ReactEle
 function ReadyRunOverview({
   detail,
   view,
+  agentLabels,
+  workflowLabels,
 }: {
   detail: StudioRunDetail;
   view: NonNullable<RunOverviewProps["view"]>;
+  agentLabels?: AgentDisplayNames;
+  workflowLabels?: WorkflowDisplayNames;
 }): ReactElement {
   const { t } = useStudioCopy();
   const summary = detail.summary;
@@ -91,11 +102,14 @@ function ReadyRunOverview({
 
   return (
     <Stack data-studio-section="react-run-overview" gap="md">
+      {shouldRenderRunPanel(view, "summary") ? (
+        <RunSummaryPanel detail={detail} stages={stages} workflowLabels={workflowLabels} />
+      ) : null}
       {shouldRenderRunPanel(view, "stages") ? (
         <Paper className="studio-panel" data-studio-section="workflow-flow" withBorder radius="md" p="lg">
           <PanelHeader
             title={t("workflowFlow")}
-            meta={activeStage && activeStatus ? `${activeStage} · ${stageStatusLabel(activeStatus, t)}` : ""}
+            meta={activeStage && activeStatus ? `${workflowStageLabel(activeStage)} · ${stageStatusLabel(activeStatus, t)}` : ""}
           />
           <div className="workflow-nodes" aria-label={t("workflowNodes")}>
             {stages.length > 0 ? stages.map((stage, index) => (
@@ -113,12 +127,20 @@ function ReadyRunOverview({
             )) : <Alert color="gray" variant="light">{t("noWorkflow")}</Alert>}
           </div>
           {activeStage && activeStatus ? (
-            <WorkflowStageDetail summary={summary} stage={activeStage} status={activeStatus} />
+            <>
+              <WorkflowStageDetail
+                detail={detail}
+                stage={activeStage}
+                status={activeStatus}
+                agentLabels={agentLabels}
+              />
+              <ReviewReleaseStageEvidence
+                view={detail.review_release}
+                stageType={workflowStageType(summary, activeStage)}
+              />
+            </>
           ) : null}
         </Paper>
-      ) : null}
-      {shouldRenderRunPanel(view, "summary") ? (
-        <RunSummaryPanel detail={detail} stages={stages} />
       ) : null}
       {shouldRenderRunPanel(view, "diagnostics") ? (
         <RunDiagnosticsPanel detail={detail} stages={stages} />
@@ -137,25 +159,65 @@ function shouldRenderRunPanel(
 function RunSummaryPanel({
   detail,
   stages,
+  workflowLabels,
 }: {
   detail: StudioRunDetail;
   stages: string[];
+  workflowLabels?: WorkflowDisplayNames;
 }): ReactElement {
   const { t } = useStudioCopy();
   const summary = detail.summary;
+  const summaryItems = [
+    { field: "workspace", label: t("workspace"), value: summary.workspace.label },
+    { field: "status", label: t("status"), value: summary.status },
+    { field: "run", label: t("run"), value: summary.run_id },
+    { field: "workflow", label: t("workflow"), value: workflowDisplayName(summary.workflow, workflowLabels, t) },
+    { field: "stage", label: t("stage"), value: `${summary.completed_stages.length}/${stages.length}` },
+    { field: "latestEvent", label: t("latestEvent"), value: summary.latest_event ?? t("latestEventFallback") },
+    { field: "createdAt", label: t("createdAt"), value: formatTimestamp(summary.created_at) },
+    { field: "updatedAt", label: t("updatedAt"), value: formatTimestamp(summary.updated_at) },
+  ];
   return (
     <Paper className="studio-panel" data-studio-section="current-run-overview" withBorder radius="md" p="lg">
       <PanelHeader title={t("overview")} meta={summary.status} />
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm" mt="md">
-        <OverviewMetric label={t("run")} value={summary.run_id} />
-        <OverviewMetric label={t("status")} value={summary.status} className={`status ${summary.status}`} />
-        <OverviewMetric label={t("workflow")} value={summary.workflow ?? t("unknown")} />
-        <OverviewMetric label={t("stage")} value={`${summary.completed_stages.length}/${stages.length}`} />
-        <OverviewMetric label={t("latestEvent")} value={summary.latest_event ?? t("latestEventFallback")} />
-        <OverviewMetric label={t("createdAt")} value={formatTimestamp(summary.created_at)} />
-        <OverviewMetric label={t("updatedAt")} value={formatTimestamp(summary.updated_at)} />
-      </SimpleGrid>
+      <div className="run-summary-row" data-studio-section="run-summary-row">
+        {summaryItems.map((item) => (
+          <CompactDetailItem field={item.field} key={item.field} label={item.label} value={item.value} />
+        ))}
+      </div>
     </Paper>
+  );
+}
+
+function CompactDetailItem({
+  field,
+  label,
+  value,
+  fieldKind = "summary",
+}: {
+  field: string;
+  label: string;
+  value: string;
+  fieldKind?: "summary" | "stage";
+}): ReactElement {
+  const fieldAttribute = fieldKind === "stage"
+    ? { "data-stage-field": field }
+    : { "data-summary-field": field };
+  const wrapValue = fieldKind === "stage" && field === "agent";
+  return (
+    <div className="run-summary-item" {...fieldAttribute}>
+      <Text className="run-summary-label" component="span" size="xs" c="dimmed" fw={700}>{label}</Text>
+      <Text
+        className={wrapValue ? "run-summary-value wrap" : "run-summary-value"}
+        component="span"
+        size="xs"
+        fw={800}
+        truncate={wrapValue ? undefined : "end"}
+        title={value}
+      >
+        {value}
+      </Text>
+    </div>
   );
 }
 
@@ -256,26 +318,27 @@ function WorkflowStageButton({
   const duration = formatDuration(timing?.duration_ms) || t("unknown");
   const attemptCount = formatAttemptCount(timing?.attempt_count, t);
   const timingSummary = `${duration} · ${attemptCount}`;
-  const agentSummary = workflowStageNodeAgentLabel(summary, stage, t);
+  const timeSummary = workflowStageNodeTimeLabel(summary, stage, t);
+  const stageLabel = workflowStageLabel(stage);
   return (
     <Button
       className={`workflow-stage-card ${status}${selected ? " selected" : ""}`}
       variant={selected ? "light" : "default"}
       color={selected ? "agentmesh" : "gray"}
       h="auto"
-      p="xs"
+      p={6}
       data-workflow-stage={stage}
       aria-current={selected ? "true" : undefined}
       onClick={() => onSelectStage(stage)}
     >
-      <Stack gap={6} align="center" w="100%">
-        <Text size="sm" fw={800} ta="center" w="100%" truncate="end" title={stage}>{stage}</Text>
+      <Stack gap={3} align="center" w="100%">
+        <Text size="xs" fw={800} ta="center" w="100%" truncate="end" title={stageLabel}>{stageLabel}</Text>
         <Badge size="xs" color={stageColor(status)}>{stageStatusLabel(status, t)}</Badge>
         <Text className="workflow-node-metric" data-studio-section="workflow-flow-node-metrics" size="xs" c="dimmed" fw={700}>
           {timingSummary}
         </Text>
-        <Text className="workflow-node-agent" data-studio-section="workflow-flow-node-agents" size="xs" c="dimmed" fw={700} truncate="end">
-          {agentSummary}
+        <Text className="workflow-node-time" data-studio-section="workflow-flow-node-time" size="xs" c="dimmed" fw={700} truncate="end">
+          {timeSummary}
         </Text>
       </Stack>
     </Button>
@@ -283,35 +346,46 @@ function WorkflowStageButton({
 }
 
 function WorkflowStageDetail({
-  summary,
+  detail,
   stage,
   status,
+  agentLabels,
 }: {
-  summary: StudioRunDetailSummary;
+  detail: StudioRunDetail;
   stage: string;
   status: WorkflowStageStatus;
+  agentLabels?: AgentDisplayNames;
 }): ReactElement {
   const { t } = useStudioCopy();
+  const summary = detail.summary;
+  const stageType = workflowStageType(summary, stage);
+  const stageLabel = workflowStageLabel(stage);
+  const stageTypeLabel = workflowStageLabel(stageType);
   const timing = workflowStageTiming(summary, stage);
-  const agentLabel = workflowStageAgentLabel(summary, stage, t);
+  const agentLabel = workflowStageAgentLabel(summary, stage, t, agentLabels);
   const exitLabel = workflowStageExitLabel(summary, stage, t);
+  const stageItems = [
+    { field: "stage", label: t("stage"), value: stageLabel },
+    { field: "status", label: t("status"), value: stageStatusLabel(status, t) },
+    { field: "type", label: t("type"), value: stageTypeLabel },
+    { field: "agent", label: t("agent"), value: agentLabel },
+    { field: "startedAt", label: t("startedAt"), value: formatTimestamp(timing?.started_at) },
+    { field: timing?.failed_at ? "failedAt" : "completedAt", label: timing?.failed_at ? t("statusFailed") : t("completedAt"), value: formatTimestamp(timing?.failed_at ?? timing?.completed_at) },
+    { field: "duration", label: t("duration"), value: formatDuration(timing?.duration_ms) || t("unknown") },
+    { field: "attemptCount", label: t("attemptCount"), value: formatAttemptCount(timing?.attempt_count, t) },
+    { field: "exit", label: t("exit"), value: exitLabel },
+  ];
   return (
-    <Card className="workflow-stage-detail" withBorder radius="md" mt="md" p="md">
-      <Group justify="space-between" mb="sm">
-        <Text fw={800}>{stage}</Text>
+    <Card className="workflow-stage-detail" data-studio-section="workflow-stage-detail" withBorder radius="md" p="md">
+      <Group justify="space-between">
+        <Text fw={800}>{stageLabel}</Text>
         <Badge color={stageColor(status)}>{stageStatusLabel(status, t)}</Badge>
       </Group>
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-        <OverviewMetric label={t("stage")} value={stage} />
-        <OverviewMetric label={t("type")} value={workflowStageType(summary, stage)} />
-        <OverviewMetric label={t("agent")} value={agentLabel} lineClamp={3} />
-        <OverviewMetric label={t("status")} value={stageStatusLabel(status, t)} />
-        <OverviewMetric label={t("startedAt")} value={formatTimestamp(timing?.started_at)} />
-        <OverviewMetric label={timing?.failed_at ? t("statusFailed") : t("completedAt")} value={formatTimestamp(timing?.failed_at ?? timing?.completed_at)} />
-        <OverviewMetric label={t("duration")} value={formatDuration(timing?.duration_ms) || t("unknown")} />
-        <OverviewMetric label={t("attemptCount")} value={formatAttemptCount(timing?.attempt_count, t)} />
-        <OverviewMetric label={t("exit")} value={exitLabel} />
-      </SimpleGrid>
+      <div className="run-summary-row workflow-stage-summary-row" data-studio-section="workflow-stage-summary-row">
+        {stageItems.map((item) => (
+          <CompactDetailItem field={item.field} fieldKind="stage" key={item.field} label={item.label} value={item.value} />
+        ))}
+      </div>
     </Card>
   );
 }
@@ -401,21 +475,52 @@ export function workflowStageAgentLabel(
   summary: StudioRunDetailSummary,
   stage: string,
   t: (key: StudioCopyKey) => string,
+  agentLabels?: AgentDisplayNames,
 ): string {
   const agents = workflowStageAgents(summary, stage);
-  return agents.length > 0 ? agents.join(", ") : t("unknown");
+  return agents.length > 0
+    ? agents.map((agent) => agentDisplayName(agent, agentLabels)).join(", ")
+    : t("unknown");
 }
 
 export function workflowStageNodeAgentLabel(
   summary: StudioRunDetailSummary,
   stage: string,
   t: (key: StudioCopyKey) => string,
+  agentLabels?: AgentDisplayNames,
 ): string {
   const agents = workflowStageAgents(summary, stage);
   if (agents.length === 0) {
     return t("unknown");
   }
-  return agents.length === 1 ? agents[0] : `${agents.length} ${t("agents")}`;
+  return agents.length === 1 ? agentDisplayName(agents[0], agentLabels) : `${agents.length} ${t("agents")}`;
+}
+
+export function workflowStageNodeTimeLabel(
+  summary: StudioRunDetailSummary,
+  stage: string,
+  t: (key: StudioCopyKey) => string,
+): string {
+  const timing = workflowStageTiming(summary, stage);
+  const label = formatLocalTime(timing?.started_at);
+  return label || t("unknown");
+}
+
+function agentDisplayName(agent: string, agentLabels?: AgentDisplayNames): string {
+  const label = agentLabels?.[agent]?.trim();
+  return label && label !== agent ? label : agent;
+}
+
+function workflowDisplayName(
+  workflow: string | undefined,
+  workflowLabels: WorkflowDisplayNames | undefined,
+  t: (key: StudioCopyKey) => string,
+): string {
+  if (!workflow) {
+    return t("unknown");
+  }
+  const label = workflowLabels?.[workflow]?.trim();
+  return label && label !== workflow ? label : workflow;
 }
 
 export function workflowStageExitLabel(

@@ -543,6 +543,59 @@ test("Studio packet browser reads release and review evidence", () => {
   );
 });
 
+test("Studio packet browser ignores placeholder review findings", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const runDir = writeRun(
+    workspace,
+    "placeholder-findings-run",
+    {
+      status: "review_completed",
+      workflow: "w-9d94d0db",
+    },
+    [
+      {
+        schema_version: 1,
+        timestamp: "2026-05-14T00:00:00.000Z",
+        event: "run.created",
+      },
+    ],
+  );
+  writeFileSync(
+    path.join(runDir, "findings.md"),
+    [
+      "# Findings",
+      "",
+      "## Accepted",
+      "",
+      "- TBD",
+      "",
+      "## Rejected",
+      "",
+      "- TBD",
+      "",
+      "## Needs Decision",
+      "",
+      "- TBD",
+      "",
+      "## Raw Review Outputs",
+      "",
+      "### claude",
+      "",
+      "[Should Fix] Show the concrete accepted item instead of a placeholder count.",
+      "",
+    ].join("\n"),
+  );
+
+  const detail = readStudioRun("placeholder-findings-run", { cwd: workspace });
+
+  assert.deepEqual(detail.review_release.findings.accepted, []);
+  assert.deepEqual(detail.review_release.findings.rejected, []);
+  assert.deepEqual(detail.review_release.findings.needs_decision, []);
+  assert.equal(detail.review_release.raw_reviews.length, 1);
+  assert.match(detail.review_release.raw_reviews[0].content, /placeholder count/);
+});
+
 test("Studio packet browser exposes verify stage timing and verification artifacts", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -1682,7 +1735,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.6",
+    min_read_runtime_version: "0.1.7",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",
@@ -1702,7 +1755,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.6");
+  assert.equal(compatibility.current_runtime_version, "0.1.7");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -1711,7 +1764,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 test("Studio server exposes AgentMesh update diagnostics", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.7"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.8"), async (releaseUrl) => {
     const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
     process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
     const { server, url } = await listen(createStudioServer({ cwd: workspace }));
@@ -1726,18 +1779,18 @@ test("Studio server exposes AgentMesh update diagnostics", async () => {
       };
 
       assert.equal(update.schema_version, 1);
-      assert.equal(update.current_version, "0.1.6");
-      assert.equal(update.latest_version, "0.1.7");
+      assert.equal(update.current_version, "0.1.7");
+      assert.equal(update.latest_version, "0.1.8");
       assert.equal(update.update_available, true);
       assert.equal(update.cli.status, "update_available");
       assert.deepEqual(update.cli.install_command, [
         "npm",
         "install",
         "-g",
-        "https://example.invalid/agentmesh-0.1.7.tgz",
+        "https://example.invalid/agentmesh-0.1.8.tgz",
       ]);
       assert.equal(update.desktop.status, "manual_update_available");
-      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.7_aarch64.dmg");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.8_aarch64.dmg");
     } finally {
       if (previousReleaseUrl === undefined) {
         delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
@@ -1756,7 +1809,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
     packet_schema_version: 1,
-    min_read_runtime_version: "0.1.6",
+    min_read_runtime_version: "0.1.7",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
     last_writer_entrypoint: "desktop",

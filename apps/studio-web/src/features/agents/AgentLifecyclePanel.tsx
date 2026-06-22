@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { workflowStageLabel } from "../../app/stages.js";
 import type {
   StudioAgentCreateRequest,
   StudioAgentLifecycleOperation,
@@ -357,7 +358,9 @@ export function AgentLifecyclePanel({
                       <Badge color={agent.disabled ? "gray" : "green"}>{agentStatusLabel(agent.status, t)}</Badge>
                     </Group>
                     <Text size="sm" c="dimmed">{details}</Text>
-                    <Text size="xs" c="dimmed">{agent.capabilities.join(", ") || "no capabilities"}</Text>
+                    <Text size="xs" c="dimmed">
+                      {agent.capabilities.map(workflowStageLabel).join(", ") || "no capabilities"}
+                    </Text>
                   </Stack>
                   <Group gap="xs">
                     <Button
@@ -823,7 +826,7 @@ function uniqueValues(values: string[]): string[] {
 
 function capabilitySelectData(currentCapabilities: string[]): Array<{ value: string; label: string }> {
   const values = new Set([...AGENT_CAPABILITY_OPTIONS, ...currentCapabilities]);
-  return Array.from(values, (value) => ({ value, label: value }));
+  return Array.from(values, (value) => ({ value, label: workflowStageLabel(value) }));
 }
 
 function agentToolById(toolId: AgentToolId): AgentToolOption {

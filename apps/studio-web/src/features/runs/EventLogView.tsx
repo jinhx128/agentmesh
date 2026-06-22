@@ -1,7 +1,6 @@
 import {
   Alert,
   Badge,
-  Button,
   Card,
   Group,
   Paper,
@@ -12,69 +11,43 @@ import {
 import type { ReactElement } from "react";
 import type { StudioRunDetail, StudioRunEvent } from "../../api/runs.js";
 import { useStudioCopy } from "../../app/copy.js";
+import { workflowStageLabel } from "../../app/stages.js";
 import { formatUnknownLocalDateTime } from "../../app/time.js";
+import type { AgentDisplayNames } from "./RunOverview.js";
 
 export interface EventLogViewProps {
   detail: StudioRunDetail;
-  onSelectEventOffset: (offset: number) => void;
+  agentLabels?: AgentDisplayNames;
 }
 
-export function EventLogView({ detail, onSelectEventOffset }: EventLogViewProps): ReactElement {
+export function EventLogView({ detail, agentLabels }: EventLogViewProps): ReactElement {
   const { t } = useStudioCopy();
   const events = sortStudioEventsDescending(detail.events);
-  const page = detail.events_page;
-  const pager = eventPager(page, events.length);
   return (
     <Paper component="section" className="studio-panel" data-studio-section="react-event-log" withBorder radius="md" p="lg">
       <Group justify="space-between" align="flex-start" gap="md">
         <Title order={2} size="h3">{t("events")}</Title>
-        <Text size="sm" c="dimmed" fw={700}>{pager.label}</Text>
-      </Group>
-      <Group mt="md" aria-label={t("eventPagination")}>
-        <Button
-          type="button"
-          variant="light"
-          data-event-offset={pager.olderOffset}
-          disabled={!pager.canGoOlder}
-          onClick={() => onSelectEventOffset(pager.olderOffset)}
-        >
-          更早
-        </Button>
-        <Button
-          type="button"
-          variant="light"
-          data-event-offset={pager.newestOffset}
-          disabled={!pager.canGoNewest}
-          onClick={() => onSelectEventOffset(pager.newestOffset)}
-        >
-          最新
-        </Button>
-        <Button
-          type="button"
-          variant="light"
-          data-event-offset={pager.newerOffset}
-          disabled={!pager.canGoNewer}
-          onClick={() => onSelectEventOffset(pager.newerOffset)}
-        >
-          更新
-        </Button>
+        <Text size="sm" c="dimmed" fw={700}>{eventCountLabel(detail.events_page, events.length)}</Text>
       </Group>
       <Stack mt="md" gap="sm">
-        {events.length > 0 ? events.map((event, index) => (
-          <Card withBorder radius="md" p="md" key={eventKey(event, index)}>
-            <Group justify="space-between" align="flex-start" gap="md">
-              <Text fw={800}>{event.event ?? "event"}</Text>
-              <Badge color={isFailureEvent(event) ? "red" : "gray"}>{formatTimestamp(event.timestamp)}</Badge>
-            </Group>
-            {eventFieldSummary(event).length > 0 ? (
-              <Group mt="sm" gap={6}>
-                {eventFieldSummary(event).map((field) => (
-                  <Badge variant="light" color="gray" key={field}>{field}</Badge>
-                ))}
+        {events.length > 0 ? events.map((event, index) => {
+          const fields = eventFieldSummary(event, agentLabels);
+          return (
+            <Card withBorder radius="md" p="md" key={eventKey(event, index)}>
+              <Group justify="space-between" align="flex-start" gap="md">
+                <Text fw={800}>{eventDisplayName(event.event)}</Text>
+                <Badge color={isFailureEvent(event) ? "red" : "gray"}>{formatTimestamp(eventStartedAt(event))}</Badge>
               </Group>
-            ) : null}
-          </Card>
-        )) : <Alert variant="light">{t("latestEventFallback")}</Alert>}
+              {fields.length > 0 ? (
+                <Group mt="sm" gap={6}>
+                  {fields.map((field) => (
+                    <Badge className="event-field-badge" variant="light" color="gray" key={field}>{field}</Badge>
+                  ))}
+                </Group>
+              ) : null}
+            </Card>
+          );
+        }) : <Alert variant="light">{t("latestEventFallback")}</Alert>}
       </Stack>
     </Paper>
   );
@@ -85,7 +58,7 @@ export function sortStudioEventsDescending(events: StudioRunEvent[]): StudioRunE
     .map((event, index) => ({
       event,
       index,
-      time: timestampMillis(event.timestamp) ?? Number.NEGATIVE_INFINITY,
+      time: timestampMillis(eventStartedAt(event)) ?? Number.NEGATIVE_INFINITY,
     }))
     .sort((left, right) => {
       if (left.time !== right.time) {
@@ -96,44 +69,19 @@ export function sortStudioEventsDescending(events: StudioRunEvent[]): StudioRunE
     .map((entry) => entry.event);
 }
 
-function eventPager(
+function eventCountLabel(
   page: StudioRunDetail["events_page"],
   shownCount: number,
-): {
-  label: string;
-  olderOffset: number;
-  newerOffset: number;
-  newestOffset: number;
-  canGoOlder: boolean;
-  canGoNewer: boolean;
-  canGoNewest: boolean;
-} {
-  if (!page || page.total <= 0) {
-    return {
-      label: `${shownCount} 个事件`,
-      olderOffset: 0,
-      newerOffset: 0,
-      newestOffset: 0,
-      canGoOlder: false,
-      canGoNewer: false,
-      canGoNewest: false,
-    };
+): string {
+  if (!page || page.total <= shownCount) {
+    return `${shownCount} 个事件`;
   }
-  const limit = page.limit > 0 ? page.limit : 50;
-  const offset = Math.max(0, page.offset);
-  const total = Math.max(0, page.total);
-  const latestOffset = Math.max(0, total - limit);
-  const start = Math.min(total, offset + 1);
-  const end = Math.min(total, offset + shownCount);
-  return {
-    label: `${start}-${end} / ${total}`,
-    olderOffset: Math.max(0, offset - limit),
-    newerOffset: Math.min(latestOffset, offset + limit),
-    newestOffset: latestOffset,
-    canGoOlder: offset > 0,
-    canGoNewer: offset < latestOffset,
-    canGoNewest: offset < latestOffset,
-  };
+  const start = page.offset + 1;
+  const end = page.offset + shownCount;
+  if (end === page.total) {
+    return `最新 ${shownCount} / 共 ${page.total} 个事件`;
+  }
+  return `显示 ${start}-${end} / 共 ${page.total} 个事件`;
 }
 
 function eventKey(event: StudioRunEvent, index: number): string {
@@ -145,6 +93,12 @@ function eventKey(event: StudioRunEvent, index: number): string {
   ].filter(Boolean).join(":");
 }
 
+function eventStartedAt(event: StudioRunEvent): unknown {
+  return typeof event.started_at === "string" && event.started_at.length > 0
+    ? event.started_at
+    : event.timestamp;
+}
+
 function isFailureEvent(event: StudioRunEvent): boolean {
   return String(event.event ?? "").includes("failed") ||
     event.error !== undefined ||
@@ -152,30 +106,101 @@ function isFailureEvent(event: StudioRunEvent): boolean {
     (typeof event.exit_code === "number" && event.exit_code !== 0);
 }
 
-function eventFieldSummary(event: StudioRunEvent): string[] {
+function eventFieldSummary(event: StudioRunEvent, agentLabels?: AgentDisplayNames): string[] {
   return Object.entries(event)
     .filter(([key]) => !["schema_version", "timestamp", "event"].includes(key))
-    .map(([key, value]) => `${key}: ${compactValue(value)}`)
+    .map(([key, value]) => `${eventFieldLabel(key)}: ${compactValue(value, key, agentLabels)}`)
     .filter((field) => !field.endsWith(": "));
 }
 
-function compactValue(value: unknown): string {
+function eventDisplayName(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) {
+    return "事件";
+  }
+  return EVENT_LABELS[value] ?? value;
+}
+
+function eventFieldLabel(key: string): string {
+  return EVENT_FIELD_LABELS[key] ?? key;
+}
+
+function compactValue(value: unknown, key?: string, agentLabels?: AgentDisplayNames): string {
   if (value === null || value === undefined) {
     return "";
   }
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
+  if (typeof value === "string") {
+    return localizedScalarValue(value, key, agentLabels);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return localizedScalarValue(String(value), key, agentLabels);
   }
   if (Array.isArray(value)) {
-    return value.map(compactValue).filter(Boolean).join(", ");
+    return value.map((item) => compactValue(item, key, agentLabels)).filter(Boolean).join(", ");
   }
   if (typeof value === "object") {
     return Object.entries(value)
-      .map(([key, item]) => `${key}=${compactValue(item)}`)
+      .map(([itemKey, item]) => `${eventFieldLabel(itemKey)}=${compactValue(item, itemKey, agentLabels)}`)
       .filter((item) => !item.endsWith("="))
       .join(", ");
   }
   return String(value);
+}
+
+function localizedScalarValue(value: string, key?: string, agentLabels?: AgentDisplayNames): string {
+  if (isAgentFieldKey(key)) {
+    return agentDisplayName(value, agentLabels);
+  }
+  if (key === "stage" || key === "stage_type" || key === "node_id" || key === "stages" || key === "id" || key === "type") {
+    return workflowStageLabel(value);
+  }
+  if (key === "status") {
+    return STATUS_VALUE_LABELS[value] ?? value;
+  }
+  if (key === "artifact") {
+    return artifactValueLabel(value);
+  }
+  if (key === "timed_out") {
+    return value === "true" ? "是" : value === "false" ? "否" : value;
+  }
+  return value;
+}
+
+function isAgentFieldKey(key?: string): boolean {
+  return key === "agent" ||
+    key === "agents" ||
+    key === "actual_agent" ||
+    key === "primary_agent" ||
+    key === "requested_agent" ||
+    key?.endsWith("_agent") === true ||
+    key?.endsWith("_agents") === true;
+}
+
+function agentDisplayName(agent: string, agentLabels?: AgentDisplayNames): string {
+  const label = agentLabels?.[agent]?.trim();
+  return label && label !== agent ? label : agent;
+}
+
+function artifactValueLabel(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized === "findings") {
+    return "审查发现";
+  }
+  if (normalized === "decision") {
+    return "决策";
+  }
+  if (normalized === "context") {
+    return "上下文";
+  }
+  if (normalized === "request") {
+    return "请求";
+  }
+  if (normalized === "status") {
+    return "状态";
+  }
+  if (normalized.startsWith("review_")) {
+    return "审查输出";
+  }
+  return value;
 }
 
 function formatTimestamp(value: unknown): string {
@@ -189,3 +214,60 @@ function timestampMillis(value: unknown): number | null {
   const millis = Date.parse(value);
   return Number.isNaN(millis) ? null : millis;
 }
+
+const EVENT_LABELS: Record<string, string> = {
+  "artifact.written": "产物写入",
+  "release.verdict.recorded": "发布结论记录",
+  "review.completed": "审查完成",
+  "run.created": "运行创建",
+  "stage.agent_completed": "智能体完成",
+  "stage.agent_failed": "智能体失败",
+  "stage.agent_reused": "智能体复用",
+  "stage.agent_started": "智能体开始",
+  "stage.completed": "阶段完成",
+  "stage.failed": "阶段失败",
+  "stage.started": "阶段开始",
+};
+
+const EVENT_FIELD_LABELS: Record<string, string> = {
+  actual_agent: "实际智能体",
+  agent: "智能体",
+  agents: "智能体列表",
+  artifact: "产物",
+  duration_ms: "耗时",
+  error: "错误",
+  exit_code: "退出码",
+  id: "节点",
+  kind: "类型",
+  message: "消息",
+  node_id: "节点",
+  occurrence: "序号",
+  path: "路径",
+  primary_agent: "主智能体",
+  reason: "原因",
+  requested_agent: "请求智能体",
+  run_id: "运行",
+  stage: "阶段",
+  stage_nodes: "阶段节点",
+  stage_type: "阶段类型",
+  stages: "阶段列表",
+  status: "状态",
+  timed_out: "超时",
+  type: "类型",
+  verdict: "结论",
+  workflow: "流程",
+};
+
+const STATUS_VALUE_LABELS: Record<string, string> = {
+  accepted: "已接受",
+  completed: "已完成",
+  current: "当前",
+  failed: "失败",
+  needs_decision: "需要决策",
+  ok: "正常",
+  pending: "等待",
+  ready: "就绪",
+  rejected: "已拒绝",
+  running: "运行中",
+  started: "已开始",
+};

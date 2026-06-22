@@ -29,6 +29,7 @@ import {
 } from "../agents/AgentLifecyclePanel.js";
 
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { workflowStageLabel, workflowStageListLabel } from "../../app/stages.js";
 import type {
   StudioAgentSummary,
   StudioAgentUpdateRequest,
@@ -126,9 +127,9 @@ export function CatalogView({
   const presets = catalog.presets ?? [];
   const mcpServers = catalog.mcpServers ?? [];
   const diagnostics = catalog.diagnostics ?? [];
-  const lifecycleAgents = agentLifecycle?.state.status === "ready"
-    ? new Map(agentLifecycle.state.agents.map((agent) => [agent.id, agent]))
-    : new Map<string, StudioAgentSummary>();
+  const lifecycleAgentList = agentLifecycle?.state.status === "ready" ? agentLifecycle.state.agents : [];
+  const agentDisplayNames = agentDisplayNameMap([...agents, ...lifecycleAgentList]);
+  const lifecycleAgents = new Map<string, StudioAgentSummary>(lifecycleAgentList.map((agent) => [agent.id, agent]));
 
   async function submitAgentAction(
     action: "delete" | "enable" | "disable",
@@ -287,6 +288,7 @@ export function CatalogView({
                 }) } : {}),
               } : undefined,
               t,
+              agentDisplayNames,
             )) : <EmptyCatalogRow label={t("noPresets")} />}
           </Stack>
         </Tabs.Panel>
@@ -453,7 +455,7 @@ const MAX_EXECUTE_AGENTS = 1;
 
 const WORKFLOW_STAGE_OPTIONS = ["plan", "execute", "verify", "review", "decide"].map((stage) => ({
   value: stage,
-  label: stage,
+  label: workflowStageLabel(stage),
 }));
 
 export interface PresetManualFields {
@@ -1195,22 +1197,25 @@ export function PresetManualFieldsForm({
       />
       <Stack gap="xs" data-studio-section="preset-stage-assignments">
         <Text fw={700}>{t("stageAssignments")}</Text>
-        {stageIds.length > 0 ? stageIds.map((stageId) => (
-          <MultiSelect
-            data-studio-section={`preset-stage-${stageId}-agents-select`}
-            aria-label={`${t("stageAssignments")} ${stageId}`}
-            label={stageId}
-            placeholder={t("selectAgents")}
-            value={fields.stageAssignments[stageId] ?? []}
-            data={agentData}
-            maxValues={maxAgentsForStageAssignment(stageId)}
-            searchable
-            clearable
-            nothingFoundMessage={t("noAgents")}
-            key={stageId}
-            onChange={(value) => setStageAgents(stageId, value)}
-          />
-        )) : (
+        {stageIds.length > 0 ? stageIds.map((stageId) => {
+          const stageLabel = workflowStageLabel(stageId);
+          return (
+            <MultiSelect
+              data-studio-section={`preset-stage-${stageId}-agents-select`}
+              aria-label={`${t("stageAssignments")} ${stageLabel}`}
+              label={stageLabel}
+              placeholder={t("selectAgents")}
+              value={fields.stageAssignments[stageId] ?? []}
+              data={agentData}
+              maxValues={maxAgentsForStageAssignment(stageId)}
+              searchable
+              clearable
+              nothingFoundMessage={t("noAgents")}
+              key={stageId}
+              onChange={(value) => setStageAgents(stageId, value)}
+            />
+          );
+        }) : (
           <Text size="sm" c="dimmed">{t("selectWorkflowFirst")}</Text>
         )}
       </Stack>
@@ -1513,13 +1518,13 @@ function renderAgent(
 
   return (
     <Card className="studio-resource-card" key={agent.id} withBorder radius="md" p="md">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <Stack gap={3} miw={0}>
+      <Group className="studio-resource-card-layout" justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+        <Stack className="studio-resource-card-main" gap={3} miw={0}>
           <Text fw={800} truncate="end">{displayName}</Text>
           <Text size="sm" c="dimmed">{details}</Text>
-          <Text size="sm">{agent.capabilities.join(", ") || "no capabilities"}</Text>
+          <Text size="sm">{editableAgent.capabilities.map(workflowStageLabel).join(", ") || "no capabilities"}</Text>
         </Stack>
-        <Stack gap="xs" align="flex-end">
+        <Stack className="studio-resource-card-actions" gap="xs" align="flex-end">
           <Group gap={4} justify="flex-end">
             {status ? <Badge size="sm" color={status === "disabled" ? "gray" : "green"}>{agentStatusLabel(status, t)}</Badge> : null}
           </Group>
@@ -1576,12 +1581,14 @@ function agentToolModelLabel(agent: { adapter: string; model?: string }): string
 function renderMcpServer(server: StudioCatalogMcpServer): ReactElement {
   return (
     <Card className="studio-resource-card" key={server.id} withBorder radius="md" p="md">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <Stack gap={3} miw={0}>
+      <Group className="studio-resource-card-layout" justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+        <Stack className="studio-resource-card-main" gap={3} miw={0}>
           <Text fw={800} truncate="end">{server.id}</Text>
           <Text size="sm" c="dimmed">{server.command}</Text>
         </Stack>
-        <CatalogBadges values={server.resource_hints} />
+        <div className="studio-resource-card-actions">
+          <CatalogBadges values={server.resource_hints} />
+        </div>
       </Group>
     </Card>
   );
@@ -1594,6 +1601,7 @@ function renderPreset(
     onPresetDelete?: (preset: StudioCatalogPreset) => void;
   },
   t?: (key: StudioCopyKey) => string,
+  agentDisplayNames: Record<string, string> = {},
 ): ReactElement {
   const badges = preset.validationWarnings.length > 0
     ? [`warnings ${preset.validationWarnings.length}`]
@@ -1601,13 +1609,13 @@ function renderPreset(
   const presetTitle = preset.name || preset.presetId;
   return (
     <Card className="studio-resource-card" key={preset.presetId} withBorder radius="md" p="md">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <Stack gap={3} miw={0}>
+      <Group className="studio-resource-card-layout" justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+        <Stack className="studio-resource-card-main" gap={3} miw={0}>
           <Text fw={800} truncate="end">{presetTitle}</Text>
           <Text size="sm" c="dimmed">{preset.presetId} · {preset.workflowId} · {preset.source}</Text>
-          <Text size="sm">{presetAssignmentSummary(preset.stageAssignments)}</Text>
+          <Text size="sm">{presetAssignmentSummary(preset.stageAssignments, agentDisplayNames)}</Text>
         </Stack>
-        <Stack gap="xs" align="flex-end">
+        <Stack className="studio-resource-card-actions" gap="xs" align="flex-end">
           <CatalogBadges values={badges} />
           {controls ? (
             <Group gap="xs" justify="flex-end">
@@ -1703,14 +1711,14 @@ function WorkflowCard({
   const { t } = useStudioCopy();
   return (
     <Card className="studio-resource-card" key={workflow.workflowId} withBorder radius="md" p="md">
-      <Group justify="space-between" align="flex-start" gap="md">
-        <Stack gap={3} miw={0}>
+      <Group className="studio-resource-card-layout" justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+        <Stack className="studio-resource-card-main" gap={3} miw={0}>
           <Text fw={800} truncate="end">{workflow.name}</Text>
           <Text size="sm" c="dimmed">{workflow.workflowId} · {workflow.source}</Text>
-          <Text size="sm">{workflow.stages.join(" -> ")}</Text>
+          <Text size="sm">{workflowStageListLabel(workflow.stages)}</Text>
         </Stack>
         {onEdit || onDelete ? (
-          <Group gap="xs" justify="flex-end">
+          <Group className="studio-resource-card-actions" gap="xs" justify="flex-end">
             {onEdit ? (
               <Button
                 size="xs"
@@ -1741,11 +1749,18 @@ function WorkflowCard({
   );
 }
 
-function presetAssignmentSummary(stageAssignments: Record<string, string[]>): string {
+function presetAssignmentSummary(
+  stageAssignments: Record<string, string[]>,
+  agentDisplayNames: Record<string, string>,
+): string {
   const entries = Object.entries(stageAssignments);
   return entries.length > 0
-    ? entries.map(([stage, agents]) => `${stage}: ${agents.join(", ")}`).join(" · ")
+    ? entries.map(([stage, agents]) => `${workflowStageLabel(stage)}: ${agents.map((agent) => agentDisplayNames[agent] ?? agent).join(", ")}`).join(" · ")
     : "no stage assignments";
+}
+
+function agentDisplayNameMap(agents: Array<{ id: string; label?: string }>): Record<string, string> {
+  return Object.fromEntries(agents.map((agent) => [agent.id, agentDisplayName(agent)]));
 }
 
 function agentStatusLabel(status: string, t: (key: StudioCopyKey) => string): string {
