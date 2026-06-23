@@ -20,17 +20,17 @@ async function loadHelpers(): Promise<ReleaseAssetHelpers> {
 test("GitHub release tarball asset drops npm scope from filenames", async () => {
   const tempDir = mkdtempSync(path.join(tmpdir(), "agentmesh-release-assets-"));
   test.after(() => rmSync(tempDir, { recursive: true, force: true }));
-  writeFileSync(path.join(tempDir, "jinhx128-agentmesh-0.1.7.tgz"), "tarball");
+  writeFileSync(path.join(tempDir, "jinhx128-agentmesh-0.1.8.tgz"), "tarball");
 
   const { normalizePackedTarballAsset } = await loadHelpers();
   const releaseName = normalizePackedTarballAsset({
     distDir: tempDir,
-    npmPackOutput: JSON.stringify([{ filename: "jinhx128-agentmesh-0.1.7.tgz" }]),
-    version: "0.1.7",
+    npmPackOutput: JSON.stringify([{ filename: "jinhx128-agentmesh-0.1.8.tgz" }]),
+    version: "0.1.8",
   });
 
-  assert.equal(releaseName, "agentmesh-0.1.7.tgz");
-  assert.equal(existsSync(path.join(tempDir, "agentmesh-0.1.7.tgz")), true);
-  assert.equal(existsSync(path.join(tempDir, "jinhx128-agentmesh-0.1.7.tgz")), false);
-  assert.equal(readFileSync(path.join(tempDir, "agentmesh-0.1.7.tgz"), "utf-8"), "tarball");
+  assert.equal(releaseName, "agentmesh-0.1.8.tgz");
+  assert.equal(existsSync(path.join(tempDir, "agentmesh-0.1.8.tgz")), true);
+  assert.equal(existsSync(path.join(tempDir, "jinhx128-agentmesh-0.1.8.tgz")), false);
+  assert.equal(readFileSync(path.join(tempDir, "agentmesh-0.1.8.tgz"), "utf-8"), "tarball");
 });

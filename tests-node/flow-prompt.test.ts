@@ -6,7 +6,7 @@ import test from "node:test";
 import { buildStagePrompt } from "../packages/runtime/src/flow/prompt.js";
 import { makeWorkspace } from "./helpers/write-side-runtime.js";
 
-test("prompt assembly bounds large context while preserving packet path", () => {
+test("prompt assembly references context without replaying local content", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const runDir = path.join(workspace, ".agentmesh", "runs", "bounded-context-prompt");
@@ -36,19 +36,21 @@ test("prompt assembly bounds large context while preserving packet path", () => 
   );
   writeFileSync(path.join(runDir, "request.md"), "# Request\n\nInspect bounded context.\n");
   writeFileSync(path.join(runDir, "assignment.toml"), "[stage_assignments]\nplan = [\"current\"]\n");
-  writeFileSync(
-    path.join(runDir, "context.md"),
-    ["# Context", "", "CONTEXT_PREFIX", "x".repeat(50_000), "CONTEXT_TAIL_SHOULD_NOT_REPLAY"].join("\n"),
-  );
+  const context = ["# Context", "", "CONTEXT_PREFIX", "x".repeat(50_000), "CONTEXT_TAIL_SHOULD_NOT_REPLAY"].join("\n");
+  writeFileSync(path.join(runDir, "context.md"), context);
 
   const prompt = buildStagePrompt(runDir, "plan", workspace);
 
   assert.match(prompt, /Packet Directory: \.agentmesh\/runs\/bounded-context-prompt/);
-  assert.match(prompt, /CONTEXT_PREFIX/);
-  assert.match(prompt, /AgentMesh prompt assembly truncated context\.md/);
-  assert.match(prompt, /showing 24000\/[0-9]+ bytes/);
+  assert.match(prompt, /## Context Reference/);
+  assert.match(prompt, /Context artifact: context\.md/);
+  assert.match(prompt, /Context path: \.agentmesh\/runs\/bounded-context-prompt\/context\.md/);
+  assert.match(prompt, new RegExp(`Context bytes: ${Buffer.byteLength(context, "utf-8")}`));
+  assert.match(prompt, /Read or scan the context path above only when needed/);
+  assert.doesNotMatch(prompt, /CONTEXT_PREFIX/);
+  assert.doesNotMatch(prompt, /AgentMesh prompt assembly truncated context\.md/);
   assert.doesNotMatch(prompt, /CONTEXT_TAIL_SHOULD_NOT_REPLAY/);
-  assert.ok(Buffer.byteLength(prompt, "utf-8") < 30_000, "prompt should not replay full context");
+  assert.ok(Buffer.byteLength(prompt, "utf-8") < 6_000, "prompt should reference context instead of replaying it");
 });
 
 test("prompt assembly displays absolute packet directory when run is outside cwd", () => {

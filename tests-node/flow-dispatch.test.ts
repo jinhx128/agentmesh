@@ -489,7 +489,7 @@ test("plan fanout starts candidate agents concurrently", () => {
   assert.match(readFileSync(path.join(runDir, "plan.md"), "utf-8"), /Synthesized concurrent candidates/);
 });
 
-test("plan fanout synthesis prompt references context without replaying it", () => {
+test("plan fanout prompts reference context without replaying it", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const planner = path.join(workspace, "context-aware-planner.sh");
@@ -514,7 +514,8 @@ test("plan fanout synthesis prompt references context without replaying it", () 
       "  grep -q \"planner_b candidate\" \"$prompt_file\"",
       "  printf '# Plan\\n\\nSynthesized without replaying context.\\n' > \"$output_file\"",
       "else",
-      "  grep -q \"CONTEXT_SENTINEL\" \"$prompt_file\"",
+      "  grep -q \"Context artifact: context.md\" \"$prompt_file\"",
+      "  ! grep -q \"CONTEXT_SENTINEL\" \"$prompt_file\"",
       "  printf '# Plan\\n\\n%s candidate.\\n' \"$agent_name\" > \"$output_file\"",
       "fi",
       "",
@@ -586,14 +587,21 @@ test("plan fanout synthesis prompt references context without replaying it", () 
   const runDir = path.join(workspace, ".agentmesh", "runs", "plan-fanout-context-flow");
   const candidatePrompt = readFileSync(path.join(runDir, "prompts", "plan", "planner_a.md"), "utf-8");
   const synthesisPrompt = readFileSync(path.join(runDir, "prompts", "plan", "synthesis.md"), "utf-8");
-  assert.match(candidatePrompt, /CONTEXT_SENTINEL/);
+  assert.match(candidatePrompt, /Context artifact: context\.md/);
+  assert.match(candidatePrompt, /Context path: \.agentmesh\/runs\/plan-fanout-context-flow\/context\.md/);
+  assert.doesNotMatch(candidatePrompt, /CONTEXT_SENTINEL/);
+  assert.match(synthesisPrompt, /Packet Directory: \.agentmesh\/runs\/plan-fanout-context-flow/);
+  assert.match(synthesisPrompt, /Context artifact: context\.md/);
+  assert.match(synthesisPrompt, /Context path: \.agentmesh\/runs\/plan-fanout-context-flow\/context\.md/);
+  assert.match(synthesisPrompt, /Context bytes: [0-9]+/);
+  assert.doesNotMatch(synthesisPrompt, /was already provided to the candidate fanout prompts/);
   assert.doesNotMatch(synthesisPrompt, /CONTEXT_SENTINEL/);
   assert.match(synthesisPrompt, /context\.md/);
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.ok(status.prompt_bytes.prompt_plan_planner_a.bytes > status.context_bytes);
+  assert.ok(status.prompt_bytes.prompt_plan_planner_a.bytes < status.context_bytes);
   assert.ok(
-    status.prompt_bytes.prompt_plan_synthesis.bytes < status.prompt_bytes.prompt_plan_planner_a.bytes,
+    status.prompt_bytes.prompt_plan_synthesis.bytes < status.context_bytes,
     "synthesis prompt should avoid replaying full context",
   );
 });
@@ -2238,7 +2246,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       assert.equal(firstLease.workspace, workspace);
       assert.equal(firstLease.scope, "run:owner-lock-flow");
       assert.equal(firstLease.entrypoint, "desktop");
-      assert.equal(firstLease.runtime_version, "0.1.7");
+      assert.equal(firstLease.runtime_version, "0.1.8");
       assert.equal(firstLease.operation, "owner-metadata");
       assert.equal(firstLease.operation_id, "operation-123");
       assert.equal(firstLease.command, "flow.dispatch:plan");
@@ -2258,7 +2266,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       ]);
       assert.equal(attach.status, 1);
       assert.match(attach.stderr, /entrypoint desktop/);
-      assert.match(attach.stderr, /runtime 0\.1\.7/);
+      assert.match(attach.stderr, /runtime 0\.1\.8/);
       assert.match(attach.stderr, /operation_id operation-123/);
       assert.match(attach.stderr, /command flow\.dispatch:plan/);
 
@@ -2269,7 +2277,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
     },
     {
       entrypoint: "desktop",
-      runtimeVersion: "0.1.7",
+      runtimeVersion: "0.1.8",
       operationId: "operation-123",
       command: "flow.dispatch:plan",
       heartbeatIntervalMs: 5,

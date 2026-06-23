@@ -1390,20 +1390,20 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
   assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.7/);
+  assert.match(settings, /Codex（codex） · 运行时 0\.1\.8/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
   assert.match(settings, /版本更新/);
   assert.match(settings, /重新检查/);
   assert.match(settings, /当前版本/);
-  assert.match(settings, /0\.1\.7/);
-  assert.match(settings, /最新版本/);
   assert.match(settings, /0\.1\.8/);
+  assert.match(settings, /最新版本/);
+  assert.match(settings, /0\.1\.9/);
   assert.match(settings, /CLI 更新/);
-  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.8\.tgz/);
+  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.9\.tgz/);
   assert.match(settings, /桌面端更新/);
-  assert.match(settings, /AgentMesh_0\.1\.8_aarch64\.dmg/);
-  assert.doesNotMatch(settings, /Runtime 0\.1\.7|entrypoint|Last writer|Metadata ·/);
+  assert.match(settings, /AgentMesh_0\.1\.9_aarch64\.dmg/);
+  assert.doesNotMatch(settings, /Runtime 0\.1\.8|entrypoint|Last writer|Metadata ·/);
   const updateError = renderSettingsAboutPanel({
     status: "ready",
     compatibility: compatibilityFixture(),
@@ -2572,15 +2572,15 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
   return {
     decision: "read_write",
     metadata_state: "ok",
-    current_runtime_version: "0.1.7",
+    current_runtime_version: "0.1.8",
     current_entrypoint: "studio",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
       packet_schema_version: 1,
-      min_read_runtime_version: "0.1.7",
-      min_write_runtime_version: "0.1.7",
-      last_writer_runtime_version: "0.1.7",
+      min_read_runtime_version: "0.1.8",
+      min_write_runtime_version: "0.1.8",
+      last_writer_runtime_version: "0.1.8",
       last_writer_entrypoint: "codex",
       updated_at: "2026-05-18T07:00:00.000Z",
     },
@@ -2591,21 +2591,21 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
 function updateFixture(): StudioUpdateReport {
   return {
     schema_version: 1,
-    current_version: "0.1.7",
-    latest_version: "0.1.8",
+    current_version: "0.1.8",
+    latest_version: "0.1.9",
     update_available: true,
-    release_url: "https://example.invalid/releases/tag/v0.1.8",
+    release_url: "https://example.invalid/releases/tag/v0.1.9",
     checked_at: "2026-05-23T13:00:00.000Z",
     cli: {
       status: "update_available",
-      asset_name: "agentmesh-0.1.8.tgz",
-      asset_url: "https://example.invalid/agentmesh-0.1.8.tgz",
-      install_command: ["npm", "install", "-g", "https://example.invalid/agentmesh-0.1.8.tgz"],
+      asset_name: "agentmesh-0.1.9.tgz",
+      asset_url: "https://example.invalid/agentmesh-0.1.9.tgz",
+      install_command: ["npm", "install", "-g", "https://example.invalid/agentmesh-0.1.9.tgz"],
     },
     desktop: {
       status: "manual_update_available",
-      asset_name: "AgentMesh_0.1.8_aarch64.dmg",
-      asset_url: "https://example.invalid/AgentMesh_0.1.8_aarch64.dmg",
+      asset_name: "AgentMesh_0.1.9_aarch64.dmg",
+      asset_url: "https://example.invalid/AgentMesh_0.1.9_aarch64.dmg",
       reason: "Desktop auto-update is not enabled for this release channel; download and install the DMG manually.",
     },
   };
@@ -2615,7 +2615,7 @@ function legacyCompatibilityFixture(): Extract<SettingsAboutState, { status: "re
   return {
     decision: "read_write",
     metadata_state: "missing_legacy",
-    current_runtime_version: "0.1.7",
+    current_runtime_version: "0.1.8",
     current_entrypoint: "cli",
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: null,
@@ -2639,19 +2639,19 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         found: true,
         path: "/usr/local/bin/agentmesh",
         source: "app_wrapper",
-        version: "0.1.7",
+        version: "0.1.8",
       },
       target_file: {
         exists: true,
         source: "app_wrapper",
-        version: "0.1.7",
+        version: "0.1.8",
         different: false,
       },
       app_wrapper: {
         node_path: "/Applications/AgentMesh.app/node",
         cli_path: "/Applications/AgentMesh.app/cli.js",
         channel: "dev",
-        version: "0.1.7",
+        version: "0.1.8",
       },
     },
     skills: {

@@ -27,7 +27,6 @@ import {
 
 const PRIOR_ARTIFACT_CONTENT_MAX_BYTES = 6_000;
 const PRIOR_RAW_REVIEW_OUTPUT_MAX_BYTES = 2_500;
-const CONTEXT_PROMPT_CONTENT_MAX_BYTES = 24_000;
 const RELEASE_SUMMARY_PROMPT_CONTENT_MAX_BYTES = 24_000;
 
 export function buildStagePrompt(
@@ -69,9 +68,9 @@ export function buildStagePrompt(
   ];
   if (context.trim()) {
     sections.push(
-      "## Context",
+      "## Context Reference",
       "",
-      boundedPromptContent(context.trimEnd(), "context.md", CONTEXT_PROMPT_CONTENT_MAX_BYTES),
+      contextReferencePromptContent(context, `${packetDisplayPath(runDir, cwd)}/context.md`),
       "",
     );
   }
@@ -115,6 +114,16 @@ export function releaseSummaryPromptContent(content: string): string {
     "release-summary.md",
     RELEASE_SUMMARY_PROMPT_CONTENT_MAX_BYTES,
   );
+}
+
+export function contextReferencePromptContent(context: string, contextPath = "context.md"): string {
+  const bytes = Buffer.byteLength(context, "utf-8");
+  return [
+    "Context artifact: context.md",
+    `Context path: ${contextPath}`,
+    `Context bytes: ${bytes}`,
+    "Read or scan the context path above only when needed. Do not assume this prompt replays the full local context.",
+  ].join("\n");
 }
 
 export function writePrompt(runDir: string, stage: string, cwd: string, agent: string): string {
@@ -285,7 +294,7 @@ function demoteMarkdownHeadings(content: string): string {
     .join("\n");
 }
 
-function packetDisplayPath(runDir: string, cwd: string): string {
+export function packetDisplayPath(runDir: string, cwd: string): string {
   const relative = path.relative(cwd, runDir);
   const display = relative && !relative.startsWith("..") && !path.isAbsolute(relative)
     ? relative

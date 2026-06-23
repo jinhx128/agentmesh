@@ -153,7 +153,7 @@ test("packages and apps are explicit workspace build units", () => {
       assert.equal(unitPackageJson.dependencies["react-dom"], "^19.2.6");
     } else if (unitPath === "apps/studio-desktop") {
       assert.equal(unitPackageJson.exports, undefined);
-      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.1.7");
+      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.1.8");
     } else {
       assert.equal(typeof unitPackageJson.exports, "object");
       assert.ok(unitPackageJson.exports["."].startsWith("./src/"));
@@ -405,7 +405,7 @@ test("skills package owns skill templates and install verification", () => {
   });
 
   assert.equal(skillsPackage.name, "@agentmesh/skills");
-  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.1.7");
+  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.1.8");
   assert.equal(existsSync(path.join(root, "packages", "skills", "agentmesh-skill", "SKILL.md")), true);
   assert.equal(existsSync(path.join(root, "agentmesh-skill", "SKILL.md")), false);
   assert.match(cliSkillCommand, /@agentmesh\/skills/);
@@ -447,7 +447,7 @@ test("public read SDK is promoted with read-only boundaries and real consumers",
   assert.equal(sdkPackageJson.type, "module");
   assert.equal(sdkPackageJson.exports["."], "./src/index.ts");
   assert.equal(sdkPackageJson.dependencies["@agentmesh/runtime"], undefined);
-  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.1.7");
+  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.1.8");
   assert.equal(typeof sdkPackageJson.dependencies["smol-toml"], "string");
 
   for (const apiName of [

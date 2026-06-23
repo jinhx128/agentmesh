@@ -41,7 +41,9 @@ import { refreshReleaseEvidenceSummary } from "../release/check.js";
 import { readOptional } from "./files.js";
 import {
   buildStagePrompt,
+  contextReferencePromptContent,
   orderedPriorEvidenceSections,
+  packetDisplayPath,
   recordPromptByteMetric,
   releaseSummaryPromptContent,
   writePrompt,
@@ -1181,6 +1183,7 @@ function synthesisBaseSections(
     "",
     `Stage: ${node.id}`,
     `Stage Type: ${node.type}`,
+    `Packet Directory: ${packetDisplayPath(runDir, process.cwd())}`,
     `Agent: ${controllerAgent}`,
     "",
     "## Request",
@@ -1196,7 +1199,7 @@ function synthesisBaseSections(
     sections.push(
       "## Context Reference",
       "",
-      "Full context is available in `context.md` and was already provided to the candidate fanout prompts. Use the fanout outputs below as the primary synthesis evidence; inspect `context.md` only when the candidates cite or require it.",
+      contextReferencePromptContent(context, `${packetDisplayPath(runDir, process.cwd())}/context.md`),
       "",
     );
   }
