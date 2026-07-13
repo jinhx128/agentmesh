@@ -241,6 +241,7 @@ button:not(:disabled),
 
 .studio-brand-panel {
   position: relative;
+  flex: 0 0 auto;
   overflow: hidden;
   border-color: var(--studio-border) !important;
   background: #fffdfc;
@@ -259,6 +260,7 @@ button:not(:disabled),
 .studio-brand-panel .mantine-Title-root {
   color: #111827;
   letter-spacing: 0;
+  line-height: 1.3;
 }
 
 .studio-brand-panel .mantine-Button-root {
@@ -1313,7 +1315,7 @@ button:not(:disabled),
 
   .studio-brand-panel .mantine-Title-root {
     font-size: 28px !important;
-    line-height: 1.08;
+    line-height: 1.25;
   }
 
   .studio-brand-panel .mantine-Button-root {
