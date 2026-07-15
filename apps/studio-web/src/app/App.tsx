@@ -610,14 +610,11 @@ export function App(): ReactElement {
     return response;
   }
 
-  async function submitCommandLineToolInstall(request: {
-    bin_dir: string;
-    confirm_existing: boolean;
-  }): Promise<void> {
+  async function submitCommandLineToolInstall(): Promise<void> {
     if (!apiClient) {
       throw new Error("AgentMesh API is not ready.");
     }
-    const response = await installCommandLineTool(apiClient, request);
+    const response = await installCommandLineTool(apiClient, {});
     if (response.ok && "command_line_tool" in response.payload) {
       setAgentIntegrationsState({
         status: "ready",

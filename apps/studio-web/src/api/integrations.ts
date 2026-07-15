@@ -16,29 +16,14 @@ export interface StudioIntegrationsReport {
   workspace: string;
   command_line_tool: {
     supported: boolean;
-    default_bin_dir: string;
-    target_path: string;
-    requires_confirmation: boolean;
-    path_command: {
-      found: boolean;
-      path?: string;
-      source: "missing" | "app_wrapper" | "external";
-      version: string;
-      diagnostic?: string;
-    };
-    target_file: {
-      exists: boolean;
-      source: "missing" | "app_wrapper" | "external";
-      version: string;
-      different: boolean;
-      diagnostic?: string;
-    };
-    app_wrapper: {
-      node_path?: string;
-      cli_path?: string;
-      channel?: string;
-      version: string;
-    };
+    package_name: "@jinhx128/agentmesh";
+    installed: boolean;
+    path?: string;
+    source: ProviderCliResolutionSource;
+    installed_version: string;
+    latest_version: string;
+    status: "missing" | "current" | "update_available" | "unknown";
+    diagnostics: string[];
   };
   provider_clis: {
     tools: StudioProviderCliToolReport[];
@@ -71,9 +56,12 @@ export interface StudioSkillTargetReport {
 }
 
 export interface InstallCommandLineToolResponse extends StudioIntegrationsReport {
-  installed: {
-    path: string;
-    replaced_existing: boolean;
+  operation: {
+    npm_path: string;
+    args: string[];
+    exit_code: number;
+    stdout: string;
+    stderr: string;
   };
 }
 
@@ -86,10 +74,7 @@ export interface InstallAgentSkillsResponse extends StudioIntegrationsReport {
   }>;
 }
 
-export interface InstallCommandLineToolRequest {
-  bin_dir: string;
-  confirm_existing: boolean;
-}
+export type InstallCommandLineToolRequest = Record<string, never>;
 
 export interface InstallAgentSkillsRequest {
   targets: AgentMeshSkillTarget[];

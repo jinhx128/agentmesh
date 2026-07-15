@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { Server } from "node:http";
-import { fileURLToPath } from "node:url";
 
 import { startStudioServer } from "@agentmesh/app-server/src/server.js";
+import type { StudioIntegrationOptions } from "@agentmesh/app-server/src/integrations.js";
 import { defaultBundledStudioAssetDir } from "./options.js";
 
 export interface StartStudioDesktopHostOptions {
@@ -11,6 +11,7 @@ export interface StartStudioDesktopHostOptions {
   workspace: string;
   assetDir?: string;
   token?: string;
+  integrations?: StudioIntegrationOptions;
 }
 
 export interface StartedStudioDesktopHost {
@@ -46,9 +47,7 @@ export async function startStudioDesktopHost(
       authToken: token,
       assetDir,
       entrypoint: "desktop",
-      integrations: {
-        commandLineTool: desktopCommandLineToolSource(),
-      },
+      integrations: options.integrations,
     });
   } catch (error) {
     throw new Error(
@@ -108,18 +107,4 @@ export function serializeStudioDesktopLaunchEvent(started: StartedStudioDesktopH
 
 function generateLaunchToken(): string {
   return randomBytes(32).toString("base64url");
-}
-
-function desktopCommandLineToolSource(): {
-  nodePath: string;
-  cliPath: string;
-  channel: "desktop";
-} {
-  return {
-    nodePath: process.execPath,
-    cliPath: fileURLToPath(
-      new URL(["..", "..", "..", "packages", "cli", "src", "cli.js"].join("/"), import.meta.url),
-    ),
-    channel: "desktop",
-  };
 }

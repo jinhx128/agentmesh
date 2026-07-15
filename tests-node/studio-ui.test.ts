@@ -1445,6 +1445,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(integrations, /CLI 检测/);
   assert.match(integrations, /OpenCode CLI/);
   assert.match(integrations, /\.opencode\/bin\/opencode/);
+  assert.match(integrations, /更新命令行工具/);
+  assert.match(integrations, /0\.1\.9/);
+  assert.match(integrations, /0\.1\.10/);
+  assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
   assert.match(integrations, /安装选中的 Skill/);
   assert.doesNotMatch(integrations, />studio-desktop</);
 
@@ -1811,7 +1815,7 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   await submitStudioPresetDelete(client, "p-review");
   await submitStudioPresetCreate(client, { preset_toml: "schema_version = 1", source_name: "review-duo.toml" });
   await loadStudioIntegrations(client);
-  await installCommandLineTool(client, { bin_dir: "/usr/local/bin", confirm_existing: true });
+  await installCommandLineTool(client, {});
   await installAgentSkills(client, { targets: ["codex"], force: false });
   await loadStudioUpdate(client);
 
@@ -2633,6 +2637,14 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
     workspace: "/workspace/project",
     command_line_tool: {
       supported: true,
+      package_name: "@jinhx128/agentmesh",
+      installed: true,
+      path: "/usr/local/bin/agentmesh",
+      source: "path",
+      installed_version: "0.1.9",
+      latest_version: "0.1.10",
+      status: "update_available",
+      diagnostics: [],
       default_bin_dir: "/usr/local/bin",
       target_path: "/usr/local/bin/agentmesh",
       requires_confirmation: false,
@@ -2693,7 +2705,7 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         },
       ],
     },
-  };
+  } as unknown as Extract<AgentIntegrationsState, { status: "ready" }>["report"];
 }
 
 function advancedSettingsFixture(): StudioAdvancedSettingsPayload {
@@ -2927,7 +2939,13 @@ function apiPayloadFor(pathname: string): unknown {
   if (pathname === "/api/desktop/integrations" || pathname === "/api/desktop/integrations/command-line-tool") {
     return {
       ...integrationsFixture(),
-      installed: { path: "/usr/local/bin/agentmesh", replaced_existing: true },
+      operation: {
+        npm_path: "/usr/local/bin/npm",
+        args: ["install", "--global", "@jinhx128/agentmesh@latest", "--no-audit", "--no-fund"],
+        exit_code: 0,
+        stdout: "",
+        stderr: "",
+      },
     };
   }
   if (pathname === "/api/desktop/integrations/skills") {

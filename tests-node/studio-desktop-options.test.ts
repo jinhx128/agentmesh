@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { createServer, request as httpRequest } from "node:http";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +13,11 @@ import {
   serializeStudioDesktopLaunchEvent,
   startStudioDesktopHost,
 } from "../apps/studio-desktop/src/host.js";
+import {
+  installStudioCommandLineTool,
+  readStudioIntegrations,
+  type StudioIntegrationOptions,
+} from "../packages/app-server/src/integrations.js";
 import { currentPacketStatus } from "./helpers/current-packet-status.js";
 
 function makeWorkspace(): string {
@@ -50,10 +54,18 @@ function writeRun(workspace: string, runId: string): void {
   writeFileSync(path.join(runDir, "artifacts.toml"), "schema_version = 1\n");
 }
 
-function writeFakeAgentmesh(binDir: string): string {
+function writeFakeAgentmesh(binDir: string, version = "0.1.9"): string {
   mkdirSync(binDir, { recursive: true });
   const filePath = path.join(binDir, "agentmesh");
-  writeFileSync(filePath, "#!/bin/sh\necho fake-agentmesh \"$@\"\n");
+  writeFileSync(filePath, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"--version\" ]; then",
+    `  echo ${JSON.stringify(`agentmesh ${version}`)}`,
+    "  exit 0",
+    "fi",
+    "exit 0",
+    "",
+  ].join("\n"));
   chmodSync(filePath, 0o755);
   return filePath;
 }
@@ -514,6 +526,16 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
     workspace,
     port: 0,
     token: "integration-token",
+    integrations: {
+      registryFetch: async () => new Response(JSON.stringify({ version: "0.1.10" }), {
+        status: 200,
+      }),
+      discovery: {
+        homeDir: fakeHome,
+        wellKnownPaths: [path.join(workspace, "empty-bin")],
+        shellPath: path.join(workspace, "missing-shell"),
+      },
+    },
   });
   try {
     const response = await fetch(`${started.serverUrl}/api/desktop/integrations`, {
@@ -524,7 +546,12 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
     const payload = JSON.parse(responseText) as {
       command_line_tool: {
         supported: boolean;
-        path_command: { found: boolean; source: string };
+        package_name: string;
+        installed: boolean;
+        status: string;
+        installed_version: string;
+        latest_version: string;
+        source: string;
       };
       skills: { targets: Array<{ target: string; status: string }> };
       provider_clis: {
@@ -540,8 +567,11 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
       };
     };
     assert.equal(payload.command_line_tool.supported, true);
-    assert.equal(payload.command_line_tool.path_command.found, false);
-    assert.equal(payload.command_line_tool.path_command.source, "missing");
+    assert.equal(payload.command_line_tool.package_name, "@jinhx128/agentmesh");
+    assert.equal(payload.command_line_tool.installed, false);
+    assert.equal(payload.command_line_tool.status, "missing");
+    assert.equal(payload.command_line_tool.installed_version, "missing");
+    assert.equal(payload.command_line_tool.source, "missing");
     assert.deepEqual(
       payload.provider_clis.tools.map((tool) => tool.tool).sort(),
       ["antigravity", "claude", "codex", "cursor", "opencode"],
@@ -578,138 +608,105 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
   }
 });
 
-test("desktop command-line tool install requires confirmation and writes an app-managed wrapper", async () => {
+test("desktop detects and updates the public npm CLI without path input", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  const existingBin = path.join(workspace, "existing-bin");
-  const installBin = path.join(workspace, "install-bin");
-  const existingCommand = writeFakeAgentmesh(existingBin);
+  const binDir = path.join(workspace, "bin");
+  const agentmeshPath = writeFakeAgentmesh(binDir, "0.1.9");
+  const npmPath = path.join(binDir, "npm");
+  const npmArgsPath = path.join(workspace, "npm-args.json");
+  writeFileSync(npmPath, [
+    "#!/bin/sh",
+    `printf '%s\\n' \"$@\" > ${JSON.stringify(npmArgsPath)}`,
+    `cat > ${JSON.stringify(agentmeshPath)} <<'EOF'`,
+    "#!/bin/sh",
+    "if [ \"$1\" = \"--version\" ]; then echo 'agentmesh 0.1.10'; fi",
+    "EOF",
+    `chmod +x ${JSON.stringify(agentmeshPath)}`,
+    "",
+  ].join("\n"));
+  chmodSync(npmPath, 0o755);
 
   const previousPath = process.env.PATH;
-  process.env.PATH = existingBin;
-  const started = await startStudioDesktopHost({
-    workspace,
-    port: 0,
-    token: "tool-token",
-  });
+  process.env.PATH = `${binDir}:/bin:/usr/bin`;
+  const integrations = {
+    registryFetch: async () => new Response(JSON.stringify({ version: "0.1.10" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  } as StudioIntegrationOptions;
   try {
-    const denied = await fetch(`${started.serverUrl}/api/desktop/integrations/command-line-tool`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: "agentmesh_studio_token=tool-token",
-      },
-      body: JSON.stringify({ bin_dir: installBin }),
+    const before = await readStudioIntegrations({
+      cwd: workspace,
+      entrypoint: "desktop",
+      integrations,
     });
-    assert.equal(denied.status, 409, await denied.text());
-    assert.equal(readFileSync(existingCommand, "utf-8"), "#!/bin/sh\necho fake-agentmesh \"$@\"\n");
+    assert.deepEqual(before.command_line_tool, {
+      supported: true,
+      package_name: "@jinhx128/agentmesh",
+      installed: true,
+      path: agentmeshPath,
+      source: "path",
+      installed_version: "0.1.9",
+      latest_version: "0.1.10",
+      status: "update_available",
+      diagnostics: [],
+    });
 
-    const installed = await fetch(`${started.serverUrl}/api/desktop/integrations/command-line-tool`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: "agentmesh_studio_token=tool-token",
-      },
-      body: JSON.stringify({ bin_dir: installBin, confirm_existing: true }),
-    });
-    const installedText = await installed.text();
-    assert.equal(installed.status, 200, installedText);
-    const payload = JSON.parse(installedText) as {
-      installed: { path: string; replaced_existing: boolean };
-      command_line_tool: {
-        path_command: { path?: string; source: string };
-        target_path: string;
-        target_file: { exists: boolean; source: string; version: string; different: boolean };
-      };
+    const result = await installStudioCommandLineTool({}, {
+      cwd: workspace,
+      entrypoint: "desktop",
+      integrations,
+    }) as unknown as {
+      command_line_tool: { installed_version: string; status: string };
+      operation: { npm_path: string };
     };
-    const wrapperPath = path.join(installBin, "agentmesh");
-    assert.equal(payload.installed.path, wrapperPath);
-    assert.equal(payload.installed.replaced_existing, false);
-    assert.equal(payload.command_line_tool.target_path, wrapperPath);
-    assert.deepEqual(payload.command_line_tool.target_file, {
-      exists: true,
-      source: "app_wrapper",
-      version: "0.1.10",
-      different: false,
-    });
-    assert.equal(payload.command_line_tool.path_command.path, existingCommand);
-    assert.equal(payload.command_line_tool.path_command.source, "external");
-    const wrapper = readFileSync(wrapperPath, "utf-8");
-    assert.match(wrapper, /agentmesh_app_managed=true/);
-    assert.match(wrapper, /agentmesh_cli_version=0\.1\.10/);
-
-    const help = execFileSync(wrapperPath, ["--help"], {
-      encoding: "utf-8",
-      env: {
-        ...process.env,
-        PATH: installBin,
-        HOME: path.join(workspace, "home"),
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    assert.equal(help, "");
+    assert.equal(result.command_line_tool.installed_version, "0.1.10");
+    assert.equal(result.command_line_tool.status, "current");
+    assert.equal(result.operation.npm_path, npmPath);
+    assert.deepEqual(readFileSync(npmArgsPath, "utf-8").trim().split("\n"), [
+      "install",
+      "--global",
+      "@jinhx128/agentmesh@latest",
+      "--no-audit",
+      "--no-fund",
+    ]);
   } finally {
     process.env.PATH = previousPath;
-    await started.stop();
   }
 });
 
-test("desktop command-line tool install requires confirmation before replacing target file", async () => {
+test("desktop keeps installed CLI status when npm registry is unavailable", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  const installBin = path.join(workspace, "install-bin");
-  const existingTarget = writeFakeAgentmesh(installBin);
+  const binDir = path.join(workspace, "bin");
+  const agentmeshPath = writeFakeAgentmesh(binDir, "0.1.9");
 
   const previousPath = process.env.PATH;
-  process.env.PATH = "";
-  const started = await startStudioDesktopHost({
-    workspace,
-    port: 0,
-    token: "target-conflict-token",
-  });
+  process.env.PATH = binDir;
   try {
-    const denied = await fetch(`${started.serverUrl}/api/desktop/integrations/command-line-tool`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: "agentmesh_studio_token=target-conflict-token",
-      },
-      body: JSON.stringify({ bin_dir: installBin }),
-    });
-    assert.equal(denied.status, 409, await denied.text());
-    assert.equal(readFileSync(existingTarget, "utf-8"), "#!/bin/sh\necho fake-agentmesh \"$@\"\n");
-
-    const installed = await fetch(`${started.serverUrl}/api/desktop/integrations/command-line-tool`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: "agentmesh_studio_token=target-conflict-token",
-      },
-      body: JSON.stringify({ bin_dir: installBin, confirm_existing: true }),
-    });
-    const installedText = await installed.text();
-    assert.equal(installed.status, 200, installedText);
-    const payload = JSON.parse(installedText) as {
-      installed: { path: string; replaced_existing: boolean };
+    const result = await readStudioIntegrations({
+      cwd: workspace,
+      entrypoint: "desktop",
+      integrations: {
+        registryFetch: async () => { throw new Error("offline"); },
+      } as StudioIntegrationOptions,
+    }) as unknown as {
       command_line_tool: {
-        target_path: string;
-        requires_confirmation: boolean;
-        target_file: { exists: boolean; source: string; version: string; different: boolean };
+        path?: string;
+        installed_version: string;
+        latest_version: string;
+        status: string;
+        diagnostics: string[];
       };
     };
-    assert.equal(payload.installed.path, existingTarget);
-    assert.equal(payload.installed.replaced_existing, true);
-    assert.equal(payload.command_line_tool.target_path, existingTarget);
-    assert.equal(payload.command_line_tool.requires_confirmation, false);
-    assert.deepEqual(payload.command_line_tool.target_file, {
-      exists: true,
-      source: "app_wrapper",
-      version: "0.1.10",
-      different: false,
-    });
+    assert.equal(result.command_line_tool.path, agentmeshPath);
+    assert.equal(result.command_line_tool.installed_version, "0.1.9");
+    assert.equal(result.command_line_tool.latest_version, "unknown");
+    assert.equal(result.command_line_tool.status, "unknown");
+    assert.match(result.command_line_tool.diagnostics.join("\n"), /registry check failed: offline/);
   } finally {
     process.env.PATH = previousPath;
-    await started.stop();
   }
 });
 

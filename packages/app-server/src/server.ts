@@ -56,7 +56,6 @@ import {
 import {
   installStudioAgentSkills,
   installStudioCommandLineTool,
-  isStudioIntegrationConflictError,
   readStudioIntegrations,
   type StudioIntegrationOptions,
 } from "./integrations.js";
@@ -282,20 +281,25 @@ function handleStudioRequest(
     if (!requireMethod(request, response, "GET")) {
       return;
     }
-    sendJson(response, 200, readStudioIntegrations({
+    return readStudioIntegrations({
       cwd,
       entrypoint: options.entrypoint,
       integrations: options.integrations,
-    }));
-    return;
+    }).then((report) => {
+      sendJson(response, 200, report);
+    }).catch((error) => {
+      sendJson(response, 502, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
   if (url.pathname === "/api/desktop/integrations/command-line-tool") {
     if (!requireMethod(request, response, "POST")) {
       return;
     }
     return readJsonBody(request)
-      .then((body) => {
-        const result = installStudioCommandLineTool(body as Record<string, unknown>, {
+      .then(async (body) => {
+        const result = await installStudioCommandLineTool(body as Record<string, never>, {
           cwd,
           entrypoint: options.entrypoint,
           integrations: options.integrations,
@@ -303,7 +307,7 @@ function handleStudioRequest(
         sendJson(response, 200, result);
       })
       .catch((error) => {
-        sendJson(response, isStudioIntegrationConflictError(error) ? 409 : 400, {
+        sendJson(response, 400, {
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -313,8 +317,8 @@ function handleStudioRequest(
       return;
     }
     return readJsonBody(request)
-      .then((body) => {
-        sendJson(response, 200, installStudioAgentSkills(body as Record<string, unknown>, {
+      .then(async (body) => {
+        sendJson(response, 200, await installStudioAgentSkills(body as Record<string, unknown>, {
           cwd,
           entrypoint: options.entrypoint,
           integrations: options.integrations,

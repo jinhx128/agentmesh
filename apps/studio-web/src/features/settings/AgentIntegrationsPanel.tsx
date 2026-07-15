@@ -10,7 +10,6 @@ import {
   Stack,
   Tabs,
   Text,
-  TextInput,
   Title,
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
@@ -35,10 +34,7 @@ export type AgentIntegrationsState =
 
 export interface AgentIntegrationsPanelProps {
   state: AgentIntegrationsState;
-  onInstallCommandLineTool: (request: {
-    bin_dir: string;
-    confirm_existing: boolean;
-  }) => Promise<void>;
+  onInstallCommandLineTool: () => Promise<void>;
   onInstallAgentSkills: (request: {
     targets: AgentMeshSkillTarget[];
     force: boolean;
@@ -59,8 +55,7 @@ export function AgentIntegrationsPanel({
   onInstallAgentSkills,
 }: AgentIntegrationsPanelProps): ReactElement {
   const { t } = useStudioCopy();
-  const [binDir, setBinDir] = useState("");
-  const [confirmExisting, setConfirmExisting] = useState(false);
+  const [commandBusy, setCommandBusy] = useState(false);
   const [forceSkill, setForceSkill] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AgentMeshSkillTarget[]>(["codex"]);
 
@@ -85,10 +80,6 @@ export function AgentIntegrationsPanel({
   const report = state.report;
   const commandLine = report.command_line_tool;
   const providerCliRows = report.provider_clis.tools;
-  const effectiveBinDir = binDir || commandLine.default_bin_dir;
-  const effectiveTargetPath = `${effectiveBinDir.replace(/\/+$/, "")}/agentmesh`;
-  const customBinDir = effectiveBinDir !== commandLine.default_bin_dir;
-  const confirmationRequired = commandLine.requires_confirmation || customBinDir;
   const selectedTargetSet = new Set(selectedTargets);
   const targetRows: StudioIntegrationsReport["skills"]["targets"] = report.skills.targets.length > 0
     ? report.skills.targets
@@ -102,7 +93,6 @@ export function AgentIntegrationsPanel({
   const selectedCount = selectedTargets.length;
   const commandResultText = resultText(state.commandResult, t);
   const skillResultText = resultText(state.skillResult, t);
-  const confirmationReason = commandConfirmationReason(commandLine, customBinDir, t);
 
   return (
     <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
@@ -129,38 +119,30 @@ export function AgentIntegrationsPanel({
           <Card withBorder radius="md" p="md">
             <Group justify="space-between" align="flex-start" mb="sm">
               <Title order={3} size="h4">{t("commandLineTool")}</Title>
-              <Badge color={commandLine.path_command.found ? "green" : "gray"}>
-                {commandLine.path_command.found ? commandLine.path_command.source : t("targetMissing")}
+              <Badge color={commandLine.status === "current" ? "green" : commandLine.status === "update_available" ? "yellow" : "gray"}>
+                {commandLine.status}
               </Badge>
             </Group>
             <Stack gap={4} mb="md">
-              <Fact label={t("commandLinePath")} value={commandLine.path_command.path ?? t("targetMissing")} />
-              <Fact label={t("version")} value={commandLine.path_command.version} />
-              <Fact label={t("installTarget")} value={customBinDir ? effectiveTargetPath : commandLine.target_path} />
-              <Fact label={t("targetFile")} value={customBinDir ? t("targetCheckedDuringInstall") : targetFileText(commandLine.target_file, t)} />
+              <Fact label={t("commandLinePath")} value={commandLine.path ?? t("targetMissing")} />
+              <Fact label={t("installedVersion")} value={commandLine.installed_version} />
+              <Fact label={t("latestVersion")} value={commandLine.latest_version} />
+              <Fact label={t("source")} value={commandLine.source} />
             </Stack>
-            {confirmationReason ? <Alert color="yellow" variant="light" mb="sm">{confirmationReason}</Alert> : null}
-            <TextInput
-              label={t("binDirectory")}
-              value={effectiveBinDir}
-              onChange={(event) => setBinDir(event.target.value)}
-            />
-            <Checkbox
-              mt="sm"
-              checked={confirmExisting}
-              label={t("confirmReplacement")}
-              onChange={(event) => setConfirmExisting(event.target.checked)}
-            />
+            {commandLine.diagnostics.map((diagnostic) => (
+              <Alert key={diagnostic} color="yellow" variant="light" mb="sm">{diagnostic}</Alert>
+            ))}
             <Button
               mt="sm"
               type="button"
-              disabled={!commandLine.supported || (confirmationRequired && !confirmExisting)}
-              onClick={() => void onInstallCommandLineTool({
-                bin_dir: effectiveBinDir,
-                confirm_existing: confirmExisting,
-              })}
+              loading={commandBusy}
+              disabled={!commandLine.supported}
+              onClick={() => {
+                setCommandBusy(true);
+                void onInstallCommandLineTool().finally(() => setCommandBusy(false));
+              }}
             >
-              {t("commandLineInstall")}
+              {t(commandActionKey(commandLine.status))}
             </Button>
             {commandResultText ? <Alert mt="sm" variant="light">{commandResultText}</Alert> : null}
           </Card>
@@ -265,8 +247,8 @@ function resultText(
   if ("error" in result) {
     return result.error;
   }
-  if ("installed" in result) {
-    return `${t("installed")} ${result.installed.path}`;
+  if ("operation" in result) {
+    return `${t("installed")} ${result.command_line_tool.installed_version}`;
   }
   const installedCount = result.installed_targets.filter((target) => target.ok).length;
   const failedTargets = result.installed_targets
@@ -278,33 +260,16 @@ function resultText(
   return `${t("installedTargets")} ${installedCount}`;
 }
 
-function commandConfirmationReason(
-  commandLine: StudioIntegrationsReport["command_line_tool"],
-  customBinDir: boolean,
-  t: (key: StudioCopyKey) => string,
-): string | undefined {
-  if (commandLine.requires_confirmation) {
-    if (commandLine.path_command.found && commandLine.path_command.path !== commandLine.target_path) {
-      return `${t("commandLineShadowWarning")}: ${commandLine.path_command.path}`;
-    }
-    if (commandLine.target_file.exists && commandLine.target_file.different) {
-      return `${t("installTargetDifferent")}: ${commandLine.target_path}`;
-    }
+function commandActionKey(
+  status: StudioIntegrationsReport["command_line_tool"]["status"],
+): StudioCopyKey {
+  if (status === "missing") {
+    return "commandLineInstall";
   }
-  if (customBinDir) {
-    return t("customBinConfirmWarning");
+  if (status === "update_available") {
+    return "commandLineUpdate";
   }
-  return undefined;
-}
-
-function targetFileText(
-  targetFile: StudioIntegrationsReport["command_line_tool"]["target_file"],
-  t: (key: StudioCopyKey) => string,
-): string {
-  if (!targetFile.exists) {
-    return t("targetMissing");
-  }
-  return `${targetFile.source} - ${targetFile.different ? t("different") : t("targetCurrent")} - ${targetFile.version}`;
+  return "commandLineReinstall";
 }
 
 function providerCliSourceText(
