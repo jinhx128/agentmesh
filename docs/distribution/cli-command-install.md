@@ -10,7 +10,7 @@ This document defines how a user or internal teammate gets a PATH-visible
 The AgentMesh Skill is host guidance. It does not embed or launch a private
 copy of the CLI. Entry agents resolve `agentmesh` through the user's shell
 `PATH`, so a teammate who only installs the DMG can use Desktop Studio but
-cannot call AgentMesh from Codex, Cursor, Antigravity CLI, OpenCode, Copilot, or
+cannot call AgentMesh from Codex, Cursor, Antigravity CLI, OpenCode, or
 Claude Code until they also install a PATH-visible `agentmesh`.
 
 DMG-only is therefore Desktop Studio only. Agent integrations require two
@@ -117,11 +117,10 @@ agentmesh skill install --target codex
 agentmesh skill install --target cursor
 agentmesh skill install --target antigravity
 agentmesh skill install --target opencode
-agentmesh skill install --target copilot
 agentmesh skill install --target claude
 ```
 
-Codex, Cursor, Antigravity CLI, OpenCode, and Copilot share the current project
+Codex, Cursor, Antigravity CLI, and OpenCode share the current project
 file `.agents/skills/agentmesh/SKILL.md`. Claude Code uses
 `.claude/skills/agentmesh/SKILL.md`.
 

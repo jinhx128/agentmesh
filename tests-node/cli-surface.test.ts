@@ -115,6 +115,15 @@ test("top-level help exits successfully", () => {
   assert.doesNotMatch(agentsAddHelpAfterOption.stderr, /unknown help topic/);
 });
 
+test("skill install rejects the removed Copilot target", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const result = runCli(workspace, ["skill", "install", "--target", "copilot"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsupported skill target: copilot/);
+});
+
 test("agents list treats a missing first-run config as an empty registry", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

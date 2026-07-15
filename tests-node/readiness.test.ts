@@ -950,7 +950,7 @@ test("skill target matrix uses shared project path with Claude project exception
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
   const expectedSkill = "# AgentMesh Skill\n";
-  const sharedTargets = ["codex", "cursor", "antigravity", "opencode", "copilot"] as const;
+  const sharedTargets = ["codex", "cursor", "antigravity", "opencode"] as const;
 
   for (const target of sharedTargets) {
     rmSync(path.join(workspace, ".agents"), { recursive: true, force: true });
@@ -966,7 +966,6 @@ test("skill target matrix uses shared project path with Claude project exception
     assert.equal(existsSync(path.join(home, ".codex-custom", "skills", "agentmesh", "SKILL.md")), false, target);
     assert.equal(existsSync(path.join(workspace, ".cursor", "rules", "agentmesh.mdc")), false, target);
     assert.equal(existsSync(path.join(home, ".antigravity", "extensions", "agentmesh", "SKILL.md")), false, target);
-    assert.equal(existsSync(path.join(home, ".copilot", "skills", "agentmesh", "SKILL.md")), false, target);
   }
 
   const claude = installSkill("claude", {
@@ -985,7 +984,7 @@ test("skill expected files contract exposes target paths without host home fallb
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
-  const sharedTargets = ["codex", "cursor", "antigravity", "opencode", "copilot"] as const;
+  const sharedTargets = ["codex", "cursor", "antigravity", "opencode"] as const;
 
   for (const target of sharedTargets) {
     const files = expectedSkillFilesForTarget(target, { cwd: workspace, homeDir: home });

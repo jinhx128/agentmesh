@@ -576,7 +576,7 @@ function validateAgentIntegrations(
     integrations?.skill_install,
     "user-selected targets",
   );
-  for (const target of ["codex", "cursor", "antigravity", "opencode", "copilot", "claude"]) {
+  for (const target of ["codex", "cursor", "antigravity", "opencode", "claude"]) {
     requireArrayIncludes(issues, "desktop skill_targets", integrations?.skill_targets, target);
   }
 }

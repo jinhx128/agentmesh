@@ -45,7 +45,7 @@ installed Skill content agree.
 - `agentmesh skill export --format markdown` writes the same markdown to stdout.
 - `agentmesh skill install --target <host>` writes the expected project-level
   host file and verifies its content against the canonical markdown. Codex,
-  Cursor, Antigravity CLI, OpenCode, and Copilot use
+  Cursor, Antigravity CLI, and OpenCode use
   `.agents/skills/agentmesh/SKILL.md`; Claude Code uses
   `.claude/skills/agentmesh/SKILL.md`.
 - `agentmesh skill verify --target <host> --json` reports installed file status

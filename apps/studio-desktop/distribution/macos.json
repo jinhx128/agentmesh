@@ -56,6 +56,6 @@
   "agent_integrations": {
     "command_line_tool": "Optional Install Command Line Tool writes a user-confirmed PATH wrapper to the app-managed CLI entrypoint after showing any existing PATH command.",
     "skill_install": "Optional Install Agent Skill writes only user-selected targets and verifies each target independently.",
-    "skill_targets": ["codex", "cursor", "antigravity", "opencode", "copilot", "claude"]
+    "skill_targets": ["codex", "cursor", "antigravity", "opencode", "claude"]
   }
 }

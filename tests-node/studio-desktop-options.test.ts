@@ -555,7 +555,7 @@ test("desktop integrations expose no-global CLI status without blocking Studio",
     assert.equal(opencode?.version, "opencode 9.9.9");
     assert.deepEqual(
       payload.skills.targets.map((target) => target.target).sort(),
-      ["antigravity", "claude", "codex", "copilot", "cursor", "opencode"],
+      ["antigravity", "claude", "codex", "cursor", "opencode"],
     );
 
     const runs = await fetch(`${started.serverUrl}/api/runs`, {

@@ -58,8 +58,12 @@ export function skillExport(args: string[]): number {
 
 export function skillInstall(args: string[]): number {
   const target = optionValue(args, "--target");
-  if (!target || !isSkillTarget(target)) {
+  if (!target) {
     console.error("usage: agentmesh skill install --target <host> [--force]");
+    return 2;
+  }
+  if (!isSkillTarget(target)) {
+    console.error(`unsupported skill target: ${target}`);
     return 2;
   }
   const report = installSkill(target, { force: args.includes("--force") });
@@ -70,5 +74,5 @@ export function skillInstall(args: string[]): number {
 }
 
 function isSkillTarget(value: string): value is SkillTarget {
-  return ["codex", "claude", "cursor", "antigravity", "opencode", "copilot"].includes(value);
+  return ["codex", "claude", "cursor", "antigravity", "opencode"].includes(value);
 }

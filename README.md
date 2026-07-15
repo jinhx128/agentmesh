@@ -73,7 +73,7 @@ Studio 有两种运行方式：
 ### Skill
 
 AgentMesh Skill 是给入口 agent 看的协议说明。安装后，Codex、Claude Code、
-Cursor、Antigravity CLI、OpenCode 或 Copilot 可以知道什么时候调用
+Cursor、Antigravity CLI 或 OpenCode 可以知道什么时候调用
 `agentmesh`、怎么创建 run、怎么读取 packet、怎么提交 review 结果。
 
 Skill 只是一份 host guidance，不包含私有 CLI 副本。入口 agent 要真正调用
@@ -198,7 +198,7 @@ agentmesh update install --target desktop --dry-run --json
 当前 Desktop 自动更新尚未启用；`desktop` 目标会返回需要下载的新 DMG 地址，由用户手动
 替换 `/Applications/AgentMesh.app`。Studio 的 Settings / About 也会展示同一份版本检查结果。
 
-DMG 只提供 Desktop Studio。Codex、Cursor、Antigravity CLI、OpenCode、Copilot 或
+DMG 只提供 Desktop Studio。Codex、Cursor、Antigravity CLI、OpenCode 或
 Claude Code 如果要通过 Skill 调用 AgentMesh，仍然需要 PATH-visible 的
 `agentmesh` CLI。
 
@@ -224,7 +224,6 @@ agentmesh skill install --target codex
 agentmesh skill install --target cursor
 agentmesh skill install --target antigravity
 agentmesh skill install --target opencode
-agentmesh skill install --target copilot
 agentmesh skill install --target claude
 ```
 
@@ -242,7 +241,7 @@ agentmesh skill export --format markdown > agentmesh-skill.md
 ```
 
 Release 里的 `agentmesh-skill-0.1.10.md` 是同一份可单独下载的 markdown。手动安装时，
-Codex、Cursor、Antigravity CLI、OpenCode 和 Copilot 使用：
+Codex、Cursor、Antigravity CLI 和 OpenCode 使用：
 
 ```text
 .agents/skills/agentmesh/SKILL.md

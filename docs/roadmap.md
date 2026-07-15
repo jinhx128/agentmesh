@@ -62,7 +62,7 @@ packet workflow first, then widen host entry support.
 - Make `agentmesh skill install` require an explicit host target so AgentMesh
   does not write a fake shared directory that a host may never scan.
 - Support host-specific entry adapters for Codex, Claude, Cursor, Antigravity, and
-  GitHub Copilot through `agentmesh skill install --target <host>`, all derived
+  OpenCode through `agentmesh skill install --target <host>`, all derived
   from the same packaged AgentMesh Skill.
 - Keep Cursor project rules as a project-local entry adapter until Cursor
   exposes a stable user-level skill convention.

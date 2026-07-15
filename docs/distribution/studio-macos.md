@@ -156,7 +156,7 @@ npm run studio-desktop:update:metadata
   agentmesh` affects the terminal CLI install only; app-managed updates affect
   `AgentMesh.app` only.
 - A DMG-only install is enough for Desktop Studio, but not for entry-agent
-  orchestration. Codex, Cursor, Antigravity CLI, OpenCode, Copilot, and Claude Code
+  orchestration. Codex, Cursor, Antigravity CLI, OpenCode, and Claude Code
   Skills need a PATH-visible `agentmesh` chosen by the user.
 - The Settings / Agent Integrations "Install Command Line Tool" app action is
   opt-in, inspects and displays any existing PATH command before writing a
@@ -168,4 +168,4 @@ npm run studio-desktop:update:metadata
 - The Settings / Agent Integrations "Install Agent Skill" app action lets the
   user choose targets rather than installing all host integrations. The
   currently supported choices are `codex`, `cursor`, `antigravity`, `opencode`,
-  `copilot`, and `claude`.
+  and `claude`.

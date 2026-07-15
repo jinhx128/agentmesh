@@ -9,7 +9,7 @@ Use AgentMesh Skill when the user wants to configure, check, run, review, hand
 off, resume, or inspect AgentMesh work from the current entry agent.
 
 The entry agent is the chat surface the user is using now, such as Codex,
-Claude Code, Antigravity CLI, Cursor, GitHub Copilot CLI, or another coding
+Claude Code, Antigravity CLI, Cursor, OpenCode, or another coding
 assistant. The entry agent can either orchestrate AgentMesh or participate as
 the special `current` agent.
 
@@ -53,7 +53,6 @@ agentmesh skill install --target claude
 agentmesh skill install --target cursor
 agentmesh skill install --target antigravity
 agentmesh skill install --target opencode
-agentmesh skill install --target copilot
 agentmesh skill verify --target codex
 agentmesh skill verify --target codex --json
 agentmesh cli detect --json
@@ -107,7 +106,6 @@ Current install targets:
 - `--target cursor`: current project `.agents/skills/agentmesh/SKILL.md`.
 - `--target antigravity`: current project `.agents/skills/agentmesh/SKILL.md`.
 - `--target opencode`: current project `.agents/skills/agentmesh/SKILL.md`.
-- `--target copilot`: current project `.agents/skills/agentmesh/SKILL.md`.
 - `--target claude`: current project `.claude/skills/agentmesh/SKILL.md`.
 
 Legacy `.cursor/rules/agentmesh.mdc` files may still be reported by

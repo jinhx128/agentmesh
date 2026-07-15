@@ -87,7 +87,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         body: "Agent Skill 会把 AgentMesh 的使用规则安装到 Codex、Claude、Cursor、Antigravity、OpenCode 等宿主的规则目录里。",
         details: [
           "Codex 示例：agentmesh skill install --target codex。",
-          "其他宿主把 target 换成 claude、cursor、antigravity、opencode 或 copilot。",
+          "其他宿主把 target 换成 claude、cursor、antigravity 或 opencode。",
           "安装 Skill 只是同步使用说明和能力声明，不会安装底层 AI CLI，也不会复制你的账号状态。",
         ],
       },

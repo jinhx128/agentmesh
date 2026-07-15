@@ -50,7 +50,6 @@ const defaultTargets: AgentMeshSkillTarget[] = [
   "cursor",
   "antigravity",
   "opencode",
-  "copilot",
   "claude",
 ];
 

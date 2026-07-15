@@ -92,7 +92,7 @@ The Settings / Agent Integrations "Install Command Line Tool" action must:
 The Settings / Agent Integrations "Install Agent Skill" action must:
 
 - present explicit target choices: `codex`, `cursor`, `antigravity`, `opencode`,
-  `copilot`, and `claude`
+  and `claude`
 - install only the targets the user selected
 - write shared project targets to `.agents/skills/agentmesh/SKILL.md`
 - write Claude Code to `.claude/skills/agentmesh/SKILL.md`

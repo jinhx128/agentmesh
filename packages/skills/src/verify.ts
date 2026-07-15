@@ -7,7 +7,7 @@ import {
   WORKFLOW_RECIPE_SCHEMA_VERSION,
 } from "@agentmesh/core";
 
-export type SkillTarget = "codex" | "claude" | "cursor" | "antigravity" | "opencode" | "copilot";
+export type SkillTarget = "codex" | "claude" | "cursor" | "antigravity" | "opencode";
 
 const GENERATED_METADATA_START = "<!-- agentmesh-skill-version-metadata:start -->";
 const GENERATED_METADATA_END = "<!-- agentmesh-skill-version-metadata:end -->";
@@ -244,7 +244,7 @@ function installPathsForTarget(target: SkillTarget, options: VerifyOptions): str
 }
 
 function isSharedProjectTarget(target: SkillTarget): boolean {
-  return ["codex", "cursor", "antigravity", "opencode", "copilot"].includes(target);
+  return ["codex", "cursor", "antigravity", "opencode"].includes(target);
 }
 
 function legacyFilesForTarget(target: SkillTarget, options: VerifyOptions): SkillFileReport[] {

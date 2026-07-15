@@ -74,6 +74,36 @@ test("package split exposes the agentmesh CLI as the TS target surface", () => {
   assert.equal(existsSync(path.join(root, "apps", "studio-desktop", "src-tauri", "tauri.conf.json")), true);
 });
 
+test("active product surfaces contain no Copilot integration", () => {
+  const root = process.cwd();
+  const activeFiles = [
+    "README.md",
+    "index.html",
+    "docs/roadmap.md",
+    "docs/contracts/skill-output.md",
+    "docs/distribution/cli-command-install.md",
+    "docs/distribution/studio-macos.md",
+    "docs/distribution/studio-coexistence-smoke.md",
+    "packages/skills/src/verify.ts",
+    "packages/skills/agentmesh-skill/SKILL.md",
+    "packages/cli/src/commands/skill.ts",
+    "packages/app-server/src/integrations.ts",
+    "apps/studio-web/src/api/integrations.ts",
+    "apps/studio-web/src/features/settings/AgentIntegrationsPanel.tsx",
+    "apps/studio-web/src/features/manual/ManualView.tsx",
+    "apps/studio-desktop/distribution/macos.json",
+    "apps/studio-desktop/src/distribution-smoke.ts",
+  ];
+
+  for (const file of activeFiles) {
+    assert.doesNotMatch(
+      readFileSync(path.join(root, file), "utf-8"),
+      /copilot/i,
+      `active Copilot reference remains in ${file}`,
+    );
+  }
+});
+
 test("release publish wrappers expose npm and GitHub one-command flows", () => {
   const root = process.cwd();
   const packageJson = JSON.parse(

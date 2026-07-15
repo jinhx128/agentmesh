@@ -1,6 +1,6 @@
 import type { StudioApiClient, StudioApiJsonResponse } from "./client.js";
 
-export type AgentMeshSkillTarget = "codex" | "cursor" | "antigravity" | "opencode" | "copilot" | "claude";
+export type AgentMeshSkillTarget = "codex" | "cursor" | "antigravity" | "opencode" | "claude";
 export type ProviderCliTool = "codex" | "claude" | "cursor" | "antigravity" | "opencode";
 export type ProviderCliResolutionSource =
   | "configured_path"

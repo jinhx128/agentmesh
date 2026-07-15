@@ -117,7 +117,6 @@ const supportedSkillTargets: SkillTarget[] = [
   "cursor",
   "antigravity",
   "opencode",
-  "copilot",
   "claude",
 ];
 
