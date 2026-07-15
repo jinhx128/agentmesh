@@ -25,6 +25,26 @@ import { currentPacketStatus } from "./helpers/current-packet-status.js";
 
 const root = process.cwd();
 
+test("canonical AgentMesh icon uses the approved Converge design", () => {
+  const svg = readFileSync(
+    path.join(root, "apps", "studio-desktop", "src-tauri", "icons", "agentmesh.svg"),
+    "utf-8",
+  );
+
+  for (const fragment of [
+    '<rect x="32" y="32" width="960" height="960" rx="232" fill="#F4F5F2"',
+    'd="M512 488L272 272" stroke="#4AB7A6" stroke-width="112"',
+    'd="M536 496L752 280" stroke="#FFB23E" stroke-width="112"',
+    'd="M528 536L752 752" stroke="#F07258" stroke-width="112"',
+    'd="M488 536L272 752" stroke="#5A84D6" stroke-width="112"',
+    '<circle cx="512" cy="512" r="144" fill="#222925"',
+    '<circle cx="512" cy="512" r="56" fill="#F7F8F4"',
+  ]) {
+    assert.ok(svg.includes(fragment), `missing approved icon fragment: ${fragment}`);
+  }
+  assert.doesNotMatch(svg, /#141414|<linearGradient|<filter|<text/);
+});
+
 test("studio desktop distribution wires the macOS DMG app identity and icons", () => {
   bundleStudioDesktopSidecar({ cwd: root });
   const summary = validateStudioDesktopDistribution({

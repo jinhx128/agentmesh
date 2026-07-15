@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="AgentMesh">
-  <rect width="1024" height="1024" rx="210" fill="#141414"/>
-  <path d="M252 316h520v84H252z" fill="#f5f1e8"/>
-  <path d="M252 470h520v84H252z" fill="#f5f1e8"/>
-  <path d="M252 624h520v84H252z" fill="#f5f1e8"/>
-  <circle cx="334" cy="358" r="38" fill="#4fb286"/>
-  <circle cx="512" cy="512" r="38" fill="#e0a458"/>
-  <circle cx="690" cy="666" r="38" fill="#6ba5d7"/>
-  <path d="M334 358l178 154 178 154" fill="none" stroke="#f5f1e8" stroke-width="34" stroke-linecap="round"/>
+  <rect x="32" y="32" width="960" height="960" rx="232" fill="#F4F5F2"/>
+  <path d="M512 488L272 272" stroke="#4AB7A6" stroke-width="112" fill="none" stroke-linecap="round"/>
+  <path d="M536 496L752 280" stroke="#FFB23E" stroke-width="112" fill="none" stroke-linecap="round"/>
+  <path d="M528 536L752 752" stroke="#F07258" stroke-width="112" fill="none" stroke-linecap="round"/>
+  <path d="M488 536L272 752" stroke="#5A84D6" stroke-width="112" fill="none" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="144" fill="#222925"/>
+  <circle cx="512" cy="512" r="56" fill="#F7F8F4"/>
 </svg>
