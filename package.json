@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "bin": {
-    "agentmesh": "./dist-node/packages/cli/src/cli.js"
+    "agentmesh": "dist-node/packages/cli/src/cli.js"
   },
   "files": [
     "dist-node/packages/",

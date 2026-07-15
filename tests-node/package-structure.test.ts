@@ -43,7 +43,7 @@ test("package split exposes the agentmesh CLI as the TS target surface", () => {
   );
 
   assert.deepEqual(packageJson.workspaces, ["packages/*", "apps/*"]);
-  assert.equal(packageJson.bin.agentmesh, "./dist-node/packages/cli/src/cli.js");
+  assert.equal(packageJson.bin.agentmesh, "dist-node/packages/cli/src/cli.js");
   assert.equal(packageJson.bin["agentmesh-ts"], undefined);
   assert.equal(
     packageJson.scripts.agentmesh,
@@ -89,7 +89,7 @@ test("release publish wrappers expose npm and GitHub one-command flows", () => {
   assert.match(npmScript, /^#!\/usr\/bin\/env bash\nset -Eeuo pipefail/);
   for (const expected of [
     "npm whoami",
-    "npm access ls-packages",
+    "npm access list packages",
     "npm run build",
     "npm run cli:install-smoke",
     "npm view",
@@ -174,7 +174,7 @@ test("root package owns the only installable CLI tarball boundary", () => {
     access: "public",
     registry: "https://registry.npmjs.org/",
   });
-  assert.equal(packageJson.bin.agentmesh, "./dist-node/packages/cli/src/cli.js");
+  assert.equal(packageJson.bin.agentmesh, "dist-node/packages/cli/src/cli.js");
   assert.deepEqual(packageJson.files, [
     "dist-node/packages/",
     "dist-node/apps/studio/",

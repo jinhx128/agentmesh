@@ -200,7 +200,7 @@ assert_scope_access() {
   local package_scope
   package_scope="${package_name%%/*}"
   ensure_tmp_dir
-  if npm access ls-packages "${package_scope}" --registry "${registry}" --json >"${tmp_dir}/access.stdout" 2>"${tmp_dir}/access.stderr"; then
+  if npm access list packages "${package_scope}" --registry "${registry}" --json >"${tmp_dir}/access.stdout" 2>"${tmp_dir}/access.stderr"; then
     return
   fi
 

@@ -15,7 +15,7 @@ npm artifacts.
 The root `bin.agentmesh` points to the built executable:
 
 ```text
-./dist-node/packages/cli/src/cli.js
+dist-node/packages/cli/src/cli.js
 ```
 
 The root tarball whitelist is intentionally narrow:
