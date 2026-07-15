@@ -69,7 +69,6 @@ export const AGENT_TOOLS: AgentToolOption[] = [
 
 const REASONING_EFFORT_OPTIONS = ["none", "minimal", "low", "medium", "high", "xhigh"];
 const AGENT_CAPABILITY_OPTIONS = ["plan", "execute", "verify", "review", "decide"];
-const ANTIGRAVITY_CURRENT_MODEL = "current";
 
 type ModelSelectStatus = "idle" | "loading" | "ready" | "empty";
 type AgentModelOptionCacheEntry = {
@@ -148,7 +147,7 @@ export function AgentLifecyclePanel({
         setCreateModelCache(nextCache);
         setModel((current) => {
           const nextModel = firstModelForTool(nextCache, toolIdRef.current);
-          return current.trim().length > 0 && toolIdRef.current !== "antigravity-cli"
+          return current.trim().length > 0
             ? current
             : nextModel;
         });
@@ -572,7 +571,7 @@ export function AgentEditForm({
         setModelCache(nextCache);
         setModel((current) => {
           const nextModel = firstModelForTool(nextCache, adapterRef.current);
-          return current.trim().length > 0 && adapterRef.current !== "antigravity-cli"
+          return current.trim().length > 0
             ? current
             : nextModel;
         });
@@ -733,7 +732,7 @@ function agentModelSelectData(
   currentModel: string,
 ): Array<{ value: string; label: string }> {
   const values = uniqueValues(
-    adapter !== "antigravity-cli" && currentModel.trim().length > 0
+    currentModel.trim().length > 0
       ? [...modelOptions, currentModel]
       : modelOptions,
   );
@@ -742,9 +741,6 @@ function agentModelSelectData(
 
 function modelOptionsFromPayload(payload: StudioAgentModelListPayload): string[] {
   const discoveredModels = payload.status === "discovered" ? payload.models.filter(Boolean) : [];
-  if (payload.adapter_id === "antigravity-cli") {
-    return discoveredModels.length > 0 ? [ANTIGRAVITY_CURRENT_MODEL] : [];
-  }
   return uniqueValues(discoveredModels);
 }
 
@@ -795,7 +791,7 @@ function isModelSelectDisabled(
   entry: AgentModelOptionCacheEntry,
   data: Array<{ value: string; label: string }>,
 ): boolean {
-  return entry.status !== "ready" || data.length === 0;
+  return entry.status !== "ready" && data.length === 0;
 }
 
 function isToolOptionDisabled(entry: AgentModelOptionCacheEntry): boolean {

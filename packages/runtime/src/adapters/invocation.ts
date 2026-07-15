@@ -136,7 +136,7 @@ function modelArgs(adapterId: string, agent: AdapterInvocationAgent): string[] {
     return effort === "none" ? ["--model", model] : ["--model", model, "--effort", effort];
   }
   if (adapterId === "antigravity-cli") {
-    return [];
+    return model && model !== "current" ? ["--model", model] : [];
   }
   if (adapterId === "opencode-cli") {
     return effort === "none"

@@ -62,7 +62,7 @@ test("prepares AI CLI invocations with prompt, model, reasoning, and stdout capt
     {
       adapter: "antigravity-cli",
       effort: "high",
-      command: ["agent", "-p", "hello"],
+      command: ["agent", "--model", "model-a", "-p", "hello"],
     },
     {
       adapter: "opencode-cli",
@@ -216,7 +216,7 @@ test("prepares AI CLI prompt-file invocations with file content rather than the 
     {
       adapter: "antigravity-cli",
       effort: "high",
-      command: ["agent", "-p", "file prompt for ai\n"],
+      command: ["agent", "--model", "model-a", "-p", "file prompt for ai\n"],
     },
     {
       adapter: "opencode-cli",
@@ -255,6 +255,8 @@ test("prepares file-output args for AI adapters when explicitly configured", () 
 
   assert.deepEqual(prepared.command, [
     "agent",
+    "--model",
+    "model-a",
     "-p",
     "hello",
     "--output-file",
@@ -273,9 +275,9 @@ test("rejects AI CLI invocation preparation without a model", () => {
   );
 });
 
-test("prepares antigravity invocations without implying per-agent model selection", () => {
+test("keeps legacy antigravity current invocations on the CLI-selected model", () => {
   const prepared = prepareAdapterInvocation(
-    builtInAgent("antigravity-cli", { model: undefined }),
+    builtInAgent("antigravity-cli", { model: "current" }),
     { prompt: "hello" },
   );
 

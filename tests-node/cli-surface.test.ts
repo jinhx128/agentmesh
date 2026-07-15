@@ -158,6 +158,15 @@ test("init, agents, and adapters commands are served by the TS CLI", () => {
   writeAiCliShim(binDir, "codex");
   writeAiCliShim(binDir, "cursor-agent");
   writeAiCliShim(binDir, "agy");
+  writeExecutable(path.join(binDir, "agy"), [
+    "#!/usr/bin/env bash",
+    'if [[ "$1" == "models" ]]; then printf "Claude Sonnet 4.6 (Thinking)\\n"; exit 0; fi',
+    'if [[ "$1" == "--version" || "$*" == *"--help"* ]]; then exit 0; fi',
+    "cat >/dev/null",
+    'printf "OK\\n"',
+    "exit 0",
+    "",
+  ].join("\n"));
   writeAiCliShim(binDir, "opencode");
   const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` };
 
@@ -261,16 +270,14 @@ test("init, agents, and adapters commands are served by the TS CLI", () => {
     "--adapter",
     "antigravity",
     "--model",
-    "gemini-3.1-pro",
+    "Claude Sonnet 4.6 (Thinking)",
     "--reasoning-effort",
     "high",
   ], env);
   assert.equal(antigravity.status, 0, antigravity.stderr);
-  assert.match(antigravity.stdout, /Warning: antigravity-cli uses the current Antigravity CLI model; stored current instead of gemini-3.1-pro/);
   assert.match(antigravity.stdout, /Warning: antigravity-cli does not support reasoning_effort; stored none instead of high/);
   assert.match(readFileSync(userConfig(workspace), "utf-8"), /adapter = "antigravity-cli"/);
-  assert.match(readFileSync(userConfig(workspace), "utf-8"), /model = "current"/);
-  assert.doesNotMatch(readFileSync(userConfig(workspace), "utf-8"), /model = "gemini-3.1-pro"/);
+  assert.match(readFileSync(userConfig(workspace), "utf-8"), /model = "Claude Sonnet 4\.6 \(Thinking\)"/);
   assert.match(readFileSync(userConfig(workspace), "utf-8"), /reasoning_effort = "none"/);
 
   const adapters = runCli(workspace, ["adapters", "list"]);
@@ -279,6 +286,44 @@ test("init, agents, and adapters commands are served by the TS CLI", () => {
   assert.match(adapters.stdout, /cursor-agent\tCursor Agent/);
   assert.match(adapters.stdout, /antigravity-cli\tAntigravity CLI/);
   assert.doesNotMatch(adapters.stdout, /gemini-cli\tGemini CLI/);
+});
+
+test("antigravity model discovery feeds the selected label into calls", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const binDir = path.join(workspace, "bin");
+  const logFile = path.join(workspace, "agy-args.log");
+  mkdirSync(binDir, { recursive: true });
+  writeExecutable(path.join(binDir, "agy"), [
+    "#!/usr/bin/env bash",
+    'if [[ "$1" == "models" ]]; then',
+    '  printf "Claude Sonnet 4.6 (Thinking)\\n"',
+    "  exit 0",
+    "fi",
+    `printf '%s\\n' "$*" >> ${JSON.stringify(logFile)}`,
+    'printf "OK\\n"',
+    "",
+  ].join("\n"));
+  const env = { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` };
+
+  const init = runCli(workspace, ["init"], env);
+  assert.equal(init.status, 0, init.stderr);
+
+  const added = runCli(workspace, [
+    "agents",
+    "add",
+    "--adapter",
+    "antigravity",
+    "--model",
+    "Claude Sonnet 4.6 (Thinking)",
+  ], env);
+  assert.equal(added.status, 0, added.stderr);
+
+  const agentId = addedAgentId(added.stdout);
+  const called = runCli(workspace, ["call", "--agent", agentId, "--prompt", "只回复 OK"], env);
+  assert.equal(called.status, 0, called.stderr);
+  const calls = readFileSync(logFile, "utf-8").trimEnd().split("\n");
+  assert.equal(calls.at(-1), "--model Claude Sonnet 4.6 (Thinking) -p 只回复 OK");
 });
 
 test("cli detect reports supported provider CLIs through the shared resolver", () => {

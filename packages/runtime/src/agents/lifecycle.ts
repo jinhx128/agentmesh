@@ -20,7 +20,6 @@ import { configPathForAgentWrite, loadConfig } from "../config.js";
 
 const REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 const REASONING_UNSUPPORTED_ADAPTERS = new Set(["cursor-agent", "antigravity-cli"]);
-const ANTIGRAVITY_CURRENT_MODEL = "current";
 const GENERATED_AGENT_ID_PATTERN = /^a-[0-9a-f]{8}$/;
 const MAX_AGENT_ID_GENERATION_ATTEMPTS = 64;
 
@@ -85,7 +84,7 @@ export function createAgentRegistration(
   if (resolvedModel.status !== "resolved") {
     return failure("create", reportModelResolutionFailure(resolvedModel), 2);
   }
-  const storedModel = storedModelForAdapter(input.adapter, resolvedModel.canonicalModel);
+  const storedModel = resolvedModel.canonicalModel;
   if (input.reasoningEffort && !REASONING_EFFORTS.has(input.reasoningEffort)) {
     return failure(
       "create",
@@ -169,10 +168,6 @@ export function createAgentRegistration(
   if (reasoningWarning) {
     lines.push(`Warning: ${reasoningWarning}`);
   }
-  const modelWarning = modelSelectionWarning(candidate.adapter, resolvedModel.canonicalModel, storedModel);
-  if (modelWarning) {
-    lines.push(`Warning: ${modelWarning}`);
-  }
   return success("create", lines.join("\n"), candidate.id, targetConfigPath);
 }
 
@@ -225,7 +220,7 @@ export function updateAgentRegistration(
   if (resolvedModel.status !== "resolved") {
     return failure("update", reportModelResolutionFailure(resolvedModel), 2, currentAgentId, targetConfigPath);
   }
-  const storedModel = storedModelForAdapter(adapter, resolvedModel.canonicalModel);
+  const storedModel = resolvedModel.canonicalModel;
   const requestedReasoningEffort = input.reasoningEffort ?? existingAgent.reasoning_effort;
   if (requestedReasoningEffort && !REASONING_EFFORTS.has(requestedReasoningEffort)) {
     return failure(
@@ -316,10 +311,6 @@ export function updateAgentRegistration(
   if (reasoningWarning) {
     lines.push(`Warning: ${reasoningWarning}`);
   }
-  const modelWarning = modelSelectionWarning(candidate.adapter, resolvedModel.canonicalModel, storedModel);
-  if (modelWarning) {
-    lines.push(`Warning: ${modelWarning}`);
-  }
   return success("update", lines.join("\n"), candidate.id, targetConfigPath);
 }
 
@@ -373,24 +364,6 @@ function reasoningEffortForAdapter(adapter: string, requested: string | undefine
     return "none";
   }
   return requested ?? "high";
-}
-
-function storedModelForAdapter(adapter: string, resolvedModel: string): string {
-  return normalizeRuntimeAdapterId(adapter) === "antigravity-cli"
-    ? ANTIGRAVITY_CURRENT_MODEL
-    : resolvedModel;
-}
-
-function modelSelectionWarning(
-  adapter: string,
-  resolvedModel: string,
-  storedModel: string,
-): string | undefined {
-  const adapterId = normalizeRuntimeAdapterId(adapter);
-  if (adapterId !== "antigravity-cli" || resolvedModel === storedModel) {
-    return undefined;
-  }
-  return `${adapterId} uses the current Antigravity CLI model; stored ${storedModel} instead of ${resolvedModel}`;
 }
 
 function reasoningEffortWarning(adapter: string, requested: string | undefined): string | undefined {

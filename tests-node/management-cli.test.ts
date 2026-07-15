@@ -127,6 +127,9 @@ function writeAiCliShim(binDir: string, commandName: string): void {
     path.join(binDir, commandName),
     [
       "#!/usr/bin/env bash",
+      ...(commandName === "agy"
+        ? ['if [[ "$1" == "models" ]]; then printf "Claude Sonnet 4.6 (Thinking)\\n"; exit 0; fi']
+        : []),
       "if [[ \"$1\" == \"--version\" || \"$*\" == *\"--help\"* ]]; then exit 0; fi",
       "cat >/dev/null",
       "printf 'OK\\n'",
@@ -161,7 +164,7 @@ test("agents remove deletes a user-level global agent only", () => {
     "--adapter",
     "antigravity",
     "--model",
-    "gemini-3.1-pro",
+    "Claude Sonnet 4.6 (Thinking)",
   ], env);
   assert.equal(addSecond.status, 0, addSecond.stderr);
   const secondAgentId = addedAgentId(addSecond.stdout);

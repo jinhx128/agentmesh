@@ -68,9 +68,9 @@ Covered preparation behavior:
 - AI CLI prompt passing for `codex-cli`, `claude-code-cli`, `antigravity-cli`, and
   `opencode-cli`
 - model and reasoning args per built-in AI CLI when the target CLI exposes
-  supported flags; `antigravity-cli` uses the current Antigravity CLI model and
-  stores `model = "current"` because current `agy` print mode does not expose a
-  model flag
+  supported flags; `antigravity-cli` discovers models with `agy models`, stores
+  the selected model label, and passes `--model <model>` to print mode. Legacy
+  `model = "current"` entries remain compatible and omit the model flag.
 - stdout capture when no `output_file_arg` is configured
 - explicit output-file args for any adapter when configured
 - process environment construction for `agentmesh call` and doctor probes

@@ -1531,7 +1531,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(agentLifecycleSource, /\[createModalOpen,\s*toolId,\s*onLoadAgentModels\]/);
   assert.match(agentLifecycleSource, /agentModelSelectData\(toolId, createModelEntry\.options, model\)/);
   assert.match(agentLifecycleSource, /agentModelSelectData\(adapter, modelEntry\.options, model\)/);
-  assert.match(agentLifecycleSource, /adapter !== "antigravity-cli" && currentModel\.trim\(\)\.length > 0/);
+  assert.match(agentLifecycleSource, /currentModel\.trim\(\)\.length > 0/);
+  assert.match(agentLifecycleSource, /entry\.status !== "ready" && data\.length === 0/);
   assert.doesNotMatch(agentLifecycleSource, /agentModelSelectData\(createModelEntry\.options, model\)/);
   assert.doesNotMatch(agentLifecycleSource, /staticModelsForAdapter|defaultModelForTool|models:\s*\[/);
   assert.doesNotMatch(agentLifecycleSource, /suggestAgentName/);
@@ -1547,8 +1548,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(agentLifecycleSource, /function isToolOptionDisabled\(entry: AgentModelOptionCacheEntry\): boolean/);
   assert.match(agentLifecycleSource, /function areAllToolOptionsDisabled/);
   assert.doesNotMatch(agentLifecycleSource, /const (?:createToolDisabled|toolDisabled) = isToolSelectDisabled\(/);
-  assert.match(agentLifecycleSource, /const ANTIGRAVITY_CURRENT_MODEL = "current";/);
-  assert.match(agentLifecycleSource, /payload\.adapter_id === "antigravity-cli"[\s\S]*\[ANTIGRAVITY_CURRENT_MODEL\]/);
+  assert.doesNotMatch(agentLifecycleSource, /ANTIGRAVITY_CURRENT_MODEL/);
+  assert.doesNotMatch(agentLifecycleSource, /payload\.adapter_id === "antigravity-cli"[\s\S]*\["current"\]/);
   assert.doesNotMatch(agentLifecycleSource, /agent-create-model-help|agent-create-name-help|agent-edit-model-help|agent-edit-name-help/);
   assert.match(agentLifecycleSource, /selectedTool\.supportsReasoning[\s\S]*reasoningEffort\.trim\(\) \|\| "high"[\s\S]*: "none"/);
   assert.match(agentLifecycleSource, /label: "Claude Code CLI"/);
@@ -1611,7 +1612,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(editModal, />名称</);
   assert.doesNotMatch(editModal, /<input[^>]*data-studio-section="agent-edit-tool-select"[^>]*(?:readOnly|readonly)/);
   assert.match(editModal, /data-studio-section="agent-edit-model-select"/);
-  assert.match(editModal, /<input[^>]*data-studio-section="agent-edit-model-select"[^>]*disabled=""/);
+  assert.doesNotMatch(editModal, /<input[^>]*data-studio-section="agent-edit-model-select"[^>]*disabled=""/);
   assert.match(editModal, /data-studio-section="agent-edit-reasoning-select"/);
   assert.match(editModal, /data-studio-section="agent-edit-capabilities-select"/);
   assert.doesNotMatch(editModal, /<input[^>]*data-studio-section="agent-edit-capabilities-select"[^>]*(?:readOnly|readonly)/);
@@ -1953,7 +1954,7 @@ test("Agent model option cache preloads every Studio tool once", async () => {
 
   assert.deepEqual(readyCache["antigravity-cli"], {
     status: "ready",
-    options: ["current"],
+    options: ["gemini-3.5-flash"],
   });
 });
 

@@ -476,7 +476,7 @@ test("doctor readiness normalizes adapter aliases through shared invocation prep
   const log = readFileSync(logFile, "utf-8");
   assert.match(
     log,
-    /ARGS:-p AgentMesh doctor authentication probe\. Reply with OK\./,
+    /ARGS:--model gemini-2\.5-pro -p AgentMesh doctor authentication probe\. Reply with OK\./,
   );
   assert.doesNotMatch(log, /-m gemini-2\.5-pro/);
   assert.doesNotMatch(log, /STDIN:/);
@@ -1397,7 +1397,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   const markdown = agentmeshSkillMarkdown();
   for (const expected of [
     "## Version Metadata",
-    "AgentMesh CLI version: 0.1.8",
+    "AgentMesh CLI version: 0.1.9",
     "Packet schema version: 1",
     "Workflow recipe schema version: 1",
     "agentmesh version --json",
@@ -1423,7 +1423,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     encoding: "utf-8",
   });
   assert.equal(showResult.status, 0, showResult.stderr);
-  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.1\.8/);
+  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.1\.9/);
   assert.match(showResult.stdout, /Packet schema version: 1/);
   assert.match(showResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1433,7 +1433,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     { cwd: workspace, encoding: "utf-8" },
   );
   assert.equal(exportResult.status, 0, exportResult.stderr);
-  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.1\.8/);
+  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.1\.9/);
   assert.match(exportResult.stdout, /Packet schema version: 1/);
   assert.match(exportResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1447,7 +1447,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     claudeProjectSkillPath(workspace),
     "utf-8",
   );
-  assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.8/);
+  assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.9/);
   assert.match(installedSkill, /Packet schema version: 1/);
   assert.match(installedSkill, /Workflow recipe schema version: 1/);
 });

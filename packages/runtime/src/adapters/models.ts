@@ -1,11 +1,8 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
-  readdirSync,
   readFileSync,
-  statSync,
 } from "node:fs";
-import { join } from "node:path";
 
 import type { AgentConfig } from "../adapters.js";
 import { resolveProviderTool, type ProviderToolDiscoveryOptions } from "./provider-tools.js";
@@ -35,7 +32,7 @@ export type AdapterModelDiscoveryHook =
       source: "adapter-cli";
       strategy: "command";
       command: string[];
-      parser?: "lines" | "codex-json";
+      parser?: "lines" | "codex-json" | "antigravity-lines";
       calibratedBy: string[];
     }
   | {
@@ -64,7 +61,6 @@ export interface AdapterModelDiscoveryOptions {
   };
   commandPathResolver?: (command: string) => string | undefined;
   providerToolDiscovery?: ProviderToolDiscoveryOptions | false;
-  userDataTextProvider?: (adapterId: string) => string[];
   timeoutMs?: number;
 }
 
@@ -127,9 +123,10 @@ const CLI_MODEL_DISCOVERY_HOOKS: Record<string, AdapterModelDiscoveryHook> = {
     status: "supported",
     adapterId: "antigravity-cli",
     source: "adapter-cli",
-    strategy: "executable-strings",
-    commandName: "agy",
-    calibratedBy: ["agy", "--help"],
+    strategy: "command",
+    command: ["agy", "models"],
+    parser: "antigravity-lines",
+    calibratedBy: ["agy", "models", "--help"],
   },
   "opencode-cli": {
     status: "supported",
@@ -140,9 +137,6 @@ const CLI_MODEL_DISCOVERY_HOOKS: Record<string, AdapterModelDiscoveryHook> = {
     calibratedBy: ["opencode", "models", "--help"],
   },
 };
-
-const ANTIGRAVITY_USER_MODEL_TEXT_MAX_FILES = 20;
-const ANTIGRAVITY_USER_MODEL_TEXT_MAX_BYTES = 1024 * 1024;
 
 export function resolveKnownAdapterModel(
   adapterIdOrAlias: string,
@@ -190,7 +184,7 @@ export function resolveKnownAdapterModelWithAliases(
   }
   if (modelDiscoveryHook(adapterId).status === "supported") {
     const input = userInput.trim();
-    if (isExplicitModelId(input)) {
+    if (adapterId !== "antigravity-cli" && isExplicitModelId(input)) {
       return { status: "resolved", canonicalModel: input };
     }
     return { status: "not_found", input };
@@ -267,14 +261,18 @@ function discoverCliModels(
   if (result.status !== 0) {
     return [];
   }
-  return hook.parser === "codex-json"
-    ? parseCodexModelCatalog(result.stdout)
-    : parseModelDiscoveryOutput(result.stdout);
+  if (hook.parser === "codex-json") {
+    return parseCodexModelCatalog(result.stdout);
+  }
+  if (hook.parser === "antigravity-lines") {
+    return parseAntigravityModelCatalog(result.stdout);
+  }
+  return parseModelDiscoveryOutput(result.stdout);
 }
 
 function spawnModelDiscoveryCommand(
   command: string[],
-  timeoutMs = 5000,
+  timeoutMs = 15_000,
 ): { status: number | null; stdout: string; stderr: string; error?: Error } {
   const result = spawnSync(command[0], command.slice(1), {
     encoding: "utf8",
@@ -302,6 +300,14 @@ function parseModelDiscoveryOutput(stdout: string): string[] {
     }
   }
   return uniqueSorted(models);
+}
+
+function parseAntigravityModelCatalog(stdout: string): string[] {
+  return uniqueSorted(stdout.split(/\r?\n/)
+    .map((line) => line.trim().replace(/^>\s*/, ""))
+    .filter((line) => line.length > 0)
+    .filter((line) => !/^available models$/i.test(line) && !/^tip:/i.test(line))
+    .filter((line) => /^[A-Za-z][A-Za-z0-9][A-Za-z0-9 ._:/-]*(?:\s+\([^\r\n)]+\))?$/.test(line)));
 }
 
 function parseCodexModelCatalog(stdout: string): string[] {
@@ -345,69 +351,13 @@ function discoverExecutableStringModels(
   if (hook.adapterId !== "antigravity-cli") {
     return executableModels;
   }
-  return uniqueSorted([
-    ...executableModels,
-    ...discoverAntigravityUserDataModels(options),
-  ]);
+  return executableModels;
 }
 
 function extractExecutableModelIds(adapterId: string, text: string): string[] {
   return adapterId === "antigravity-cli"
     ? extractAntigravityModelIds(text)
     : extractClaudeModelIds(text);
-}
-
-function discoverAntigravityUserDataModels(options: AdapterModelDiscoveryOptions): string[] {
-  const texts = options.userDataTextProvider
-    ? options.userDataTextProvider("antigravity-cli")
-    : readAntigravityUserModelTexts();
-  return extractAntigravityModelIds(texts.join("\n"));
-}
-
-function readAntigravityUserModelTexts(): string[] {
-  const home = process.env.HOME;
-  if (!home) {
-    return [];
-  }
-  return [
-    join(home, ".gemini", "antigravity-cli", "log"),
-    join(home, ".gemini", "antigravity"),
-  ].flatMap(readRecentAntigravityTextFiles);
-}
-
-function readRecentAntigravityTextFiles(directory: string): string[] {
-  if (!isDirectory(directory)) {
-    return [];
-  }
-  let entries: string[];
-  try {
-    entries = readdirSync(directory);
-  } catch {
-    return [];
-  }
-  return entries
-    .map((name) => join(directory, name))
-    .filter(isAntigravityUserModelTextFile)
-    .flatMap((filePath) => {
-      const stat = safeStat(filePath);
-      if (
-        !stat?.isFile()
-        || stat.size <= 0
-        || stat.size > ANTIGRAVITY_USER_MODEL_TEXT_MAX_BYTES
-      ) {
-        return [];
-      }
-      return [{ filePath, mtimeMs: Number(stat.mtimeMs) }];
-    })
-    .sort((left, right) => right.mtimeMs - left.mtimeMs)
-    .slice(0, ANTIGRAVITY_USER_MODEL_TEXT_MAX_FILES)
-    .map((entry) => readTextFile(entry.filePath))
-    .filter((text): text is string => Boolean(text));
-}
-
-function isAntigravityUserModelTextFile(filePath: string): boolean {
-  return /(?:\.log|\.pbtxt|\.json|\.txt)$/i.test(filePath)
-    || /(?:^|\/)(?:Preferences|app_storage\.json)$/i.test(filePath);
 }
 
 function modelDiscoveryCommand(
@@ -558,18 +508,6 @@ function readTextFile(filePath: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function safeStat(filePath: string): ReturnType<typeof statSync> | undefined {
-  try {
-    return statSync(filePath);
-  } catch {
-    return undefined;
-  }
-}
-
-function isDirectory(filePath: string): boolean {
-  return safeStat(filePath)?.isDirectory() ?? false;
 }
 
 function isModelId(value: string): boolean {

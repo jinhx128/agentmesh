@@ -90,8 +90,8 @@ test("model discovery exposes explicit hooks without returning default models", 
   const antigravityHook = modelDiscoveryHook("antigravity");
   assert.equal(antigravityHook.status, "supported");
   assert.equal(antigravityHook.adapterId, "antigravity-cli");
-  assert.equal(antigravityHook.strategy, "executable-strings");
-  assert.equal(antigravityHook.commandName, "agy");
+  assert.equal(antigravityHook.strategy, "command");
+  assert.deepEqual(antigravityHook.command, ["agy", "models"]);
 });
 
 test("model discovery hydrates codex from the bundled debug model catalog", () => {
@@ -166,31 +166,23 @@ test("model discovery hydrates claude from the installed CLI binary catalog", ()
   assert.equal(claude.models.includes("claude-desktop-settings"), false);
 });
 
-test("model discovery hydrates antigravity from local user model data", () => {
+test("model discovery hydrates antigravity from the CLI model catalog", () => {
   const antigravity = discoverAdapterModels("antigravity", {
     runCli: true,
-    commandPathResolver: (command) => command === "agy" ? "/tmp/fake-agy" : undefined,
-    userDataTextProvider: () => [
-      [
-        "AgyAllowedModels",
-        "gemini-3.5-flashhidden-id",
-        "gemini-3.1-proCustom",
-        "gemini-3-pro-previewtext",
-        "gemini-2.5-flashuss-model",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-image-preview",
-        "gemini-2.5-pro-windsurfgenerate",
-        "claude-sonnet-4-6",
-        "claude-opus-4-6",
-        "claude-code-cli",
-        "gpt-oss-120b-maasparse",
-      ].join("\n"),
-    ],
     commandRunner: (command) => {
-      assert.deepEqual(command, ["strings", "/tmp/fake-agy"]);
+      assert.deepEqual(command, ["agy", "models"]);
       return {
         status: 0,
-        stdout: "gemini-2.5-pro\n",
+        stdout: [
+          "Gemini 3.5 Flash (Medium)",
+          "Gemini 3.5 Flash (High)",
+          "Gemini 3.5 Flash (Low)",
+          "Gemini 3.1 Pro (High)",
+          "Claude Sonnet 4.6 (Thinking)",
+          "Claude Opus 4.6 (Thinking)",
+          "GPT-OSS 120B (Medium)",
+          "",
+        ].join("\n"),
         stderr: "",
       };
     },
@@ -199,67 +191,68 @@ test("model discovery hydrates antigravity from local user model data", () => {
   assert.equal(antigravity.status, "discovered");
   assert.equal(antigravity.adapterId, "antigravity-cli");
   assert.equal(antigravity.source, "adapter-cli");
-  assert.ok(antigravity.models.includes("gemini-3.5-flash"));
-  assert.ok(antigravity.models.includes("gemini-3.1-pro"));
-  assert.ok(antigravity.models.includes("gemini-3-pro-preview"));
-  assert.ok(antigravity.models.includes("gemini-2.5-flash"));
-  assert.ok(antigravity.models.includes("gemini-3.1-flash-lite"));
-  assert.ok(antigravity.models.includes("claude-sonnet-4-6"));
-  assert.ok(antigravity.models.includes("claude-opus-4-6"));
-  assert.ok(antigravity.models.includes("gpt-oss-120b-maas"));
-  assert.equal(antigravity.models.includes("gemini-3.1-flash-image-preview"), false);
-  assert.equal(antigravity.models.includes("gemini-2.5-pro-windsurf"), false);
-  assert.equal(antigravity.models.includes("claude-code-cli"), false);
+  assert.deepEqual(antigravity.models, [
+    "Claude Opus 4.6 (Thinking)",
+    "Claude Sonnet 4.6 (Thinking)",
+    "Gemini 3.1 Pro (High)",
+    "Gemini 3.5 Flash (High)",
+    "Gemini 3.5 Flash (Low)",
+    "Gemini 3.5 Flash (Medium)",
+    "GPT-OSS 120B (Medium)",
+  ]);
 });
 
-test("antigravity model discovery merges executable and user data without fallback fixtures", () => {
+test("antigravity model discovery allows its cold-start catalog command to finish", () => {
   const antigravity = discoverAdapterModels("antigravity", {
     runCli: true,
-    commandPathResolver: (command) => command === "agy" ? "/tmp/fake-agy" : undefined,
-    userDataTextProvider: () => ["gemini-3.1-pro\n"],
+    timeoutMs: 15_000,
     commandRunner: (command) => {
-      assert.deepEqual(command, ["strings", "/tmp/fake-agy"]);
+      assert.deepEqual(command, ["agy", "models"]);
+      return { status: 0, stdout: "Claude Sonnet 4.6 (Thinking)\n", stderr: "" };
+    },
+  });
+
+  assert.equal(antigravity.status, "discovered");
+  assert.deepEqual(antigravity.models, ["Claude Sonnet 4.6 (Thinking)"]);
+});
+
+test("antigravity does not accept a slug when live model discovery fails", () => {
+  const resolved = resolveKnownAdapterModelWithAliases("antigravity", "gemini-3.1-pro", {}, {
+    runCli: true,
+    commandRunner: (command) => {
+      assert.deepEqual(command, ["agy", "models"]);
+      return { status: 1, stdout: "", stderr: "catalog unavailable" };
+    },
+  });
+
+  assert.deepEqual(resolved, {
+    status: "not_found",
+    input: "gemini-3.1-pro",
+  });
+});
+
+test("antigravity model discovery preserves prefixed and custom labels", () => {
+  const antigravity = discoverAdapterModels("antigravity", {
+    runCli: true,
+    commandRunner: (command) => {
+      assert.deepEqual(command, ["agy", "models"]);
       return {
         status: 0,
-        stdout: "gemini-2.5-flash\n",
+        stdout: [
+          "> Claude Sonnet 4.6 (Thinking)",
+          "Mistral Large 2 (Medium)",
+          "Available models",
+          "",
+        ].join("\n"),
         stderr: "",
       };
     },
   });
 
   assert.equal(antigravity.status, "discovered");
-  assert.deepEqual(antigravity.models, ["gemini-2.5-flash", "gemini-3.1-pro"]);
-  assert.equal(antigravity.models.includes("gemini-3.5-flash"), false);
-});
-
-test("antigravity model discovery includes dynamically observed local model labels", () => {
-  const options = {
-    runCli: true,
-    commandPathResolver: (command: string) => command === "agy" ? "/tmp/fake-agy" : undefined,
-    userDataTextProvider: () => [
-      [
-        'model_config_manager.go:157] Propagating selected model override to backend: label="Gemini 3.5 Flash (High)"',
-        "> Claude Opus 4.6 (Thinking)",
-        "GPT-OSS 120B (Medium)",
-      ].join("\n"),
-    ],
-    commandRunner: (command: string[]) => {
-      assert.deepEqual(command, ["strings", "/tmp/fake-agy"]);
-      return {
-        status: 0,
-        stdout: "gemini-3.1-pro\n",
-        stderr: "",
-      };
-    },
-  };
-  const antigravity = discoverAdapterModels("antigravity", options);
-
-  assert.equal(antigravity.status, "discovered");
   assert.deepEqual(antigravity.models, [
-    "claude-opus-4-6",
-    "gemini-3.1-pro",
-    "gemini-3.5-flash",
-    "gpt-oss-120b-maas",
+    "Claude Sonnet 4.6 (Thinking)",
+    "Mistral Large 2 (Medium)",
   ]);
 });
 
@@ -329,16 +322,7 @@ test("model discovery covers every Studio agent tool explicitly", () => {
     const hook = modelDiscoveryHook(adapter);
     const discovery = discoverAdapterModels(adapter, {
       runCli: true,
-      commandPathResolver: (command) => {
-        if (command === "claude") {
-          return "/tmp/fake-claude";
-        }
-        if (command === "agy") {
-          return "/tmp/fake-agy";
-        }
-        return undefined;
-      },
-      userDataTextProvider: () => adapter === "antigravity-cli" ? ["gemini-3.1-pro\n"] : [],
+      commandPathResolver: (command) => command === "claude" ? "/tmp/fake-claude" : undefined,
       commandRunner: (command) => {
         invokedCommands.set(adapter, command);
         if (adapter === "codex-cli") {
@@ -355,7 +339,7 @@ test("model discovery covers every Studio agent tool explicitly", () => {
           return { status: 0, stdout: "composer-2.5-fast\n", stderr: "" };
         }
         if (adapter === "antigravity-cli") {
-          return { status: 0, stdout: "gemini-3.1-pro\n", stderr: "" };
+          return { status: 0, stdout: "Claude Sonnet 4.6 (Thinking)\n", stderr: "" };
         }
         if (adapter === "opencode-cli") {
           return { status: 0, stdout: "openai/gpt-5.5-pro\n", stderr: "" };
@@ -374,7 +358,7 @@ test("model discovery covers every Studio agent tool explicitly", () => {
   assert.deepEqual(
     Array.from(invokedCommands.entries()).sort(),
     [
-      ["antigravity-cli", ["strings", "/tmp/fake-agy"]],
+      ["antigravity-cli", ["agy", "models"]],
       ["claude-code-cli", ["strings", "/tmp/fake-claude"]],
       ["codex-cli", ["codex", "debug", "models", "--bundled"]],
       ["cursor-agent", ["cursor-agent", "models"]],
@@ -492,19 +476,17 @@ test("known adapter model resolution can use live adapter discovery", () => {
     canonicalModel: "composer-2.5-fast",
   });
 
-  const antigravity = resolveKnownAdapterModelWithAliases("antigravity", "gemini35flash", {}, {
+  const antigravity = resolveKnownAdapterModelWithAliases("antigravity", "claude sonnet 4.6 thinking", {}, {
     runCli: true,
-    commandPathResolver: (command) => command === "agy" ? "/tmp/fake-agy" : undefined,
-    userDataTextProvider: () => ['label="Gemini 3.5 Flash (High)"'],
     commandRunner: (command) => {
-      assert.deepEqual(command, ["strings", "/tmp/fake-agy"]);
-      return { status: 0, stdout: "", stderr: "" };
+      assert.deepEqual(command, ["agy", "models"]);
+      return { status: 0, stdout: "Claude Sonnet 4.6 (Thinking)\n", stderr: "" };
     },
   });
 
   assert.deepEqual(antigravity, {
     status: "resolved",
-    canonicalModel: "gemini-3.5-flash",
+    canonicalModel: "Claude Sonnet 4.6 (Thinking)",
   });
 
   assert.deepEqual(resolveKnownAdapterModelWithAliases("antigravity", "current", {}, {
