@@ -509,6 +509,57 @@ test("Studio silver shell renders the approved brand hierarchy", () => {
   assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
 });
 
+test("Studio silver components map update and status semantics", () => {
+  const settings = renderSettingsAboutPanel({
+    status: "ready",
+    compatibility: compatibilityFixture(),
+    update: { status: "ready", report: updateFixture() },
+  }, {
+    state: {
+      status: "update_available",
+      currentVersion: "0.1.10",
+      version: "0.1.11",
+      notes: "Updater enabled",
+    },
+    onCheck: async () => {},
+    onInstall: async () => {},
+  });
+  const frontendCss = readFileSync(
+    path.resolve("apps/studio-web/src/styles.css"),
+    "utf-8",
+  );
+
+  assert.match(settings, /class="[^"]*studio-subcard[^"]*"/);
+  assert.match(settings, /class="[^"]*studio-update-card[^"]*"/);
+  assert.match(settings, /class="[^"]*studio-info-item[^"]*"/);
+  for (const selector of [
+    ".mantine-Button-root",
+    ".mantine-Input-input",
+    ".mantine-Tabs-list",
+    ".studio-subcard",
+    ".studio-update-card",
+    ".studio-info-item",
+    ".studio-resource-card",
+    ".artifact-markdown",
+  ]) {
+    assert.ok(frontendCss.includes(selector), `missing component selector: ${selector}`);
+  }
+  assert.match(frontendCss, /\.status\.ready,[\s\S]*var\(--studio-success\)/);
+  assert.match(frontendCss, /\.status\.failed,[\s\S]*var\(--studio-danger\)/);
+  assert.doesNotMatch(
+    frontendCss,
+    /#f45d3d|#fff3ee|#ffd0c4|#ffe0d7|#b5432d|#fffdfc|#fff8f5|#fffaf8|#ffc7ba|#ffb19f|#ffb4b0/i,
+  );
+  assert.doesNotMatch(
+    frontendCss,
+    /var\(--studio-(?:bg|text|accent|accent-soft|surface-soft|surface-tint)\)/,
+  );
+  assert.doesNotMatch(
+    frontendCss,
+    /--studio-(?:bg|text|accent|accent-soft|surface-soft|surface-tint):/,
+  );
+});
+
 test("Studio frontend build keeps JavaScript chunks under the Vite warning threshold", async () => {
   const result = await viteBuild({
     configFile: path.join(process.cwd(), "apps", "studio-web", "vite.config.ts"),

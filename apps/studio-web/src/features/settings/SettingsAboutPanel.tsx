@@ -70,7 +70,7 @@ export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater }: S
   return (
     <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
       <PanelHeader title={t("about")} meta={t("versionInfo")} />
-      <Card mt="md" withBorder radius="md" p="md">
+      <Card className="studio-subcard studio-compatibility-card" mt="md" withBorder radius="md" p="md">
         <Stack gap="md">
           <Group justify="space-between" align="flex-start" gap="sm">
             <Badge color={compatibility.decision === "read_write" ? "green" : "yellow"}>{decisionLabel}</Badge>
@@ -125,7 +125,7 @@ function DesktopUpdaterCard({
     ? Math.min(100, Math.round((state.downloadedBytes / state.totalBytes) * 100))
     : undefined;
   return (
-    <Card mt="md" withBorder radius="md" p="md" data-studio-section="desktop-app-updater">
+    <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="desktop-app-updater">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" gap="sm">
           <Title order={3} size="h4">应用更新</Title>
@@ -191,7 +191,7 @@ function UpdateCard({
 }): ReactElement {
   if (state.status === "loading") {
     return (
-      <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+      <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
         <PanelHeader
           title="版本更新"
           meta="检查中"
@@ -203,7 +203,7 @@ function UpdateCard({
   }
   if (state.status === "error") {
     return (
-      <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+      <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
         <PanelHeader
           title="版本更新"
           meta="暂时无法检查"
@@ -215,7 +215,7 @@ function UpdateCard({
   }
   const report = state.report;
   return (
-    <Card mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
+    <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" gap="sm">
           <PanelHeader
@@ -288,7 +288,7 @@ function missingMetadataValue(compatibility: StudioCompatibilityDiagnostics): st
 
 function InfoItem({ label, value }: { label: string; value: string | number }): ReactElement {
   return (
-    <Stack gap={2}>
+    <Stack className="studio-info-item" gap={2}>
       <Text size="xs" c="dimmed" fw={800}>{label}</Text>
       <Text size="sm" fw={700} style={{ overflowWrap: "anywhere" }}>{value}</Text>
     </Stack>
