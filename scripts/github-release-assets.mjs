@@ -5,6 +5,26 @@ export function releaseTarballName(version) {
   return `agentmesh-${version}.tgz`;
 }
 
+export function updaterAssetNames(version) {
+  const archive = `AgentMesh_${version}_aarch64.app.tar.gz`;
+  return { archive, signature: `${archive}.sig` };
+}
+
+export function createUpdaterMetadata({ version, signature, pubDate, repo, notes }) {
+  const { archive } = updaterAssetNames(version);
+  return {
+    version,
+    notes,
+    pub_date: pubDate,
+    platforms: {
+      "darwin-aarch64": {
+        signature: signature.trim(),
+        url: `https://github.com/${repo}/releases/download/v${version}/${archive}`,
+      },
+    },
+  };
+}
+
 export function normalizePackedTarballAsset({ distDir, npmPackOutput, version }) {
   const packed = parseNpmPackOutput(npmPackOutput);
   const releaseName = releaseTarballName(version);

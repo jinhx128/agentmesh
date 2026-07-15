@@ -83,6 +83,13 @@ export async function readStudioIntegrations(options: {
     workspace: options.cwd,
     ...options.integrations,
   });
+  return studioIntegrationsReport(options, commandLineTool);
+}
+
+function studioIntegrationsReport(
+  options: { cwd: string; entrypoint: string },
+  commandLineTool: AgentMeshCliReport,
+): StudioIntegrationsReport {
   return {
     schema_version: 1,
     entrypoint: options.entrypoint,
@@ -113,13 +120,8 @@ export async function installStudioCommandLineTool(
     workspace: options.cwd,
     ...options.integrations,
   });
-  const report = await readStudioIntegrations(options);
   return {
-    ...report,
-    command_line_tool: {
-      supported: true,
-      ...installed.report,
-    },
+    ...studioIntegrationsReport(options, installed.report),
     operation: installed.operation,
   };
 }

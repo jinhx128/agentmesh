@@ -15,6 +15,7 @@ import type { ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { formatLocalDateTime } from "../../app/time.js";
 import type { StudioCompatibilityDiagnostics } from "../../api/compatibility.js";
+import type { DesktopAppUpdaterState } from "../../api/desktop-updater.js";
 import type { StudioUpdateReport, StudioUpdateTargetReport } from "../../api/update.js";
 
 export type SettingsAboutState =
@@ -34,9 +35,14 @@ export type SettingsAboutUpdateState =
 export interface SettingsAboutPanelProps {
   state: SettingsAboutState;
   onRefreshUpdate?: () => void;
+  desktopUpdater?: {
+    state: DesktopAppUpdaterState;
+    onCheck: () => Promise<void>;
+    onInstall: () => Promise<void>;
+  };
 }
 
-export function SettingsAboutPanel({ state, onRefreshUpdate }: SettingsAboutPanelProps): ReactElement {
+export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater }: SettingsAboutPanelProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "loading") {
     return (
@@ -91,6 +97,7 @@ export function SettingsAboutPanel({ state, onRefreshUpdate }: SettingsAboutPane
         </Stack>
       </Card>
       <UpdateCard state={state.update ?? { status: "loading" }} onRefresh={onRefreshUpdate} />
+      {desktopUpdater ? <DesktopUpdaterCard {...desktopUpdater} /> : null}
       {reasonItems.length > 0 ? (
         <Stack mt="md" gap="xs">
           <Text fw={800} mb="xs">{t("compatibilityDiagnostics")}</Text>
@@ -101,6 +108,78 @@ export function SettingsAboutPanel({ state, onRefreshUpdate }: SettingsAboutPane
       ) : null}
     </Paper>
   );
+}
+
+function DesktopUpdaterCard({
+  state,
+  onCheck,
+  onInstall,
+}: {
+  state: DesktopAppUpdaterState;
+  onCheck: () => Promise<void>;
+  onInstall: () => Promise<void>;
+}): ReactElement {
+  const checking = state.status === "checking";
+  const downloading = state.status === "downloading" || state.status === "restarting";
+  const progress = state.status === "downloading" && state.totalBytes
+    ? Math.min(100, Math.round((state.downloadedBytes / state.totalBytes) * 100))
+    : undefined;
+  return (
+    <Card mt="md" withBorder radius="md" p="md" data-studio-section="desktop-app-updater">
+      <Stack gap="md">
+        <Group justify="space-between" align="flex-start" gap="sm">
+          <Title order={3} size="h4">应用更新</Title>
+          <Badge color={state.status === "current" ? "green" : state.status === "error" ? "yellow" : "blue"}>
+            {desktopUpdaterLabel(state)}
+          </Badge>
+        </Group>
+        {state.status === "update_available" ? (
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            <InfoItem label="当前应用版本" value={state.currentVersion} />
+            <InfoItem label="可用应用版本" value={state.version} />
+          </SimpleGrid>
+        ) : null}
+        {state.status === "update_available" && state.notes ? <Text size="sm">{state.notes}</Text> : null}
+        {state.status === "downloading" ? (
+          <Text size="sm">已下载 {formatBytes(state.downloadedBytes)}{state.totalBytes
+            ? ` / ${formatBytes(state.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
+            : ""}</Text>
+        ) : null}
+        {state.status === "error" ? <Alert color="yellow" variant="light">{state.message}</Alert> : null}
+        {state.status !== "unavailable" ? (
+          <Group gap="sm">
+            <Button size="xs" variant="light" disabled={checking || downloading} onClick={() => void onCheck()}>
+              {checking ? "检查中" : "检查应用更新"}
+            </Button>
+            {state.status === "update_available" ? (
+              <Button size="xs" disabled={downloading} onClick={() => void onInstall()}>
+                安装并重启
+              </Button>
+            ) : null}
+          </Group>
+        ) : null}
+      </Stack>
+    </Card>
+  );
+}
+
+function desktopUpdaterLabel(state: DesktopAppUpdaterState): string {
+  switch (state.status) {
+    case "unavailable": return "仅桌面端可用";
+    case "idle": return "尚未检查";
+    case "checking": return "检查中";
+    case "current": return "已是最新";
+    case "update_available": return "发现新版本";
+    case "downloading": return "下载并安装中";
+    case "restarting": return "正在重启";
+    case "error": return "更新失败";
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function UpdateCard({

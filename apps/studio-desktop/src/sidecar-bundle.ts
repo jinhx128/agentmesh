@@ -152,6 +152,7 @@ function bundleMacOsNodeLibraries(sourceNode: string, sidecarDir: string): numbe
       const targetPath = path.join(sidecarDir, entry);
       rmSync(targetPath, { force: true });
       copyFileSync(path.join(candidateDir, entry), targetPath);
+      chmodSync(targetPath, 0o644);
       copied.add(entry);
     }
   }

@@ -57,7 +57,7 @@ test("studio desktop distribution wires the macOS DMG app identity and icons", (
   assert.deepEqual(summary.warnings, []);
   assert.equal(summary.app.productName, "AgentMesh");
   assert.equal(summary.app.identifier, "dev.agentmesh.studio");
-  assert.deepEqual(summary.app.targets, ["dmg"]);
+  assert.deepEqual(summary.app.targets, ["app", "dmg"]);
   assert.deepEqual(summary.app.targetArchitectures, ["darwin-aarch64"]);
   assert.deepEqual(summary.app.iconPaths, [
     "apps/studio-desktop/src-tauri/icons/32x32.png",
@@ -115,7 +115,7 @@ test("signed distribution smoke is gated by signing, notarization, and updater s
   assert.match(blocked.issues.join("\n"), /APPLE_SIGNING_IDENTITY/);
   assert.match(blocked.issues.join("\n"), /APPLE_ID/);
   assert.match(blocked.issues.join("\n"), /TAURI_SIGNING_PRIVATE_KEY/);
-  assert.match(blocked.issues.join("\n"), /updater pubkey/);
+  assert.doesNotMatch(blocked.issues.join("\n"), /updater pubkey/);
 
   const dryRun = validateStudioDesktopDistribution({
     cwd: root,
@@ -163,11 +163,35 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
     { encoding: "utf-8" },
   );
   assert.match(cargoToml, /tauri-plugin-shell/);
+  assert.match(cargoToml, /tauri-plugin-updater/);
+  assert.match(cargoToml, /tauri-plugin-process/);
 
   const libRs = readFileSync(
     path.join(root, "apps", "studio-desktop", "src-tauri", "src", "lib.rs"),
     { encoding: "utf-8" },
   );
+  assert.match(libRs, /tauri_plugin_updater::Builder::new\(\)\.build\(\)/);
+  assert.match(libRs, /tauri_plugin_process::init\(\)/);
+
+  const capability = JSON.parse(readFileSync(
+    path.join(root, "apps", "studio-desktop", "src-tauri", "capabilities", "default.json"),
+    "utf-8",
+  )) as { description?: string; permissions?: string[] };
+  assert.match(capability.description ?? "", /updater/i);
+  assert.match(capability.description ?? "", /restart/i);
+  assert.equal(capability.permissions?.includes("updater:default"), true);
+  assert.equal(capability.permissions?.includes("process:allow-restart"), true);
+
+  const updaterConfig = tauriConfig as typeof tauriConfig & {
+    bundle?: { targets?: string[] };
+    plugins?: { updater?: { endpoints?: string[]; pubkey?: string } };
+  };
+  assert.deepEqual(updaterConfig.bundle?.targets, ["app", "dmg"]);
+  assert.deepEqual(updaterConfig.plugins?.updater?.endpoints, [
+    "https://github.com/jinhx128/agentmesh/releases/latest/download/latest.json",
+  ]);
+  assert.ok((updaterConfig.plugins?.updater?.pubkey?.length ?? 0) > 40);
+  assert.notEqual(updaterConfig.plugins?.updater?.pubkey, "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY");
   assert.match(libRs, /tauri_plugin_shell::init/);
   assert.match(libRs, /\.sidecar\("agentmesh-studio-sidecar"\)/);
   assert.match(libRs, /sidecar_launch_args\(\)/);
@@ -190,7 +214,9 @@ test("sidecar bundle launches with app-bundled Node and no PATH dependency", asy
   assert.equal(bundle.usesBundledNode, true);
   const expectedMacOsNodeLibraries = macOsRpathLibnodeNames(process.execPath);
   for (const libraryName of expectedMacOsNodeLibraries) {
-    assert.equal(existsSync(path.join(bundle.sidecarDir, libraryName)), true);
+    const libraryPath = path.join(bundle.sidecarDir, libraryName);
+    assert.equal(existsSync(libraryPath), true);
+    assert.notEqual(statSync(libraryPath).mode & 0o200, 0, `${libraryName} must be owner-writable`);
   }
   if (expectedMacOsNodeLibraries.length > 0) {
     assert.equal(bundle.bundledNodeLibraryCount >= expectedMacOsNodeLibraries.length, true);
@@ -241,7 +267,9 @@ test("sidecar bundle launches with app-bundled Node and no PATH dependency", asy
     PATH: path.join(workspace, "empty-path"),
   });
   test.after(() => {
-    launch.child.kill("SIGTERM");
+    if (launch.child.exitCode === null) {
+      launch.child.kill("SIGTERM");
+    }
   });
 
   assert.match(launch.ready.webview_url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
@@ -305,6 +333,11 @@ test("sidecar bundle launches with app-bundled Node and no PATH dependency", asy
     "sidecar bundle attach",
   ]);
   assert.match(result.stdout, /Attached:/);
+
+  launch.child.stdin?.end();
+  const exit = await waitForChildExit(launch.child, 3000);
+  assert.equal(exit.code, 0);
+  assert.equal(exit.signal, null);
 });
 
 test("sidecar launcher resolves packaged app resources layout", () => {
@@ -411,7 +444,7 @@ async function launchSidecar(
     stdio: ["pipe", "pipe", "pipe"],
   });
   const token = "sidecar-launch-token";
-  child.stdin?.end(`${JSON.stringify({
+  child.stdin?.write(`${JSON.stringify({
     schema_version: 1,
     studio_token: token,
   })}\n`);
@@ -448,6 +481,23 @@ async function launchSidecar(
         token,
       });
     });
+  });
+}
+
+function waitForChildExit(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.removeListener("exit", onExit);
+      reject(new Error(`sidecar did not exit within ${timeoutMs}ms after stdin closed`));
+    }, timeoutMs);
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      clearTimeout(timeout);
+      resolve({ code, signal });
+    };
+    child.once("exit", onExit);
   });
 }
 

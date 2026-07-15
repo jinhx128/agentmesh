@@ -108,6 +108,13 @@ import {
   type SettingsAboutState,
 } from "../features/settings/SettingsAboutPanel.js";
 import {
+  checkDesktopAppUpdate,
+  installDesktopAppUpdate,
+  isDesktopUpdaterAvailable,
+  relaunchDesktopApp,
+  type DesktopAppUpdaterState,
+} from "../api/desktop-updater.js";
+import {
   type AgentIntegrationsState,
 } from "../features/settings/AgentIntegrationsPanel.js";
 import {
@@ -173,6 +180,9 @@ export function App(): ReactElement {
   const [bootstrapState, setBootstrapState] = useState<BootstrapViewState>({ status: "loading" });
   const [catalogState, setCatalogState] = useState<CatalogViewState>({ status: "loading" });
   const [settingsAboutState, setSettingsAboutState] = useState<SettingsAboutState>({ status: "loading" });
+  const [desktopUpdaterState, setDesktopUpdaterState] = useState<DesktopAppUpdaterState>(
+    isDesktopUpdaterAvailable() ? { status: "idle" } : { status: "unavailable" },
+  );
   const [advancedSettingsState, setAdvancedSettingsState] = useState<AdvancedSettingsState>({ status: "loading" });
   const [agentIntegrationsState, setAgentIntegrationsState] = useState<AgentIntegrationsState>({ status: "loading" });
   const [agentLifecycleState, setAgentLifecycleState] = useState<AgentLifecycleState>({ status: "loading" });
@@ -274,6 +284,32 @@ export function App(): ReactElement {
           ? { ...current, update: { status: "error", message: normalizeStudioApiError(error).message } }
           : current);
       });
+  }
+
+  async function checkDesktopUpdater(): Promise<void> {
+    setDesktopUpdaterState({ status: "checking" });
+    try {
+      setDesktopUpdaterState(await checkDesktopAppUpdate());
+    } catch (error) {
+      setDesktopUpdaterState({ status: "error", message: normalizeStudioApiError(error).message });
+    }
+  }
+
+  async function installDesktopUpdater(): Promise<void> {
+    try {
+      setDesktopUpdaterState({ status: "downloading", downloadedBytes: 0 });
+      await installDesktopAppUpdate((downloadedBytes, totalBytes) => {
+        setDesktopUpdaterState({
+          status: "downloading",
+          downloadedBytes,
+          ...(totalBytes === undefined ? {} : { totalBytes }),
+        });
+      });
+      setDesktopUpdaterState({ status: "restarting" });
+      await relaunchDesktopApp();
+    } catch (error) {
+      setDesktopUpdaterState({ status: "error", message: normalizeStudioApiError(error).message });
+    }
   }
 
   function loadAgentIntegrationsWithClient(client: StudioApiClient): void {
@@ -910,6 +946,11 @@ export function App(): ReactElement {
                 }}
                 about={{
                   state: settingsAboutState,
+                  desktopUpdater: {
+                    state: desktopUpdaterState,
+                    onCheck: checkDesktopUpdater,
+                    onInstall: installDesktopUpdater,
+                  },
                   onRefreshUpdate: () => {
                     if (apiClient) {
                       loadUpdateWithClient(apiClient);

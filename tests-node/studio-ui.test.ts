@@ -10,6 +10,12 @@ import { build as viteBuild } from "vite";
 
 import { createStudioApiClient } from "../apps/studio-web/src/api/client.js";
 import {
+  checkDesktopAppUpdate,
+  installDesktopAppUpdate,
+  isDesktopUpdaterAvailable,
+  relaunchDesktopApp,
+} from "../apps/studio-web/src/api/desktop-updater.js";
+import {
   loadStudioAdvancedSettings,
   updateStudioAdvancedSettings,
   type StudioAdvancedSettingsPayload,
@@ -1377,6 +1383,15 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     status: "ready",
     compatibility: compatibilityFixture(),
     update: { status: "ready", report: updateFixture() },
+  }, {
+    state: {
+      status: "update_available",
+      currentVersion: "0.1.10",
+      version: "0.1.11",
+      notes: "Updater enabled",
+    },
+    onCheck: async () => {},
+    onInstall: async () => {},
   });
   assert.match(settings, /可读写/);
   assert.match(settings, /运行时版本/);
@@ -1403,6 +1418,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.9\.tgz/);
   assert.match(settings, /桌面端更新/);
   assert.match(settings, /AgentMesh_0\.1\.9_aarch64\.dmg/);
+  assert.match(settings, /应用更新/);
+  assert.match(settings, /安装并重启/);
+  assert.match(settings, /0\.1\.10/);
+  assert.match(settings, /0\.1\.11/);
   assert.doesNotMatch(settings, /Runtime 0\.1\.8|entrypoint|Last writer|Metadata ·/);
   const updateError = renderSettingsAboutPanel({
     status: "ready",
@@ -1765,6 +1784,19 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.deepEqual(
     architecture.items.map((item) => item.title),
     ["控制面边界", "文件事实源", "App Server 与 Runtime", "安全边界"],
+  );
+});
+
+test("browser Studio keeps native updater APIs unavailable", async () => {
+  assert.equal(isDesktopUpdaterAvailable(), false);
+  assert.deepEqual(await checkDesktopAppUpdate(), { status: "unavailable" });
+  await assert.rejects(
+    installDesktopAppUpdate(() => undefined),
+    /Check for an app update before installing it/,
+  );
+  await assert.rejects(
+    relaunchDesktopApp(),
+    /Desktop app updater is only available from AgentMesh\.app/,
   );
 });
 
@@ -2141,8 +2173,12 @@ function renderSafeActionsPanel(
   }));
 }
 
-function renderSettingsAboutPanel(state: SettingsAboutState): string {
-  return renderStudioElement(React.createElement(SettingsAboutPanel, { state, onRefreshUpdate: () => {} }));
+function renderSettingsAboutPanel(state: SettingsAboutState, desktopUpdater?: unknown): string {
+  return renderStudioElement(React.createElement(SettingsAboutPanel, {
+    state,
+    onRefreshUpdate: () => {},
+    desktopUpdater,
+  } as Parameters<typeof SettingsAboutPanel>[0]));
 }
 
 function renderAgentIntegrationsPanel(state: AgentIntegrationsState): string {
@@ -2645,27 +2681,6 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
       latest_version: "0.1.10",
       status: "update_available",
       diagnostics: [],
-      default_bin_dir: "/usr/local/bin",
-      target_path: "/usr/local/bin/agentmesh",
-      requires_confirmation: false,
-      path_command: {
-        found: true,
-        path: "/usr/local/bin/agentmesh",
-        source: "app_wrapper",
-        version: "0.1.8",
-      },
-      target_file: {
-        exists: true,
-        source: "app_wrapper",
-        version: "0.1.8",
-        different: false,
-      },
-      app_wrapper: {
-        node_path: "/Applications/AgentMesh.app/node",
-        cli_path: "/Applications/AgentMesh.app/cli.js",
-        channel: "dev",
-        version: "0.1.8",
-      },
     },
     skills: {
       targets: [

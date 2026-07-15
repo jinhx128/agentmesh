@@ -22,6 +22,7 @@ try {
   });
   if (launchJson) {
     console.log(serializeStudioDesktopLaunchEvent(started));
+    stopDesktopHostWhenParentInputCloses(started.stop);
   } else {
     console.log(`AgentMesh Desktop Studio: ${redactStudioUrlForLog(started.webviewUrl)}`);
     console.log(`Workspace: ${started.workspace}`);
@@ -40,6 +41,23 @@ try {
     console.error(message);
   }
   process.exitCode = 1;
+}
+
+function stopDesktopHostWhenParentInputCloses(stop: () => Promise<void>): void {
+  let stopping = false;
+  const stopHost = () => {
+    if (stopping) return;
+    stopping = true;
+    void stop().catch((error: unknown) => {
+      console.error(`failed to stop AgentMesh App Server: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    });
+  };
+  if (process.stdin.readableEnded) {
+    stopHost();
+  } else {
+    process.stdin.once("end", stopHost);
+  }
 }
 
 function readLaunchHandshakeToken(): Promise<string> {

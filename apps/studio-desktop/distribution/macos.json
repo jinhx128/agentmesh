@@ -3,7 +3,7 @@
   "app": {
     "product_name": "AgentMesh",
     "bundle_identifier": "dev.agentmesh.studio",
-    "targets": ["dmg"],
+    "targets": ["app", "dmg"],
     "target_architectures": ["darwin-aarch64"],
     "icon_paths": [
       "apps/studio-desktop/src-tauri/icons/32x32.png",
@@ -34,7 +34,7 @@
   "updates": {
     "channels": {
       "stable": {
-        "endpoint": "https://github.com/jinhx128/agentmesh/releases/download/studio-stable/latest.json",
+        "endpoint": "https://github.com/jinhx128/agentmesh/releases/latest/download/latest.json",
         "metadata_path": "apps/studio-desktop/distribution/latest.stable.darwin-aarch64.example.json"
       },
       "beta": {
@@ -54,7 +54,7 @@
     "npm_cli_shared_install": false
   },
   "agent_integrations": {
-    "command_line_tool": "Optional Install Command Line Tool writes a user-confirmed PATH wrapper to the app-managed CLI entrypoint after showing any existing PATH command.",
+    "command_line_tool": "Desktop detects the PATH-visible public npm CLI, reports its actual version, and installs or updates @jinhx128/agentmesh@latest without path input.",
     "skill_install": "Optional Install Agent Skill writes only user-selected targets and verifies each target independently.",
     "skill_targets": ["codex", "cursor", "antigravity", "opencode", "claude"]
   }

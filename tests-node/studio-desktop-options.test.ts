@@ -629,11 +629,15 @@ test("desktop detects and updates the public npm CLI without path input", async 
 
   const previousPath = process.env.PATH;
   process.env.PATH = `${binDir}:/bin:/usr/bin`;
+  let registryCheckCount = 0;
   const integrations = {
-    registryFetch: async () => new Response(JSON.stringify({ version: "0.1.10" }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
+    registryFetch: async () => {
+      registryCheckCount += 1;
+      return new Response(JSON.stringify({ version: "0.1.10" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
   } as StudioIntegrationOptions;
   try {
     const before = await readStudioIntegrations({
@@ -671,6 +675,34 @@ test("desktop detects and updates the public npm CLI without path input", async 
       "--no-audit",
       "--no-fund",
     ]);
+    assert.equal(registryCheckCount, 2);
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
+test("desktop offers the stable CLI update to a matching prerelease install", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const binDir = path.join(workspace, "bin");
+  const agentmeshPath = writeFakeAgentmesh(binDir, "0.1.10-beta.1");
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = binDir;
+  try {
+    const result = await readStudioIntegrations({
+      cwd: workspace,
+      entrypoint: "desktop",
+      integrations: {
+        registryFetch: async () => new Response(JSON.stringify({ version: "0.1.10" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      } as StudioIntegrationOptions,
+    });
+    assert.equal(result.command_line_tool.path, agentmeshPath);
+    assert.equal(result.command_line_tool.installed_version, "0.1.10-beta.1");
+    assert.equal(result.command_line_tool.status, "update_available");
   } finally {
     process.env.PATH = previousPath;
   }

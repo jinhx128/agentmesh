@@ -201,6 +201,7 @@ export function validateStudioDesktopDistribution(
   requireEqual(issues, "Tauri productName", tauriConfig?.productName, app.productName);
   requireEqual(issues, "Tauri identifier", tauriConfig?.identifier, app.identifier);
   requireArrayIncludes(issues, "Tauri bundle.targets", tauriConfig?.bundle?.targets, "dmg");
+  requireArrayIncludes(issues, "Tauri bundle.targets", tauriConfig?.bundle?.targets, "app");
   requireArrayIncludes(issues, "desktop target_architectures", app.targetArchitectures, "darwin-aarch64");
   requireEqual(issues, "desktop shell decision", shell.decision, "continue-tauri");
   requireTextIncludes(issues, "desktop sidecar packaging", shell.sidecarPackaging, "externalBin");
@@ -568,7 +569,7 @@ function validateAgentIntegrations(
     issues,
     "desktop command-line tool integration",
     integrations?.command_line_tool,
-    "user-confirmed PATH wrapper",
+    "installs or updates @jinhx128/agentmesh@latest without path input",
   );
   requireTextIncludes(
     issues,

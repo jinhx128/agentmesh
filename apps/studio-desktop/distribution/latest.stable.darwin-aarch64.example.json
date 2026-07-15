@@ -5,7 +5,7 @@
   "platforms": {
     "darwin-aarch64": {
       "signature": "EXAMPLE_TAURI_UPDATE_SIGNATURE_REPLACE_AT_RELEASE",
-      "url": "https://github.com/jinhx128/agentmesh/releases/download/studio-stable/AgentMesh_0.1.10_aarch64.app.tar.gz"
+      "url": "https://github.com/jinhx128/agentmesh/releases/download/v0.1.10/AgentMesh_0.1.10_aarch64.app.tar.gz"
     }
   }
 }

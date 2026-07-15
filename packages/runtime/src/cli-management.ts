@@ -169,14 +169,46 @@ function cliStatus(
   return compareSemver(installedSemver, latestSemver) < 0 ? "update_available" : "current";
 }
 
-function parseSemver(value: string): [number, number, number] | undefined {
-  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/);
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
+type SemverIdentifier = number | string;
+
+interface ParsedSemver {
+  core: [number, number, number];
+  prerelease: SemverIdentifier[];
 }
 
-function compareSemver(left: [number, number, number], right: [number, number, number]): number {
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return left[index] - right[index];
+function parseSemver(value: string): ParsedSemver | undefined {
+  const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  if (!match) return undefined;
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    prerelease: match[4]
+      ? match[4].split(".").map((identifier) => /^\d+$/.test(identifier) ? Number(identifier) : identifier)
+      : [],
+  };
+}
+
+function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
+  for (let index = 0; index < left.core.length; index += 1) {
+    if (left.core[index] !== right.core[index]) return left.core[index] - right.core[index];
+  }
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+    return left.prerelease.length === right.prerelease.length
+      ? 0
+      : left.prerelease.length === 0 ? 1 : -1;
+  }
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = left.prerelease[index];
+    const rightIdentifier = right.prerelease[index];
+    if (leftIdentifier === undefined) return -1;
+    if (rightIdentifier === undefined) return 1;
+    if (leftIdentifier === rightIdentifier) continue;
+    if (typeof leftIdentifier === "number" && typeof rightIdentifier === "number") {
+      return leftIdentifier - rightIdentifier;
+    }
+    if (typeof leftIdentifier === "number") return -1;
+    if (typeof rightIdentifier === "number") return 1;
+    return leftIdentifier < rightIdentifier ? -1 : 1;
   }
   return 0;
 }

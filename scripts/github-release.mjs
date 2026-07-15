@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, copyFileS
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
-import { normalizePackedTarballAsset, releaseTarballName } from "./github-release-assets.mjs";
+import {
+  createUpdaterMetadata,
+  normalizePackedTarballAsset,
+  releaseTarballName,
+  updaterAssetNames,
+} from "./github-release-assets.mjs";
 
 const root = process.cwd();
 const args = parseArgs(process.argv.slice(2));
@@ -12,9 +17,13 @@ const version = packageJson.version;
 const tag = `v${version}`;
 const repo = args.repo ?? process.env.GITHUB_REPOSITORY ?? "jinhx128/agentmesh";
 const distDir = path.join(root, "dist-release");
+const updaterAssets = updaterAssetNames(version);
 const assets = [
   releaseTarballName(version),
   `AgentMesh_${version}_aarch64.dmg`,
+  updaterAssets.archive,
+  updaterAssets.signature,
+  "latest.json",
   `agentmesh-skill-${version}.md`,
   "SHA256SUMS",
 ];
@@ -36,6 +45,7 @@ if (!args.prepareOnly) {
 }
 
 if (!args.skipBuild) {
+  const signingEnv = updaterSigningEnvironment();
   run("npm", ["run", "build"]);
   run("npm", ["run", "studio-desktop:package:dev"]);
   run("cargo", [
@@ -44,9 +54,9 @@ if (!args.skipBuild) {
     "--config",
     "apps/studio-desktop/src-tauri/tauri.conf.json",
     "--bundles",
-    "dmg",
+    "app,dmg",
     "--debug",
-  ]);
+  ], { env: signingEnv });
 }
 
 prepareAssets();
@@ -80,6 +90,29 @@ function prepareAssets() {
     throw new Error(`Missing DMG ${dmgSource}. Run without --skip-build or build the DMG first.`);
   }
   copyFileSync(dmgSource, dmgTarget);
+
+  const updaterSource = path.join(
+    root,
+    "apps/studio-desktop/src-tauri/target/debug/bundle/macos/AgentMesh.app.tar.gz",
+  );
+  const updaterSignatureSource = `${updaterSource}.sig`;
+  assertFile(updaterSource);
+  assertFile(updaterSignatureSource);
+  copyFileSync(updaterSource, path.join(distDir, updaterAssets.archive));
+  copyFileSync(updaterSignatureSource, path.join(distDir, updaterAssets.signature));
+
+  const signature = readFileSync(path.join(distDir, updaterAssets.signature), "utf-8");
+  const notes = args.notesFile && existsSync(args.notesFile)
+    ? readFileSync(args.notesFile, "utf-8").trim()
+    : `AgentMesh v${version}`;
+  const updaterMetadata = createUpdaterMetadata({
+    version,
+    signature,
+    pubDate: new Date().toISOString(),
+    repo,
+    notes,
+  });
+  writeFileSync(path.join(distDir, "latest.json"), `${JSON.stringify(updaterMetadata, null, 2)}\n`);
 
   const skillMarkdown = execFileSync(
     process.execPath,
@@ -256,15 +289,18 @@ function writeDefaultNotes() {
     "",
     `- agentmesh-${version}.tgz: CLI npm install tarball`,
     `- AgentMesh_${version}_aarch64.dmg: unsigned macOS Apple Silicon DMG`,
+    `- ${updaterAssets.archive}: signed Tauri updater archive`,
+    `- ${updaterAssets.signature}: updater archive signature`,
+    "- latest.json: stable Tauri updater metadata",
     `- agentmesh-skill-${version}.md: standalone AgentMesh skill markdown`,
     "- SHA256SUMS: release asset checksums",
     "",
     "Install and upgrade notes",
     "",
-    "- Replace the installed AgentMesh.app with the app from this DMG; do not mix app resources, sidecars, or UI assets from different versions.",
+    "- Users upgrading from v0.1.10 must replace AgentMesh.app with this DMG once; later updater-enabled versions can update in-app.",
     "- The DMG is unsigned and Apple Silicon-only; first open may require right-click Open or approval in System Settings / Privacy & Security.",
     "- The CLI tarball is a separate channel. Update PATH-visible CLI installs with npm install -g using the matching agentmesh tarball.",
-    "- If you use the Desktop Studio command-line wrapper, re-run Settings / Agent Integrations after moving or replacing AgentMesh.app.",
+    "- Settings / Agent Integrations manages the separate public npm CLI and verifies the PATH-visible version after installation.",
     "",
   ].join("\n");
   writeFileSync(notesPath, body);
@@ -288,9 +324,41 @@ function sha256(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-function run(command, commandArgs) {
+function run(command, commandArgs, options = {}) {
   console.log(`$ ${[command, ...commandArgs].join(" ")}`);
-  execFileSync(command, commandArgs, { cwd: root, stdio: "inherit" });
+  execFileSync(command, commandArgs, {
+    cwd: root,
+    stdio: "inherit",
+    env: options.env ? { ...process.env, ...options.env } : process.env,
+  });
+}
+
+function updaterSigningEnvironment() {
+  if (process.env.TAURI_SIGNING_PRIVATE_KEY && process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+    return {
+      TAURI_SIGNING_PRIVATE_KEY: process.env.TAURI_SIGNING_PRIVATE_KEY,
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+    };
+  }
+  if (process.platform !== "darwin") {
+    throw new Error("TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD are required.");
+  }
+  const keyPath = path.join(os.homedir(), ".config", "agentmesh", "updater", "agentmesh.key");
+  if (!existsSync(keyPath)) {
+    throw new Error(`Missing updater signing key ${keyPath}.`);
+  }
+  const password = execFileSync(
+    "security",
+    ["find-generic-password", "-a", os.userInfo().username, "-s", "dev.agentmesh.studio.updater", "-w"],
+    { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+  ).trim();
+  if (!password) {
+    throw new Error("Updater signing password is missing from macOS Keychain.");
+  }
+  return {
+    TAURI_SIGNING_PRIVATE_KEY: readFileSync(keyPath, "utf-8"),
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password,
+  };
 }
 
 function parseArgs(input) {
