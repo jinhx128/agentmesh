@@ -16,12 +16,19 @@ export function makeWorkspace(): string {
   return workspace;
 }
 
-export function runCli(workspace: string, args: string[]) {
+export function runCli(
+  workspace: string,
+  args: string[],
+  envOverrides: NodeJS.ProcessEnv = {},
+) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: path.join(workspace, ".home"),
+    ...envOverrides,
   };
-  delete env.AGENTMESH_CONFIG;
+  if (!("AGENTMESH_CONFIG" in envOverrides)) {
+    delete env.AGENTMESH_CONFIG;
+  }
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd: workspace,
     encoding: "utf-8",

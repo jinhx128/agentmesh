@@ -33,7 +33,9 @@ Tools may also inspect these canonical human-readable artifacts when present:
   entry should include visible provenance metadata as defined in
   `context-provenance.md`.
 - `plan.md`: planning artifact.
-- `handoff.md`: transfer artifact for another agent or worker.
+- `handoff.md`: transfer artifact for another agent or worker. It records
+  changed files, verification evidence, unverified checks, remaining risk, and
+  the recommended next action under stable headings.
 - `verification.md`: commands, test/build/smoke/regression evidence, skipped
   checks, and residual verification risk.
 - `findings.md`: review findings and controller verification.

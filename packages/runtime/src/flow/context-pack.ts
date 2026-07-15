@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readlinkSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import path from "node:path";
 import type {
   CorrectionRecord,
@@ -22,7 +32,9 @@ import type { McpResourceSpec } from "../mcp/resource.js";
 import {
   contextPolicyMarkdown,
   hasContextPolicy,
+  isInternalRunPath,
   redactContextContent,
+  scopedGitPathspecs,
 } from "./context-policy.js";
 import {
   checkProjectSpec,
@@ -48,20 +60,31 @@ export async function buildContextPack(
   for (const contextFile of input.contextFiles ?? []) {
     sections.push(contextEntrySection(
       "Context File",
-      fileContextEntry(contextFile, "file", cwd),
+      fileContextEntry(
+        contextFile,
+        "file",
+        cwd,
+        input.contextPolicy?.freshness_max_age_seconds,
+      ),
       input.contextPolicy,
     ));
   }
   if (input.diffFile) {
     sections.push(contextEntrySection(
       "Diff",
-      fileContextEntry(input.diffFile, "diff_file", cwd),
+      fileContextEntry(
+        input.diffFile,
+        "diff_file",
+        cwd,
+        input.contextPolicy?.freshness_max_age_seconds,
+      ),
       input.contextPolicy,
     ));
-  } else if (input.scopes?.length) {
+  }
+  if (input.scopes?.length) {
     sections.push(contextEntrySection(
       "Scoped Git Diff",
-      scopedGitDiffContextEntry(input.scopes, cwd),
+      scopedGitDiffContextEntry(input.scopes, cwd, input.contextPolicy?.max_bytes),
       input.contextPolicy,
     ));
   }
@@ -69,7 +92,12 @@ export async function buildContextPack(
     sections.push(
       contextEntrySection(
         "Verification",
-        fileContextEntry(input.verificationFile, "verification_file", cwd),
+        fileContextEntry(
+          input.verificationFile,
+          "verification_file",
+          cwd,
+          input.contextPolicy?.freshness_max_age_seconds,
+        ),
         input.contextPolicy,
       ),
     );
@@ -166,6 +194,7 @@ function fileContextEntry(
   source: string,
   sourceType: ContextSourceType,
   cwd: string,
+  freshnessMaxAgeSeconds?: number,
 ): ContextEntry {
   const resolvedPath = path.resolve(cwd, source);
   try {
@@ -175,6 +204,7 @@ function fileContextEntry(
         sourceType,
         sourcePath: resolvedPath,
         validationState: "ok",
+        freshness: fileFreshness(resolvedPath, freshnessMaxAgeSeconds),
       }),
       content: readFileSync(resolvedPath, { encoding: "utf-8" }).trimEnd(),
     };
@@ -192,12 +222,34 @@ function fileContextEntry(
   }
 }
 
-function scopedGitDiffContextEntry(scopes: string[], cwd: string): ContextEntry {
+function fileFreshness(
+  sourcePath: string,
+  freshnessMaxAgeSeconds: number | undefined,
+): ContextProvenance["freshness"] {
+  if (freshnessMaxAgeSeconds === undefined) {
+    return "fresh";
+  }
+  try {
+    const ageMs = Math.max(0, Date.now() - statSync(sourcePath).mtimeMs);
+    return ageMs > freshnessMaxAgeSeconds * 1000 ? "stale" : "fresh";
+  } catch {
+    return "unknown";
+  }
+}
+
+function scopedGitDiffContextEntry(
+  scopes: string[],
+  cwd: string,
+  policyMaxBytes?: number,
+): ContextEntry {
+  const maxBuffer = 64 * 1024 * 1024;
   const command = `git diff HEAD -- ${scopes.join(" ")}`;
-  const result = spawnSync("git", ["diff", "HEAD", "--", ...scopes], {
+  const pathspecs = scopedGitPathspecs(scopes);
+  const result = spawnSync("git", ["diff", "HEAD", "--", ...pathspecs], {
     cwd,
     encoding: "utf-8",
     timeout: 10_000,
+    maxBuffer,
   });
   if (result.error) {
     return {
@@ -224,15 +276,359 @@ function scopedGitDiffContextEntry(scopes: string[], cwd: string): ContextEntry 
       content,
     };
   }
+  const untracked = spawnSync(
+    "git",
+    ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspecs],
+    {
+      cwd,
+      encoding: "utf-8",
+      timeout: 10_000,
+      maxBuffer,
+    },
+  );
+  const trackedDiff = (result.stdout ?? "").trimEnd();
+  if (untracked.error || untracked.status !== 0) {
+    const ingestionError = gitCommandError("git ls-files", untracked);
+    const content = [
+      trackedDiff,
+      [
+        "AGENTMESH_UNTRACKED_ENUMERATION_FAILED",
+        `error = ${JSON.stringify(ingestionError)}`,
+      ].join("\n"),
+    ].filter(Boolean).join("\n\n");
+    return {
+      provenance: contextProvenance({
+        source: scopes.join(", "),
+        sourceType: "scoped_git_diff",
+        sourceCommand: command,
+        validationState: "failed",
+        ingestionError,
+      }),
+      content,
+    };
+  }
+  const untrackedPaths = (untracked.stdout ?? "")
+    .split("\0")
+    .filter(Boolean)
+    .filter((filePath) => !isInternalRunPath(filePath, cwd));
+  const untrackedCaptures = captureUntrackedFiles(untrackedPaths, cwd, policyMaxBytes);
+  const untrackedDiff = untrackedCaptures
+    .map((capture) => capture.content)
+    .filter(Boolean)
+    .join("\n\n");
+  const diff = [
+    trackedDiff,
+    untrackedDiff,
+  ].filter(Boolean).join("\n\n");
+  const captureErrors = untrackedCaptures
+    .map((capture) => capture.error)
+    .filter((error): error is string => error !== undefined);
   return {
     provenance: contextProvenance({
       source: scopes.join(", "),
       sourceType: "scoped_git_diff",
       sourceCommand: command,
-      validationState: "ok",
+      validationState: captureErrors.length === 0 ? "ok" : "failed",
+      ingestionError: captureErrors.length === 0 ? undefined : captureErrors.join("; "),
     }),
-    content: (result.stdout ?? "").trimEnd() || "(no scoped diff)",
+    content: diff || "(no scoped diff)",
   };
+}
+
+interface UntrackedFileCapture {
+  content: string;
+  capturedBytes: number;
+  error?: string;
+}
+
+class UntrackedCaptureError extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "UntrackedCaptureError";
+  }
+}
+
+const DEFAULT_UNTRACKED_FILE_MAX_BYTES = 256 * 1024;
+const DEFAULT_UNTRACKED_TOTAL_MAX_BYTES = 1024 * 1024;
+const DEFAULT_UNTRACKED_MAX_FILES = 128;
+
+type UntrackedFileCaptureResult =
+  | { kind: "captured"; capture: UntrackedFileCapture }
+  | { kind: "aggregate_byte_limit"; requiredBytes: number };
+
+function captureUntrackedFiles(
+  filePaths: string[],
+  cwd: string,
+  policyMaxBytes?: number,
+): UntrackedFileCapture[] {
+  const maxFileBytes = Math.min(
+    policyMaxBytes ?? DEFAULT_UNTRACKED_FILE_MAX_BYTES,
+    DEFAULT_UNTRACKED_FILE_MAX_BYTES,
+  );
+  const maxTotalBytes = Math.min(
+    policyMaxBytes ?? DEFAULT_UNTRACKED_TOTAL_MAX_BYTES,
+    DEFAULT_UNTRACKED_TOTAL_MAX_BYTES,
+  );
+  const captures: UntrackedFileCapture[] = [];
+  let capturedBytes = 0;
+  for (let index = 0; index < filePaths.length; index += 1) {
+    if (captures.length >= DEFAULT_UNTRACKED_MAX_FILES) {
+      captures.push(untrackedCaptureLimitMarker({
+        reason: "file_count_limit",
+        processedFiles: captures.length,
+        capturedBytes,
+        omittedFiles: filePaths.length - index,
+        maxFiles: DEFAULT_UNTRACKED_MAX_FILES,
+        maxBytes: maxTotalBytes,
+      }));
+      break;
+    }
+    const result = untrackedFileDiff(
+      filePaths[index],
+      cwd,
+      maxFileBytes,
+      maxTotalBytes - capturedBytes,
+    );
+    if (result.kind === "aggregate_byte_limit") {
+      captures.push(untrackedCaptureLimitMarker({
+        reason: "byte_limit",
+        processedFiles: captures.length,
+        capturedBytes,
+        omittedFiles: filePaths.length - index,
+        maxFiles: DEFAULT_UNTRACKED_MAX_FILES,
+        maxBytes: maxTotalBytes,
+        nextFileBytes: result.requiredBytes,
+      }));
+      break;
+    }
+    captures.push(result.capture);
+    capturedBytes += result.capture.capturedBytes;
+  }
+  return captures;
+}
+
+function untrackedFileDiff(
+  filePath: string,
+  cwd: string,
+  maxFileBytes: number,
+  remainingTotalBytes: number,
+): UntrackedFileCaptureResult {
+  const resolvedPath = path.resolve(cwd, filePath);
+  try {
+    const initialStat = lstatSync(resolvedPath);
+    if (initialStat.isSymbolicLink()) {
+      const linkTarget = readlinkSync(resolvedPath);
+      const linkTargetBytes = Buffer.byteLength(linkTarget, "utf-8");
+      if (linkTargetBytes > remainingTotalBytes) {
+        return { kind: "aggregate_byte_limit", requiredBytes: linkTargetBytes };
+      }
+      return {
+        kind: "captured",
+        capture: {
+          content: renderUntrackedTextDiff(filePath, linkTarget, "120000"),
+          capturedBytes: linkTargetBytes,
+        },
+      };
+    }
+    if (!initialStat.isFile()) {
+      return {
+        kind: "captured",
+        capture: omittedUntrackedFile(
+          filePath,
+          "unsupported_file_type",
+          `untracked path is not a regular file: ${filePath}`,
+        ),
+      };
+    }
+
+    const descriptor = openUntrackedRegularFileForCapture(
+      resolvedPath,
+      constants.O_NOFOLLOW as number | undefined,
+    );
+    try {
+      const openedStat = fstatSync(descriptor);
+      if (!openedStat.isFile()) {
+        return {
+          kind: "captured",
+          capture: omittedUntrackedFile(
+            filePath,
+            "unsupported_file_type",
+            `untracked path changed before capture: ${filePath}`,
+          ),
+        };
+      }
+      const fileMode = openedStat.mode & 0o111 ? "100755" : "100644";
+      if (openedStat.size > maxFileBytes) {
+        return {
+          kind: "captured",
+          capture: omittedUntrackedFile(
+            filePath,
+            "file_too_large",
+            `untracked file exceeds capture limit: ${filePath} (${openedStat.size} > ${maxFileBytes} bytes)`,
+            { sizeBytes: openedStat.size, maxBytes: maxFileBytes },
+            fileMode,
+          ),
+        };
+      }
+      if (openedStat.size > remainingTotalBytes) {
+        return { kind: "aggregate_byte_limit", requiredBytes: openedStat.size };
+      }
+      const content = readBoundedFile(descriptor, openedStat.size);
+      if (content.includes(0)) {
+        return {
+          kind: "captured",
+          capture: omittedUntrackedFile(
+            filePath,
+            "binary_file",
+            `untracked binary file omitted: ${filePath}`,
+            { sizeBytes: content.byteLength },
+            fileMode,
+            `Binary files /dev/null and b/${filePath} differ`,
+            content.byteLength,
+          ),
+        };
+      }
+      return {
+        kind: "captured",
+        capture: {
+          content: renderUntrackedTextDiff(filePath, content.toString("utf-8"), fileMode),
+          capturedBytes: content.byteLength,
+        },
+      };
+    } finally {
+      closeSync(descriptor);
+    }
+  } catch (error) {
+    const message = `untracked file capture failed: ${filePath}: ${errorMessage(error)}`;
+    const reason = error instanceof UntrackedCaptureError
+      ? error.reason
+      : "capture_failed";
+    return {
+      kind: "captured",
+      capture: omittedUntrackedFile(filePath, reason, message),
+    };
+  }
+}
+
+export function openUntrackedRegularFileForCapture(
+  resolvedPath: string,
+  noFollowFlag: number | undefined,
+): number {
+  if (noFollowFlag === undefined) {
+    throw new UntrackedCaptureError(
+      "no_secure_open",
+      "secure no-follow open is unavailable on this platform",
+    );
+  }
+  return openSync(resolvedPath, constants.O_RDONLY | noFollowFlag);
+}
+
+function readBoundedFile(descriptor: number, size: number): Buffer {
+  const buffer = Buffer.alloc(size);
+  let offset = 0;
+  while (offset < buffer.byteLength) {
+    const bytesRead = readSync(descriptor, buffer, offset, buffer.byteLength - offset, offset);
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+  }
+  return offset === buffer.byteLength ? buffer : buffer.subarray(0, offset);
+}
+
+function renderUntrackedTextDiff(filePath: string, content: string, fileMode: string): string {
+  const header = [
+    `diff --git a/${filePath} b/${filePath}`,
+    `new file mode ${fileMode}`,
+  ];
+  if (content.length === 0) {
+    return header.join("\n");
+  }
+  const endsWithNewline = content.endsWith("\n");
+  const lines = content.split("\n");
+  if (endsWithNewline) {
+    lines.pop();
+  }
+  const normalizedLines = lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
+  const lineCount = normalizedLines.length;
+  const hunkRange = lineCount === 1 ? "+1" : `+1,${lineCount}`;
+  return [
+    ...header,
+    "--- /dev/null",
+    `+++ b/${filePath}`,
+    `@@ -0,0 ${hunkRange} @@`,
+    ...normalizedLines.map((line) => `+${line}`),
+    ...(!endsWithNewline ? ["\\ No newline at end of file"] : []),
+  ].join("\n");
+}
+
+function omittedUntrackedFile(
+  filePath: string,
+  reason: string,
+  error: string,
+  details: { sizeBytes?: number; maxBytes?: number } = {},
+  fileMode = "100644",
+  diffMarker?: string,
+  capturedBytes = 0,
+): UntrackedFileCapture {
+  return {
+    content: [
+      `diff --git a/${filePath} b/${filePath}`,
+      `new file mode ${fileMode}`,
+      ...(diffMarker ? [diffMarker] : []),
+      "AGENTMESH_UNTRACKED_FILE_OMITTED",
+      `path = ${JSON.stringify(filePath)}`,
+      `reason = ${JSON.stringify(reason)}`,
+      ...(details.sizeBytes === undefined ? [] : [`size_bytes = ${details.sizeBytes}`]),
+      ...(details.maxBytes === undefined ? [] : [`max_bytes = ${details.maxBytes}`]),
+    ].join("\n"),
+    capturedBytes,
+    error,
+  };
+}
+
+function untrackedCaptureLimitMarker(input: {
+  reason: "file_count_limit" | "byte_limit";
+  processedFiles: number;
+  capturedBytes: number;
+  omittedFiles: number;
+  maxFiles: number;
+  maxBytes: number;
+  nextFileBytes?: number;
+}): UntrackedFileCapture {
+  const error = `untracked capture ${input.reason} reached after processing ${input.processedFiles} files and ${input.capturedBytes} bytes`;
+  return {
+    content: [
+      "AGENTMESH_UNTRACKED_CAPTURE_LIMIT_REACHED",
+      `reason = ${JSON.stringify(input.reason)}`,
+      `processed_files = ${input.processedFiles}`,
+      `captured_bytes = ${input.capturedBytes}`,
+      `omitted_files = ${input.omittedFiles}`,
+      `max_files = ${input.maxFiles}`,
+      `max_bytes = ${input.maxBytes}`,
+      ...(input.nextFileBytes === undefined
+        ? []
+        : [`next_file_bytes = ${input.nextFileBytes}`]),
+    ].join("\n"),
+    capturedBytes: 0,
+    error,
+  };
+}
+
+function gitCommandError(
+  command: string,
+  result: ReturnType<typeof spawnSync>,
+): string {
+  if (result.error) {
+    return `${command} failed: ${result.error.message}`;
+  }
+  const stderr = typeof result.stderr === "string"
+    ? result.stderr.trim()
+    : result.stderr?.toString("utf-8").trim();
+  return `${command} failed with exit code ${result.status ?? "unknown"}${stderr ? `: ${stderr}` : ""}`;
 }
 
 function enforceGeneratedContextBudget(
@@ -259,23 +655,35 @@ function truncateContextWithBudgetMarker(
     "AGENTMESH_CONTEXT_TRUNCATED",
     `max_bytes = ${maxBytes}`,
     `original_bytes = ${originalBytes}`,
-    ...sourceCommandMarkerLines(context),
+    ...sourceReferenceMarkerLines(context),
     "",
   ].join("\n");
   const markerBytes = Buffer.byteLength(marker, "utf-8");
   if (markerBytes >= maxBytes) {
     return truncateUtf8(marker, maxBytes).trimEnd();
   }
-  const prefixBudget = maxBytes - markerBytes;
-  const truncated = `${marker}${truncateUtf8(context, prefixBudget).trimEnd()}`;
+  const omission = "\n\nAGENTMESH_CONTEXT_OMITTED\n\n";
+  const omissionBytes = Buffer.byteLength(omission, "utf-8");
+  if (markerBytes + omissionBytes >= maxBytes) {
+    return `${marker}${truncateUtf8(context, maxBytes - markerBytes)}`.trimEnd();
+  }
+  const excerptBudget = maxBytes - markerBytes - omissionBytes;
+  const headBudget = Math.floor(excerptBudget * 0.6);
+  const tailBudget = excerptBudget - headBudget;
+  const truncated = [
+    marker,
+    truncateUtf8(context, headBudget).trimEnd(),
+    omission,
+    truncateUtf8Tail(context, tailBudget).trimStart(),
+  ].join("");
   return Buffer.byteLength(truncated, "utf-8") <= maxBytes
     ? truncated
     : truncateUtf8(truncated, maxBytes).trimEnd();
 }
 
-function sourceCommandMarkerLines(context: string): string[] {
-  const matches = [...context.matchAll(/^source_command = "([^"]+)"$/gm)];
-  return matches.slice(0, 3).map((match) => `source_command = ${JSON.stringify(match[1])}`);
+function sourceReferenceMarkerLines(context: string): string[] {
+  const matches = [...context.matchAll(/^(source_path|source_uri|source_command) = (.+)$/gm)];
+  return matches.slice(0, 6).map((match) => `${match[1]} = ${match[2]}`);
 }
 
 function truncateUtf8(content: string, maxBytes: number): string {
@@ -288,6 +696,18 @@ function truncateUtf8(content: string, maxBytes: number): string {
     end -= 1;
   }
   return encoded.toString("utf-8", 0, end);
+}
+
+function truncateUtf8Tail(content: string, maxBytes: number): string {
+  const encoded = Buffer.from(content, "utf-8");
+  if (encoded.byteLength <= maxBytes) {
+    return content;
+  }
+  let start = Math.max(0, encoded.byteLength - maxBytes);
+  while (start < encoded.byteLength && (encoded[start] & 0xc0) === 0x80) {
+    start += 1;
+  }
+  return encoded.toString("utf-8", start);
 }
 
 async function mcpResourceContextEntries(
@@ -316,23 +736,21 @@ async function mcpResourceContextEntries(
         }
         continue;
       }
-      try {
-        const resources = await readMcpTextResources(
-          stdioMcpServerConfig(serverConfig),
-          group.map((item) => item.spec.resourceUri),
-          {
-            cache,
-            onTiming: (timing) => recordMcpTiming(runtimeTiming, timing),
-          },
-        );
-        group.forEach((item, resourceIndex) => {
+      for (const item of group) {
+        try {
+          const resources = await readMcpTextResources(
+            stdioMcpServerConfig(serverConfig),
+            [item.spec.resourceUri],
+            {
+              cache,
+              onTiming: (timing) => recordMcpTiming(runtimeTiming, timing),
+            },
+          );
           entries[item.index] = capturedMcpResourceContextEntry(
             item.spec,
-            resources[resourceIndex],
+            resources[0],
           );
-        });
-      } catch (error) {
-        for (const item of group) {
+        } catch (error) {
           entries[item.index] = failedMcpResourceContextEntry(item.spec, error);
         }
       }

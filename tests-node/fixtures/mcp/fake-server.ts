@@ -40,7 +40,11 @@ server.registerResource(
     if (process.env.AGENTMESH_FAKE_MCP_METHOD_NOT_FOUND) {
       throw new McpError(ErrorCode.MethodNotFound, "Method not found");
     }
-    if (process.env.AGENTMESH_FAKE_MCP_RESOURCE_NOT_FOUND || hasArg("--resource-not-found")) {
+    if (
+      process.env.AGENTMESH_FAKE_MCP_RESOURCE_NOT_FOUND
+      || hasArg("--resource-not-found")
+      || argValue("--resource-not-found-uri") === uri.href
+    ) {
       throw new McpError(ErrorCode.InvalidParams, "Resource not found");
     }
     if (process.env.AGENTMESH_FAKE_MCP_NON_TEXT_RESOURCE) {

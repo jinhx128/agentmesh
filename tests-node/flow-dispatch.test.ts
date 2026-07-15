@@ -5,6 +5,7 @@ import test from "node:test";
 
 import { loadArtifacts } from "../packages/runtime/src/packet/io.js";
 import { withRunMutationLockAsync } from "../packages/runtime/src/packet/lock.js";
+import { dispatchFlowStage } from "../packages/runtime/src/flow/dispatch.js";
 import {
   listRegisteredWorkspaces,
   recordWorkspaceActivity,
@@ -262,7 +263,7 @@ test("flow retry refreshes current workspace registry activity", () => {
   assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
 });
 
-test("plan fanout writes isolated outputs and synthesizes canonical plan", () => {
+test("plan fanout writes isolated outputs and synthesizes canonical plan", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const planner = path.join(workspace, "planner.sh");
@@ -338,16 +339,14 @@ test("plan fanout writes isolated outputs and synthesizes canonical plan", () =>
   ]);
   assert.equal(run.status, 0, run.stderr);
 
-  const dispatch = runCli(workspace, [
-    "--config",
-    config,
-    "flow",
-    "dispatch",
+  await dispatchFlowStage(
     "plan-fanout-flow",
-    "--stage",
     "plan",
-  ]);
-  assert.equal(dispatch.status, 0, dispatch.stderr);
+    {
+      configPath: path.join(workspace, ".home", ".config", "agentmesh", "config.toml"),
+    },
+    workspace,
+  );
 
   const runDir = path.join(workspace, ".agentmesh", "runs", "plan-fanout-flow");
   assert.match(readFileSync(path.join(runDir, "outputs", "plan", "planner_a.md"), "utf-8"), /planner_a candidate/);
@@ -376,6 +375,7 @@ test("plan fanout writes isolated outputs and synthesizes canonical plan", () =>
   assert.equal(JSON.parse(statusJson.stdout).prompt_bytes.prompt_plan_synthesis.bytes, status.prompt_bytes.prompt_plan_synthesis.bytes);
 
   const synthesisPrompt = readFileSync(path.join(runDir, "prompts", "plan", "synthesis.md"), "utf-8");
+  assert.match(synthesisPrompt, /Packet Directory: \.agentmesh\/runs\/plan-fanout-flow/);
   assert.ok(synthesisPrompt.indexOf("### planner_a") < synthesisPrompt.indexOf("### planner_b"));
 });
 
@@ -628,10 +628,10 @@ test("plan fanout synthesis prompt bounds long candidate outputs", () => {
       "if [[ \"$output_file\" == */plan.md ]]; then",
       "  grep -q \"## Fanout Outputs\" \"$prompt_file\"",
       "  grep -q \"LONG_OUTPUT_PREFIX\" \"$prompt_file\"",
-      "  ! grep -q \"LONG_OUTPUT_TAIL_SHOULD_NOT_REPLAY\" \"$prompt_file\"",
+      "  grep -q \"LONG_OUTPUT_TAIL_SHOULD_NOT_REPLAY\" \"$prompt_file\"",
       "  grep -q \"AgentMesh synthesis prompt truncated fanout output\" \"$prompt_file\"",
       "  grep -q \"RELEASE_SUMMARY_PREFIX\" \"$prompt_file\"",
-      "  ! grep -q \"RELEASE_SUMMARY_TAIL_SHOULD_NOT_REPLAY\" \"$prompt_file\"",
+      "  grep -q \"RELEASE_SUMMARY_TAIL_SHOULD_NOT_REPLAY\" \"$prompt_file\"",
       "  grep -q \"AgentMesh prompt assembly truncated release-summary.md\" \"$prompt_file\"",
       "  printf '# Plan\\n\\nSynthesized bounded candidate outputs.\\n' > \"$output_file\"",
       "else",
@@ -713,10 +713,10 @@ test("plan fanout synthesis prompt bounds long candidate outputs", () => {
 
   const synthesisPrompt = readFileSync(path.join(runDir, "prompts", "plan", "synthesis.md"), "utf-8");
   assert.match(synthesisPrompt, /LONG_OUTPUT_PREFIX/);
-  assert.doesNotMatch(synthesisPrompt, /LONG_OUTPUT_TAIL_SHOULD_NOT_REPLAY/);
+  assert.match(synthesisPrompt, /LONG_OUTPUT_TAIL_SHOULD_NOT_REPLAY/);
   assert.match(synthesisPrompt, /AgentMesh synthesis prompt truncated fanout output/);
   assert.match(synthesisPrompt, /RELEASE_SUMMARY_PREFIX/);
-  assert.doesNotMatch(synthesisPrompt, /RELEASE_SUMMARY_TAIL_SHOULD_NOT_REPLAY/);
+  assert.match(synthesisPrompt, /RELEASE_SUMMARY_TAIL_SHOULD_NOT_REPLAY/);
   assert.match(synthesisPrompt, /AgentMesh prompt assembly truncated release-summary\.md/);
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
@@ -2246,7 +2246,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       assert.equal(firstLease.workspace, workspace);
       assert.equal(firstLease.scope, "run:owner-lock-flow");
       assert.equal(firstLease.entrypoint, "desktop");
-      assert.equal(firstLease.runtime_version, "0.1.9");
+      assert.equal(firstLease.runtime_version, "0.1.10");
       assert.equal(firstLease.operation, "owner-metadata");
       assert.equal(firstLease.operation_id, "operation-123");
       assert.equal(firstLease.command, "flow.dispatch:plan");
@@ -2266,7 +2266,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       ]);
       assert.equal(attach.status, 1);
       assert.match(attach.stderr, /entrypoint desktop/);
-      assert.match(attach.stderr, /runtime 0\.1\.9/);
+      assert.match(attach.stderr, /runtime 0\.1\.10/);
       assert.match(attach.stderr, /operation_id operation-123/);
       assert.match(attach.stderr, /command flow\.dispatch:plan/);
 
@@ -2277,7 +2277,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
     },
     {
       entrypoint: "desktop",
-      runtimeVersion: "0.1.9",
+      runtimeVersion: "0.1.10",
       operationId: "operation-123",
       command: "flow.dispatch:plan",
       heartbeatIntervalMs: 5,

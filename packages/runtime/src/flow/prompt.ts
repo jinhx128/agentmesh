@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { BUILTIN_WORKFLOW_IDS } from "@agentmesh/core";
 import {
@@ -78,6 +79,14 @@ export function buildStagePrompt(
   if (releaseSummary.trim()) {
     sections.push("## Release Summary", "", releaseSummaryPromptContent(releaseSummary), "");
   }
+  if (node.type === "execute") {
+    sections.push(
+      "## Handoff Contract",
+      "",
+      "Write the canonical handoff artifact using these headings: `## Changed Files`, `## Verification`, `## Not Verified`, `## Remaining Risk`, and `## Next Action`. Record behavior changes, exact verification commands and results, skipped checks with reasons, residual risk, and the recommended next action. Do not rely on unstored terminal output or private chat state as downstream evidence.",
+      "",
+    );
+  }
   if (node.type === "verify") {
     sections.push(
       "## Verify Contract",
@@ -118,10 +127,14 @@ export function releaseSummaryPromptContent(content: string): string {
 
 export function contextReferencePromptContent(context: string, contextPath = "context.md"): string {
   const bytes = Buffer.byteLength(context, "utf-8");
+  const originalBytes = /^original_bytes = (\d+)$/m.exec(context)?.[1];
+  const truncated = context.startsWith("AGENTMESH_CONTEXT_TRUNCATED");
   return [
     "Context artifact: context.md",
     `Context path: ${contextPath}`,
     `Context bytes: ${bytes}`,
+    ...(truncated ? ["Context status: truncated"] : []),
+    ...(truncated && originalBytes ? [`Context original bytes: ${originalBytes}`] : []),
     "Read or scan the context path above only when needed. Do not assume this prompt replays the full local context.",
   ].join("\n");
 }
@@ -174,11 +187,14 @@ export function orderedPriorEvidenceSections(
   const sections: string[] = [];
   for (const prior of nodes.slice(0, Math.max(index, 0))) {
     const artifactFile = stageArtifactFile(status, prior.id);
-    const content = priorArtifactPromptContent(
-      readOptional(path.join(runDir, artifactFile)),
-      artifactFile,
-      prior.type,
-    );
+    const artifactPath = path.join(runDir, artifactFile);
+    const content = existsSync(artifactPath)
+      ? priorArtifactPromptContent(
+        readOptional(artifactPath),
+        artifactFile,
+        prior.type,
+      )
+      : `> Artifact unavailable: ${artifactFile}`;
     sections.push(
       `## Prior Output: ${prior.id} (${stageSemanticLabel(prior.type)})`,
       "",
@@ -245,7 +261,7 @@ function boundedPromptContent(content: string, source: string, maxBytes: number)
   if (originalBytes <= maxBytes) {
     return trimmed;
   }
-  const excerpt = utf8Prefix(trimmed, maxBytes).trimEnd();
+  const excerpt = utf8HeadTail(trimmed, maxBytes).trimEnd();
   const excerptBytes = Buffer.byteLength(excerpt, "utf-8");
   return [
     excerpt,
@@ -266,6 +282,30 @@ function utf8Prefix(content: string, maxBytes: number): string {
     bytes += characterBytes;
   }
   return result;
+}
+
+function utf8HeadTail(content: string, maxBytes: number): string {
+  const omission = "\n\n> AgentMesh omitted middle content; the full evidence remains in the packet source.\n\n";
+  const omissionBytes = Buffer.byteLength(omission, "utf-8");
+  if (omissionBytes >= maxBytes) {
+    return utf8Prefix(content, maxBytes);
+  }
+  const excerptBytes = maxBytes - omissionBytes;
+  const headBytes = Math.floor(excerptBytes * 0.6);
+  const tailBytes = excerptBytes - headBytes;
+  return `${utf8Prefix(content, headBytes).trimEnd()}${omission}${utf8Suffix(content, tailBytes).trimStart()}`;
+}
+
+function utf8Suffix(content: string, maxBytes: number): string {
+  const encoded = Buffer.from(content, "utf-8");
+  if (encoded.byteLength <= maxBytes) {
+    return content;
+  }
+  let start = encoded.byteLength - maxBytes;
+  while (start < encoded.byteLength && (encoded[start] & 0xc0) === 0x80) {
+    start += 1;
+  }
+  return encoded.toString("utf-8", start);
 }
 
 function stageSemanticLabel(stageType: string): string {

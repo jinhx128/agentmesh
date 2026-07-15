@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import * as contextPackModule from "../packages/runtime/src/flow/context-pack.js";
 import {
   fakeServerPath,
   makeWorkspace,
   runCli,
   writeConfig,
+  writeExecutable,
 } from "./helpers/write-side-runtime.js";
 
 test("workflow run creates dynamic stage packets with context inputs", () => {
@@ -138,6 +148,50 @@ test("workflow run captures MCP text resources into context", () => {
   const validate = runCli(workspace, ["packet", "validate", "mcp-context-success", "--json"]);
   assert.equal(validate.status, 0, validate.stderr);
   assert.equal(JSON.parse(validate.stdout).ok, true);
+});
+
+test("workflow run preserves successful MCP resources when a sibling resource fails", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[mcp_servers.docs]",
+      `command = ${JSON.stringify(process.execPath)}`,
+      `args = ${JSON.stringify([fakeServerPath, "--resource-not-found-uri", "memory://missing"])}`,
+      "",
+    ].join("\n"),
+  );
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--mcp-resource",
+    "docs:memory://ok",
+    "--mcp-resource",
+    "docs:memory://missing",
+    "--task",
+    "Preserve partial MCP context",
+    "--run-id",
+    "mcp-context-partial",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "mcp-context-partial", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /Hello from fake MCP: memory:\/\/ok/);
+  assert.match(context, /source_uri = "memory:\/\/ok"[\s\S]*validation_state = "ok"/);
+  assert.match(context, /source_uri = "memory:\/\/missing"[\s\S]*validation_state = "failed"/);
 });
 
 test("workflow run keeps failed MCP provenance when resource read fails", () => {
@@ -539,6 +593,58 @@ test("workflow run records scoped git diff provenance", () => {
   assert.match(context, /\+after/);
 });
 
+test("workflow run captures explicit and scoped diff evidence together", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  writeFileSync(path.join(workspace, "tracked.txt"), "before\n");
+  writeFileSync(path.join(workspace, "diff.txt"), "EXPLICIT_DIFF_EVIDENCE\n");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["add", "tracked.txt"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "tracked.txt"), "after\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--diff-file",
+    "diff.txt",
+    "--scope",
+    "tracked.txt",
+    "--task",
+    "Capture both diff sources",
+    "--run-id",
+    "combined-diff-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "combined-diff-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /EXPLICIT_DIFF_EVIDENCE/);
+  assert.match(context, /## Scoped Git Diff/);
+  assert.match(context, /-before/);
+  assert.match(context, /\+after/);
+});
+
 test("workflow run truncates scoped git diff context when stdout exceeds byte budget", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -647,6 +753,98 @@ test("workflow run records resolved context policy and required sources", () => 
   assert.match(context, /redaction_state = "redacted"/);
 });
 
+test("context policy marks old file-backed sources as stale", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      "freshness_max_age_seconds = 60",
+      "",
+    ].join("\n"),
+  );
+  const sourcePath = path.join(workspace, "old-context.md");
+  writeFileSync(sourcePath, "Old but readable context.\n");
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(sourcePath, old, old);
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--context-file",
+    "old-context.md",
+    "--task",
+    "Record stale file context",
+    "--run-id",
+    "stale-file-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "stale-file-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /source = "old-context\.md"[\s\S]*freshness = "stale"/);
+});
+
+test("context policy max_files does not count generated scoped diff sources", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      "max_files = 1",
+      'required_sources = ["required.md"]',
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(path.join(workspace, "required.md"), "Required evidence.\n");
+  writeFileSync(path.join(workspace, "tracked.txt"), "before\n");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["add", "tracked.txt"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "tracked.txt"), "after\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "tracked.txt",
+    "--task",
+    "Do not count scope as a file input",
+    "--run-id",
+    "scope-not-file-count",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+});
+
 test("workflow run applies final byte budget to generated correction context", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -692,6 +890,7 @@ test("workflow run applies final byte budget to generated correction context", (
   const context = readFileSync(path.join(runDir, "context.md"), "utf-8");
   assert.match(context, /AGENTMESH_CONTEXT_TRUNCATED/);
   assert.match(context, /max_bytes = 512/);
+  assert.match(context, /Status: active/);
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
   assert.ok(status.context_bytes <= 512);
 });
@@ -763,4 +962,760 @@ test("workflow run rejects denied and oversized context policy inputs before pac
   assert.equal(oversizedRun.status, 1);
   assert.match(oversizedRun.stderr, /context_policy max_bytes exceeded/);
   assert.equal(existsSync(path.join(oversizedWorkspace, ".agentmesh", "runs", "oversized-policy-context")), false);
+});
+
+test("context policy rejects symlinked files that resolve into denied paths", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      'denied_paths = ["secrets"]',
+      "",
+    ].join("\n"),
+  );
+  mkdirSync(path.join(workspace, "safe"), { recursive: true });
+  mkdirSync(path.join(workspace, "secrets"), { recursive: true });
+  writeFileSync(path.join(workspace, "secrets", "token.txt"), "TOPSECRET\n");
+  symlinkSync("../secrets/token.txt", path.join(workspace, "safe", "link.txt"));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--context-file",
+    "safe/link.txt",
+    "--task",
+    "Reject symlinked denied context",
+    "--run-id",
+    "denied-symlink-context",
+  ]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /context source is denied by context_policy/);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "denied-symlink-context")), false);
+});
+
+test("context policy rejects scopes that include denied descendants", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      'denied_paths = ["secrets"]',
+      "",
+    ].join("\n"),
+  );
+  mkdirSync(path.join(workspace, "secrets"), { recursive: true });
+  writeFileSync(path.join(workspace, "secrets", "token.txt"), "before\n");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["add", "secrets/token.txt"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "secrets", "token.txt"), "after-secret\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    ".",
+    "--task",
+    "Reject broad scope containing denied files",
+    "--run-id",
+    "denied-broad-scope",
+  ]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /context source is denied by context_policy/);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "denied-broad-scope")), false);
+});
+
+test("context policy applies denied paths to generated project spec sources", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      'denied_paths = [".agentmesh/spec"]',
+      "",
+    ].join("\n"),
+  );
+  writeProjectSpec(workspace);
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--include-spec",
+    "--task",
+    "Reject denied generated project spec",
+    "--run-id",
+    "denied-generated-spec",
+  ]);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /context source is denied by context_policy/);
+  assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "denied-generated-spec")), false);
+});
+
+test("scoped context includes untracked files", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "new-file.ts"), "export const added = true;\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    ".",
+    "--task",
+    "Capture untracked scoped context",
+    "--run-id",
+    "untracked-scoped-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "untracked-scoped-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /new-file\.ts/);
+  assert.match(context, /export const added = true;/);
+  assert.doesNotMatch(context, /\.agentmesh\/runs\/untracked-scoped-context/);
+});
+
+test("scoped context captures an untracked symlink without reading its target", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "outside-target.txt"), "SYMLINK_TARGET_SECRET\n");
+  symlinkSync("outside-target.txt", path.join(workspace, "new-link.txt"));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "new-link.txt",
+    "--task",
+    "Capture symlink metadata safely",
+    "--run-id",
+    "untracked-symlink-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "untracked-symlink-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /new file mode 120000/);
+  assert.match(context, /\+outside-target\.txt/);
+  assert.doesNotMatch(context, /SYMLINK_TARGET_SECRET/);
+});
+
+test("scoped context omits oversized untracked file content before loading it", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "large.txt"), "L".repeat(300 * 1024));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "large.txt",
+    "--task",
+    "Bound untracked file capture",
+    "--run-id",
+    "oversized-untracked-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "oversized-untracked-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /AGENTMESH_UNTRACKED_FILE_OMITTED/);
+  assert.match(context, /reason = "file_too_large"/);
+  assert.match(context, /max_bytes = 262144/);
+  assert.doesNotMatch(context, /L{1024}/);
+});
+
+test("scoped context marks binary untracked files without UTF-8 decoding them", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "binary.dat"), Buffer.from([0x41, 0x00, 0x42, 0xff]));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "binary.dat",
+    "--task",
+    "Mark binary untracked context",
+    "--run-id",
+    "binary-untracked-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "binary-untracked-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /AGENTMESH_UNTRACKED_FILE_OMITTED/);
+  assert.match(context, /reason = "binary_file"/);
+  assert.match(context, /Binary files \/dev\/null and b\/binary\.dat differ/);
+  assert.doesNotMatch(context, /\u0000/);
+});
+
+test("scoped context renders accurate hunks for untracked text newline variants", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "trailing.txt"), "one\ntwo\n");
+  writeFileSync(path.join(workspace, "unterminated.txt"), "one\ntwo");
+  writeFileSync(path.join(workspace, "empty.txt"), "");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    ".",
+    "--task",
+    "Render untracked diff hunks accurately",
+    "--run-id",
+    "untracked-newline-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "untracked-newline-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(
+    context,
+    /diff --git a\/trailing\.txt b\/trailing\.txt[\s\S]*?@@ -0,0 \+1,2 @@\n\+one\n\+two\n+(?=diff --git|##|$)/,
+  );
+  assert.match(
+    context,
+    /diff --git a\/unterminated\.txt b\/unterminated\.txt[\s\S]*?@@ -0,0 \+1,2 @@\n\+one\n\+two\n\\ No newline at end of file/,
+  );
+  const emptyDiff = context.match(/diff --git a\/empty\.txt b\/empty\.txt[\s\S]*?(?=diff --git|\n##|$)/)?.[0];
+  assert.ok(emptyDiff, "expected an empty-file diff entry");
+  assert.doesNotMatch(emptyDiff, /@@ -0,0/);
+  assert.doesNotMatch(emptyDiff, /^\+$/m);
+});
+
+test("scoped context excludes tracked internal run artifacts", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  mkdirSync(path.join(workspace, ".agentmesh", "runs", "historic"), { recursive: true });
+  writeFileSync(path.join(workspace, ".agentmesh", "runs", "historic", "result.md"), "before\n");
+  writeFileSync(path.join(workspace, "tracked.txt"), "before\n");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["add", ".agentmesh/runs/historic/result.md", "tracked.txt"], {
+    cwd: workspace,
+    encoding: "utf-8",
+  });
+  spawnSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, ".agentmesh", "runs", "historic", "result.md"), "INTERNAL_RUN_SECRET\n");
+  writeFileSync(path.join(workspace, "tracked.txt"), "after\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    ".",
+    "--task",
+    "Exclude internal run artifacts",
+    "--run-id",
+    "tracked-internal-run-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "tracked-internal-run-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /\+after/);
+  assert.doesNotMatch(context, /INTERNAL_RUN_SECRET/);
+  assert.doesNotMatch(context, /\.agentmesh\/runs\/historic\/result\.md/);
+});
+
+test("context policy ignores internal run artifacts that scoped capture excludes", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      'denied_paths = [".agentmesh/runs"]',
+      "",
+    ].join("\n"),
+  );
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  mkdirSync(path.join(workspace, ".agentmesh", "runs", "historic"), { recursive: true });
+  writeFileSync(
+    path.join(workspace, ".agentmesh", "runs", "historic", "result.md"),
+    "INTERNAL_POLICY_SECRET\n",
+  );
+  writeFileSync(path.join(workspace, "visible.txt"), "visible\n");
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    ".",
+    "--task",
+    "Apply one internal-run exclusion policy",
+    "--run-id",
+    "policy-internal-run-context",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "policy-internal-run-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /\+visible/);
+  assert.doesNotMatch(context, /INTERNAL_POLICY_SECRET/);
+});
+
+test("scoped context keeps tracked diff and failed provenance when untracked enumeration fails", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  writeFileSync(path.join(workspace, "tracked.txt"), "before\n");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["add", "tracked.txt"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  writeFileSync(path.join(workspace, "tracked.txt"), "after\n");
+
+  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf-8" }).stdout.trim();
+  assert.ok(realGit, "expected git on PATH");
+  const binDir = path.join(workspace, "fake-bin");
+  mkdirSync(binDir, { recursive: true });
+  writeExecutable(
+    path.join(binDir, "git"),
+    [
+      "#!/bin/sh",
+      "if [ \"$1\" = \"ls-files\" ]; then",
+      "  echo 'simulated ls-files failure' >&2",
+      "  exit 23",
+      "fi",
+      `exec ${JSON.stringify(realGit)} \"$@\"`,
+      "",
+    ].join("\n"),
+  );
+
+  const run = runCli(
+    workspace,
+    [
+      "flow",
+      "run",
+      "--plan",
+      "current",
+      "--execute",
+      "current",
+      "--review",
+      "current",
+      "--decide",
+      "current",
+      "--scope",
+      "tracked.txt",
+      "--task",
+      "Expose partial scoped capture",
+      "--run-id",
+      "partial-scoped-context",
+    ],
+    { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
+  );
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "partial-scoped-context", "context.md"),
+    "utf-8",
+  );
+  assert.match(context, /validation_state = "failed"/);
+  assert.match(context, /ingestion_error = "[^"]*simulated ls-files failure/);
+  assert.match(context, /-before/);
+  assert.match(context, /\+after/);
+  assert.match(context, /AGENTMESH_UNTRACKED_ENUMERATION_FAILED/);
+});
+
+test("untracked regular-file capture fails closed without O_NOFOLLOW", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const sourcePath = path.join(workspace, "regular.txt");
+  writeFileSync(sourcePath, "safe content\n");
+  const openForCapture = (
+    contextPackModule as unknown as {
+      openUntrackedRegularFileForCapture?: (
+        filePath: string,
+        noFollowFlag: number | undefined,
+      ) => number;
+    }
+  ).openUntrackedRegularFileForCapture;
+
+  assert.equal(typeof openForCapture, "function");
+  assert.throws(
+    () => openForCapture?.(sourcePath, undefined),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /secure no-follow open is unavailable/);
+      assert.equal((error as Error & { reason?: string }).reason, "no_secure_open");
+      return true;
+    },
+  );
+});
+
+test("scoped context caps the number of untracked files captured", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  mkdirSync(path.join(workspace, "untracked"));
+  for (let index = 0; index < 129; index += 1) {
+    writeFileSync(
+      path.join(workspace, "untracked", `file-${String(index).padStart(3, "0")}.txt`),
+      `${index}\n`,
+    );
+  }
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "untracked",
+    "--task",
+    "Cap untracked file count",
+    "--run-id",
+    "untracked-count-budget",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "untracked-count-budget", "context.md"),
+    "utf-8",
+  );
+  assert.ok(context.includes("AGENTMESH_UNTRACKED_CAPTURE_LIMIT_REACHED"));
+  assert.match(context, /reason = "file_count_limit"/);
+  assert.match(context, /max_files = 128/);
+  assert.match(context, /processed_files = 128/);
+  assert.doesNotMatch(context, /captured_files = /);
+  assert.match(context, /omitted_files = 1/);
+  assert.match(context, /validation_state = "failed"/);
+  assert.doesNotMatch(context, /file-128\.txt/);
+});
+
+test("scoped context caps aggregate untracked bytes before final context assembly", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(workspace, "");
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  mkdirSync(path.join(workspace, "untracked"));
+  for (let index = 0; index < 5; index += 1) {
+    writeFileSync(
+      path.join(workspace, "untracked", `chunk-${index}.txt`),
+      String(index).repeat(240 * 1024),
+    );
+  }
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "untracked",
+    "--task",
+    "Cap aggregate untracked bytes",
+    "--run-id",
+    "untracked-byte-budget",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const context = readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "untracked-byte-budget", "context.md"),
+    "utf-8",
+  );
+  assert.ok(context.includes("AGENTMESH_UNTRACKED_CAPTURE_LIMIT_REACHED"));
+  assert.match(context, /reason = "byte_limit"/);
+  assert.match(context, /max_bytes = 1048576/);
+  assert.match(context, /processed_files = 4/);
+  assert.doesNotMatch(context, /captured_files = /);
+  assert.match(context, /captured_bytes = 983040/);
+  assert.match(context, /omitted_files = 1/);
+  assert.match(context, /validation_state = "failed"/);
+  assert.doesNotMatch(context, /chunk-4\.txt/);
+});
+
+test("context policy max_bytes tightens aggregate untracked capture", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  writeConfig(
+    workspace,
+    [
+      "[context_policy]",
+      "max_bytes = 4096",
+      "",
+    ].join("\n"),
+  );
+  spawnSync("git", ["init"], { cwd: workspace, encoding: "utf-8" });
+  spawnSync("git", ["commit", "--allow-empty", "-m", "base"], {
+    cwd: workspace,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Test",
+      GIT_AUTHOR_EMAIL: "test@example.com",
+      GIT_COMMITTER_NAME: "Test",
+      GIT_COMMITTER_EMAIL: "test@example.com",
+    },
+  });
+  mkdirSync(path.join(workspace, "untracked"));
+  for (let index = 0; index < 3; index += 1) {
+    writeFileSync(
+      path.join(workspace, "untracked", `policy-${index}.txt`),
+      String(index).repeat(1800),
+    );
+  }
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--scope",
+    "untracked",
+    "--task",
+    "Tighten aggregate untracked bytes with policy",
+    "--run-id",
+    "policy-untracked-byte-budget",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+  const runDir = path.join(workspace, ".agentmesh", "runs", "policy-untracked-byte-budget");
+  const context = readFileSync(path.join(runDir, "context.md"), "utf-8");
+  assert.match(context, /AGENTMESH_CONTEXT_TRUNCATED/);
+  assert.match(context, /AGENTMESH_UNTRACKED_CAPTURE_LIMIT_REACHED/);
+  assert.match(context, /reason = "byte_limit"/);
+  assert.match(context, /processed_files = 2/);
+  assert.match(context, /captured_bytes = 3600/);
+  assert.match(context, /omitted_files = 1/);
+  assert.match(context, /max_bytes = 4096/);
+  assert.match(context, /validation_state = "failed"/);
+  const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
+  assert.ok(status.context_bytes <= 4096);
 });

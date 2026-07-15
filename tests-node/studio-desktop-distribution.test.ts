@@ -348,7 +348,7 @@ test("update metadata targets app-managed runtime without changing the npm CLI c
   assert.equal(summary.runtime.appManaged, true);
   assert.equal(summary.runtime.npmCliSharedInstall, false);
   assert.deepEqual(Object.keys(summary.updates.channels), ["stable", "beta"]);
-  assert.equal(summary.updates.metadata.version, "0.1.9");
+  assert.equal(summary.updates.metadata.version, "0.1.10");
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].url.endsWith(".app.tar.gz"));
   assert.match(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/jinhx128\/agentmesh/);
   assert.doesNotMatch(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/agentmesh\/agentmesh/);

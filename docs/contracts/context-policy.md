@@ -40,8 +40,10 @@ Fields:
   sources checked by policy.
 - `max_files`: positive integer. Maximum number of file-backed context sources
   checked by policy.
-- `freshness_max_age_seconds`: positive integer. Resolved policy metadata for
-  freshness-sensitive context. Enforcement can be source-specific.
+- `freshness_max_age_seconds`: positive integer. File-backed context inputs are
+  compared with their filesystem modification time and recorded as `fresh` or
+  `stale`. Sources without a meaningful filesystem age keep source-specific
+  freshness semantics.
 - `required_sources`: list of project-relative file paths that are automatically
   captured as context files before explicit `--context-file` inputs.
 - `denied_paths`: list of project-relative files or directories that must not
@@ -68,7 +70,9 @@ Config layer order is user -> project -> explicit overlay.
 Before packet creation, `flow run` resolves the final policy and checks:
 
 - required sources exist and are files
-- required and explicit file-backed context sources do not match `denied_paths`
+- required, explicit, generated project-spec/correction, and scoped changed-file
+  sources do not match `denied_paths`; existing paths are compared after symlink
+  resolution
 - file count does not exceed `max_files`
 - total readable file bytes do not exceed `max_bytes`
 - redaction patterns compile as regular expressions
@@ -82,6 +86,28 @@ When policy succeeds:
 - `status.json.resolved_context_policy` records the resolved policy
 - `status.json.context_bytes` records the final written UTF-8 byte size
 - `context.md` includes a `## Resolved Context Policy` section
+- scoped evidence includes tracked diffs plus untracked files selected by the
+  supplied pathspecs
+- `.agentmesh/runs/**` packet files are excluded consistently from tracked
+  diffs, untracked enumeration, and denied-path preflight
+- untracked symlinks are rendered as mode `120000` link text; AgentMesh never
+  follows the link to ingest target contents
+- regular untracked files are opened without following symlinks and read only
+  after an fd-level type/size check. Each file is capped at the smaller of
+  `max_bytes` and 256 KiB. Platforms without a secure no-follow open fail
+  closed instead of falling back to a link-following read, and emit an omitted
+  file marker with `reason = "no_secure_open"`
+- one scoped capture processes at most 128 untracked paths and reads at most
+  the smaller of `max_bytes` and 1 MiB of aggregate untracked content. Reaching
+  either limit preserves prior evidence, emits
+  `AGENTMESH_UNTRACKED_CAPTURE_LIMIT_REACHED` with `processed_files`,
+  `captured_bytes`, and `omitted_files`, and records failed provenance
+- oversized, binary, unsupported, or unreadable untracked files remain visible
+  through `AGENTMESH_UNTRACKED_FILE_OMITTED`; their raw contents are not decoded
+  into context and scoped provenance records the incomplete capture
+- if untracked enumeration fails after the tracked diff succeeds, AgentMesh
+  preserves that tracked evidence, emits
+  `AGENTMESH_UNTRACKED_ENUMERATION_FAILED`, and records failed provenance
 
 Generated context can still exceed `max_bytes` after policy preflight because
 scoped `git diff`, MCP resources, project specs, and active corrections are
@@ -95,9 +121,11 @@ original_bytes = <generated-size>
 source_command = "git diff HEAD -- <scope>"
 ```
 
-The marker is part of the downstream evidence. Agents and reviewers must treat
-truncated context as incomplete evidence and record residual risk instead of
-assuming omitted content is irrelevant.
+The marker is part of the downstream evidence. Bounded context preserves a
+head and tail excerpt separated by `AGENTMESH_CONTEXT_OMITTED`, and records
+available source path/URI/command references near the marker. Agents and
+reviewers must treat truncated context as incomplete evidence and record
+residual risk instead of assuming omitted content is irrelevant.
 
 Studio reads `status.json.resolved_context_policy` through the packet browser
 summary and shows a compact policy summary in the run overview.

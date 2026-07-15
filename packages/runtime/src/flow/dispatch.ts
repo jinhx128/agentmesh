@@ -1050,7 +1050,7 @@ function synthesizeFanoutStage(
 ): void {
   const node = stageNodeForId(status, stage);
   const controllerAgent = agents[0];
-  const promptPath = writeSynthesisPrompt(runDir, status, node.id, controllerAgent, agents);
+  const promptPath = writeSynthesisPrompt(runDir, status, node.id, controllerAgent, agents, cwd);
   const outputPath = canonicalStageOutputPath(runDir, status, node.id);
   protectCompletedArtifact(status, stage, outputPath);
   mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -1083,10 +1083,11 @@ function writeSynthesisPrompt(
   stage: string,
   controllerAgent: string,
   agents: string[],
+  cwd: string,
 ): string {
   const node = stageNodeForId(status, stage);
   const sections = [
-    ...synthesisBaseSections(runDir, status, node.id, controllerAgent),
+    ...synthesisBaseSections(runDir, status, node.id, controllerAgent, cwd),
     "## Fanout Outputs",
     "",
     ...agents.flatMap((agent) => synthesisFanoutOutputSection(runDir, status, node.id, agent)),
@@ -1141,7 +1142,7 @@ function boundedSynthesisFanoutOutput(
   if (originalBytes <= maxBytes) {
     return trimmed;
   }
-  const excerpt = utf8Prefix(trimmed, maxBytes).trimEnd();
+  const excerpt = utf8HeadTail(trimmed, maxBytes).trimEnd();
   const excerptBytes = Buffer.byteLength(excerpt, "utf-8");
   return [
     excerpt,
@@ -1164,11 +1165,36 @@ function utf8Prefix(content: string, maxBytes: number): string {
   return result;
 }
 
+function utf8HeadTail(content: string, maxBytes: number): string {
+  const omission = "\n\n> AgentMesh omitted middle candidate content; the full output remains in its packet source.\n\n";
+  const omissionBytes = Buffer.byteLength(omission, "utf-8");
+  if (omissionBytes >= maxBytes) {
+    return utf8Prefix(content, maxBytes);
+  }
+  const excerptBytes = maxBytes - omissionBytes;
+  const headBytes = Math.floor(excerptBytes * 0.6);
+  const tailBytes = excerptBytes - headBytes;
+  return `${utf8Prefix(content, headBytes).trimEnd()}${omission}${utf8Suffix(content, tailBytes).trimStart()}`;
+}
+
+function utf8Suffix(content: string, maxBytes: number): string {
+  const encoded = Buffer.from(content, "utf-8");
+  if (encoded.byteLength <= maxBytes) {
+    return content;
+  }
+  let start = encoded.byteLength - maxBytes;
+  while (start < encoded.byteLength && (encoded[start] & 0xc0) === 0x80) {
+    start += 1;
+  }
+  return encoded.toString("utf-8", start);
+}
+
 function synthesisBaseSections(
   runDir: string,
   status: PacketStatus,
   stage: string,
   controllerAgent: string,
+  cwd: string,
 ): string[] {
   const node = stageNodeForId(status, stage);
   if (status.workflow === BUILTIN_WORKFLOW_IDS.RELEASE_CHECK && (node.type === "review" || node.type === "decide")) {
@@ -1183,7 +1209,7 @@ function synthesisBaseSections(
     "",
     `Stage: ${node.id}`,
     `Stage Type: ${node.type}`,
-    `Packet Directory: ${packetDisplayPath(runDir, process.cwd())}`,
+    `Packet Directory: ${packetDisplayPath(runDir, cwd)}`,
     `Agent: ${controllerAgent}`,
     "",
     "## Request",
@@ -1199,7 +1225,7 @@ function synthesisBaseSections(
     sections.push(
       "## Context Reference",
       "",
-      contextReferencePromptContent(context, `${packetDisplayPath(runDir, process.cwd())}/context.md`),
+      contextReferencePromptContent(context, `${packetDisplayPath(runDir, cwd)}/context.md`),
       "",
     );
   }

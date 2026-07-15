@@ -18,6 +18,8 @@ truth; the prompt is a bounded observation snapshot derived from it.
 - Verify prompts must include Request, Assignment, Context, ordered prior
   evidence, and a verify contract that tells the agent to write commands, logs,
   skipped checks, and verification evidence into `verification.md`.
+- Execute prompts include a handoff contract requiring `Changed Files`,
+  `Verification`, `Not Verified`, `Remaining Risk`, and `Next Action` sections.
 - Release-check review and decide prompts refresh `release-summary.md` before
   assembly so the prompt sees a release-summary derived refresh of packet
   evidence.
@@ -27,6 +29,8 @@ truth; the prompt is a bounded observation snapshot derived from it.
   `Prior Output: decide (Decision)` with `decision.md`.
 - Review raw outputs from prior review nodes are included from their node-aware
   paths, such as `reviews/review_2/<reviewer>.md`.
+- Missing prior canonical artifacts are rendered as explicitly unavailable
+  rather than as ambiguous empty sections.
 - If `verify` appears after `review`, ordered prior evidence may include review
   artifacts, but live working tree inspection or unstored terminal output is not
   durable verification evidence.
@@ -79,6 +83,9 @@ truth; the prompt is a bounded observation snapshot derived from it.
 - Budget enforcement must not silently drop evidence. If content is omitted,
   truncated, summarized, or deferred to a file path, the prompt must say so and
   preserve the source path or artifact id.
+- Bounded inline evidence preserves head and tail excerpts with an explicit
+  middle-omission marker. Context references surface the packet truncation state
+  and original byte count without replaying the full context.
 - Review and decide prompts should prefer exact evidence references over large
   repeated content when the packet already contains stable artifacts.
 

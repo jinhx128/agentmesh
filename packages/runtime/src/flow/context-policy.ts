@@ -1,7 +1,10 @@
-import { statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
 import type { ContextPolicyConfig } from "../config.js";
+import { listCorrections } from "../corrections/index.js";
+import { projectSpecPath } from "../spec/index.js";
 import type { FlowRunInput } from "./types.js";
 
 export interface ResolvedContextPolicy extends ContextPolicyConfig {}
@@ -11,21 +14,53 @@ export interface ContextPolicyPreparedInput {
   policy: ResolvedContextPolicy;
 }
 
+const INTERNAL_RUN_PATHSPECS = [
+  ":(exclude).agentmesh/runs",
+  ":(exclude).agentmesh/runs/**",
+];
+
+export function scopedGitPathspecs(scopes: string[]): string[] {
+  return [...scopes, ...INTERNAL_RUN_PATHSPECS];
+}
+
+export function isInternalRunPath(filePath: string, cwd?: string): boolean {
+  const relativePath = path.isAbsolute(filePath) && cwd
+    ? path.relative(cwd, filePath)
+    : filePath;
+  const normalized = path.posix
+    .normalize(relativePath.replaceAll("\\", "/"))
+    .replace(/^\.\//, "");
+  return normalized === ".agentmesh/runs" || normalized.startsWith(".agentmesh/runs/");
+}
+
 export function prepareContextPolicyInput(
-  input: Pick<FlowRunInput, "contextFiles" | "diffFile" | "verificationFile" | "scopes">,
+  input: Pick<
+    FlowRunInput,
+    | "contextFiles"
+    | "diffFile"
+    | "verificationFile"
+    | "scopes"
+    | "includeSpec"
+    | "excludeCorrections"
+  >,
   policy: ResolvedContextPolicy,
   cwd: string,
 ): ContextPolicyPreparedInput {
   const requiredSources = [...policy.required_sources];
   const contextFiles = uniqueStrings([...requiredSources, ...(input.contextFiles ?? [])]);
-  const fileSources = [
+  const fileSources = uniqueResolvedSources([
     ...contextFiles,
     ...(input.diffFile ? [input.diffFile] : []),
     ...(input.verificationFile ? [input.verificationFile] : []),
-    ...(input.scopes ?? []),
-  ];
+  ], cwd);
+  const policySources = uniqueResolvedSources([
+    ...fileSources,
+    ...(input.scopes ?? []).filter((scope) => !isInternalRunPath(scope, cwd)),
+    ...generatedFileSources(input, cwd),
+  ], cwd);
   assertRedactPatterns(policy.redact_patterns);
-  assertDeniedPaths(fileSources, policy, cwd);
+  assertDeniedPaths(policySources, policy, cwd);
+  assertScopedPathsAllowed(input.scopes ?? [], policy, cwd);
   assertRequiredSources(requiredSources, cwd);
   assertFileLimits(fileSources, policy, cwd);
   return {
@@ -104,6 +139,58 @@ function assertDeniedPaths(
   }
 }
 
+function assertScopedPathsAllowed(
+  scopes: string[],
+  policy: ResolvedContextPolicy,
+  cwd: string,
+): void {
+  if (scopes.length === 0 || policy.denied_paths.length === 0) {
+    return;
+  }
+  const pathspecs = scopedGitPathspecs(scopes);
+  const result = spawnSync("git", ["diff", "--name-only", "-z", "HEAD", "--", ...pathspecs], {
+    cwd,
+    encoding: "utf-8",
+    timeout: 10_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `cannot validate scoped context against context_policy.denied_paths: ${result.error?.message ?? result.stderr ?? `git exit ${result.status ?? "unknown"}`}`,
+    );
+  }
+  const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspecs], {
+    cwd,
+    encoding: "utf-8",
+    timeout: 10_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (untracked.error || untracked.status !== 0) {
+    throw new Error(
+      `cannot validate untracked scoped context against context_policy.denied_paths: ${untracked.error?.message ?? untracked.stderr ?? `git exit ${untracked.status ?? "unknown"}`}`,
+    );
+  }
+  const changedPaths = [
+    ...(result.stdout ?? "").split("\0").filter(Boolean),
+    ...(untracked.stdout ?? "").split("\0").filter(Boolean),
+  ].filter((filePath) => !isInternalRunPath(filePath, cwd));
+  assertDeniedPaths(changedPaths, policy, cwd);
+}
+
+function generatedFileSources(
+  input: Pick<FlowRunInput, "includeSpec" | "excludeCorrections">,
+  cwd: string,
+): string[] {
+  const sources = input.includeSpec ? [projectSpecPath(cwd)] : [];
+  const excluded = new Set(input.excludeCorrections ?? []);
+  sources.push(
+    ...listCorrections({ status: "active" }, cwd)
+      .filter((entry) => !excluded.has(entry.record.id))
+      .map((entry) => entry.path),
+  );
+  return sources;
+}
+
 function assertRequiredSources(sources: string[], cwd: string): void {
   for (const source of sources) {
     try {
@@ -137,6 +224,21 @@ function assertFileLimits(
   }
 }
 
+function uniqueResolvedSources(sources: string[], cwd: string): string[] {
+  const output: string[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const resolved = path.resolve(cwd, source);
+    const comparison = existingPath(resolved);
+    if (seen.has(comparison)) {
+      continue;
+    }
+    seen.add(comparison);
+    output.push(source);
+  }
+  return output;
+}
+
 function fileSizeIfReadable(source: string, cwd: string): number {
   try {
     const stat = statSync(path.resolve(cwd, source));
@@ -147,12 +249,20 @@ function fileSizeIfReadable(source: string, cwd: string): number {
 }
 
 function isDeniedPath(source: string, deniedPaths: string[], cwd: string): boolean {
-  const resolvedSource = path.resolve(cwd, source);
+  const resolvedSource = existingPath(path.resolve(cwd, source));
   return deniedPaths.some((deniedPath) => {
-    const resolvedDenied = path.resolve(cwd, deniedPath);
+    const resolvedDenied = existingPath(path.resolve(cwd, deniedPath));
     const relative = path.relative(resolvedDenied, resolvedSource);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   });
+}
+
+function existingPath(candidate: string): string {
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return candidate;
+  }
 }
 
 function uniqueStrings(values: string[]): string[] {
