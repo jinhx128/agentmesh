@@ -13,6 +13,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "./copy.js";
+import { StudioBrandMark } from "./StudioBrandMark.js";
 import {
   bootstrapStudio,
   type StudioBootstrapPayload,
@@ -757,9 +758,10 @@ export function App(): ReactElement {
         <Stack gap="sm" h="100%" p="md">
           <Paper className="studio-brand-panel" withBorder p="md" radius="md" data-studio-section="workspace-brand">
             <Stack gap={10}>
-              <Box ta="center">
+              <Group className="studio-brand-lockup" gap="sm" wrap="nowrap">
+                <StudioBrandMark />
                 <Title order={1} size="h2">AgentMesh</Title>
-              </Box>
+              </Group>
               <Group grow gap="xs" component="nav" aria-label={t("viewNavigation")}>
                 <Button
                   variant={workspaceView === "settings" ? "filled" : "light"}

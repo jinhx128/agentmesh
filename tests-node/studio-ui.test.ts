@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -472,6 +472,41 @@ test("Studio silver theme exposes canonical tokens", () => {
   assert.match(themeSource, /primaryShade:\s*\{[\s\S]*light:\s*5/);
   assert.doesNotMatch(themeSource, /agentmeshBlue/);
   assert.match(gitignoreSource, /(?:^|\n)\.superpowers\/(?:\n|$)/);
+});
+
+test("Studio silver shell renders the approved brand hierarchy", () => {
+  const brandPath = path.resolve("apps/studio-web/src/app/StudioBrandMark.tsx");
+  assert.equal(existsSync(brandPath), true, "StudioBrandMark.tsx must exist");
+
+  const brandSource = readFileSync(brandPath, "utf-8");
+  const appSource = readFileSync(
+    path.resolve("apps/studio-web/src/app/App.tsx"),
+    "utf-8",
+  );
+  const frontendCss = readFileSync(
+    path.resolve("apps/studio-web/src/styles.css"),
+    "utf-8",
+  );
+
+  assert.match(brandSource, /export function StudioBrandMark\(\): ReactElement/);
+  assert.match(brandSource, /className="studio-brand-mark"/);
+  assert.match(brandSource, /className="studio-brand-core"/);
+  assert.match(brandSource, /className="studio-brand-track studio-brand-track-a"/);
+  assert.match(brandSource, /className="studio-brand-track studio-brand-track-b"/);
+  assert.match(brandSource, /aria-hidden="true"/);
+  assert.match(appSource, /import \{ StudioBrandMark \}/);
+  assert.match(appSource, /className="studio-brand-lockup"/);
+  assert.match(appSource, /<StudioBrandMark\s*\/>/);
+  for (const selector of [
+    ".studio-brand-lockup",
+    ".studio-brand-mark",
+    ".studio-brand-core",
+    ".studio-brand-track-a",
+    ".studio-brand-track-b",
+  ]) {
+    assert.ok(frontendCss.includes(selector), `missing silver shell selector: ${selector}`);
+  }
+  assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
 });
 
 test("Studio frontend build keeps JavaScript chunks under the Vite warning threshold", async () => {

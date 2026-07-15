@@ -228,6 +228,8 @@ git commit -m "界面：建立 Studio 银灰主题基础"
 
 ### P1.2 实现品牌标记与 shell 层级
 
+- [x] ~~P1.2 实现品牌标记与 shell 层级。~~
+
 **Files:**
 - Create: `apps/studio-web/src/app/StudioBrandMark.tsx`
 - Modify: `apps/studio-web/src/app/App.tsx`
@@ -238,7 +240,7 @@ git commit -m "界面：建立 Studio 银灰主题基础"
 - Produces: `StudioBrandMark(): ReactElement`；仅视觉、`aria-hidden="true"`，不接收 props、不触发事件。
 - Consumes: `AppShell`、现有 `WorkspaceView`、P1.1 CSS tokens。
 
-- [ ] **Step 1: 写 RED 品牌/shell contract**
+- [x] **Step 1: 写 RED 品牌/shell contract**
 
 新增独立测试 `test("Studio silver shell renders the approved brand hierarchy", ...)`；先用 `existsSync` 产生普通 assertion failure，再读取新文件：
 
@@ -249,18 +251,18 @@ const brandSource = readFileSync(brandPath, "utf-8");
 assert.match(brandSource, /export function StudioBrandMark\(\): ReactElement/);
 assert.match(brandSource, /className="studio-brand-mark"/);
 assert.match(brandSource, /className="studio-brand-core"/);
-assert.match(brandSource, /className="studio-brand-orbit studio-brand-orbit-a"/);
-assert.match(brandSource, /className="studio-brand-orbit studio-brand-orbit-b"/);
+assert.match(brandSource, /className="studio-brand-track studio-brand-track-a"/);
+assert.match(brandSource, /className="studio-brand-track studio-brand-track-b"/);
 assert.match(brandSource, /aria-hidden="true"/);
 assert.match(appSource, /<StudioBrandMark\s*\/>/);
 for (const selector of [
   ".studio-brand-lockup", ".studio-brand-mark", ".studio-brand-core",
-  ".studio-brand-orbit-a", ".studio-brand-orbit-b",
+  ".studio-brand-track-a", ".studio-brand-track-b",
   ".studio-navbar", ".studio-topbar",
 ]) assert.ok(frontendCss.includes(selector), `missing shell selector: ${selector}`);
 ```
 
-- [ ] **Step 2: 验证 RED**
+- [x] **Step 2: 验证 RED**
 
 ```bash
 npm run build:node
@@ -270,7 +272,7 @@ node --test --test-name-pattern "Studio silver shell" \
 
 Expected: FAIL，因为 `StudioBrandMark.tsx` 与 shell class 尚不存在。
 
-- [ ] **Step 3: 实现品牌组件与 App 结构**
+- [x] **Step 3: 实现品牌组件与 App 结构**
 
 创建完整组件：
 
@@ -281,8 +283,8 @@ export function StudioBrandMark(): ReactElement {
   return (
     <span className="studio-brand-mark" aria-hidden="true">
       <span className="studio-brand-core" />
-      <span className="studio-brand-orbit studio-brand-orbit-a" />
-      <span className="studio-brand-orbit studio-brand-orbit-b" />
+      <span className="studio-brand-track studio-brand-track-a" />
+      <span className="studio-brand-track studio-brand-track-b" />
     </span>
   );
 }
@@ -297,9 +299,9 @@ export function StudioBrandMark(): ReactElement {
 </Group>
 ```
 
-保留设置/手册按钮、`navigatorView`、`WorkspaceView` 与所有事件 handler。`.studio-brand-orbit-a/-b` 使用青蓝椭圆描边并分别旋转正/负角度，深色 core 位于轨道上层；测试同时断言两个 orbit selector。用 P1.1 token 重写 `.studio-navbar`、`.studio-brand-panel`、`.studio-data-navigator`、`.studio-topbar`、`.studio-workspace-shell`：shell radius 18px、panel radius 14px、低透明银灰背景、选中项 cyan rail。删除/重设旧 `--mantine-color-agentmesh-4/-6` 珊瑚覆盖。基础背景先声明 solid fallback，再在 `@supports (backdrop-filter: blur(1px))` 中启用 translucent/blur。
+保留设置/手册按钮、`navigatorView`、`WorkspaceView` 与所有事件 handler。`.studio-brand-track-a/-b` 使用青蓝椭圆描边并分别旋转正/负角度，深色 core 位于轨道上层；track 命名避免重新触发仓库禁止的 legacy `orb` contract。用 P1.1 token 重写 `.studio-navbar`、`.studio-brand-panel`、`.studio-data-navigator`、`.studio-topbar`、`.studio-workspace-shell`：shell radius 18px、panel radius 14px、低透明银灰背景、选中项 cyan rail。删除/重设旧 `--mantine-color-agentmesh-4/-6` 珊瑚覆盖。基础背景先声明 solid fallback，再在 `@supports (backdrop-filter: blur(1px))` 中启用 translucent/blur。
 
-- [ ] **Step 4: 验证 GREEN 并审查**
+- [x] **Step 4: 验证 GREEN 并审查**
 
 ```bash
 npm run build
@@ -312,7 +314,7 @@ Expected: build PASS；新 contract 与旧 shell/scroll contract 全部 PASS。
 
 审查方式：外审，阶段内先主控自审 DOM 顺序、可访问名称和事件 handler diff，阶段收尾 `P1.Z` 统一通过 AgentMesh Review Gate。Must/Should 在本 slice 修复并重跑命令；P1.Z 外审不可用不得直接完成 P1。
 
-- [ ] **Step 5: 记录并提交**
+- [x] **Step 5: 记录并提交**
 
 ```bash
 git add apps/studio-web/src/app/StudioBrandMark.tsx apps/studio-web/src/app/App.tsx \
@@ -321,7 +323,7 @@ git add apps/studio-web/src/app/StudioBrandMark.tsx apps/studio-web/src/app/App.
 git commit -m "界面：重塑 Studio 导航与工作区层级"
 ```
 
-进度记录：状态 `pending`；证据待执行；下一步由 `P1.1` 收尾更新为 `P1.2 Step 1`。
+进度记录：状态 `completed`；完成时间 `2026-07-16 05:30 CST`；RED 以 `StudioBrandMark.tsx must exist` assertion failure 证明新结构缺失；GREEN 为完整 frontend build 通过，silver theme/shell/原 CSS layout 共 3 tests passed，`git diff --check` 通过；校准内部命名为 `studio-brand-track-*`，保留青蓝轨道设计并避免 legacy `orb` contract；自审确认 `WorkspaceView`、事件 handler 与 API 无变化；外审并入 `P1.Z`；changelog 在 `P1.Z` 聚合；commit 见本 slice 收尾提交；下一步 `P1.3 Step 1`。
 
 ### P1.3 统一控件、状态、卡片和内容表面
 
@@ -897,4 +899,4 @@ defaults read /Applications/AgentMesh.app/Contents/Info CFBundleShortVersionStri
 
 ## 8. 当前下一步
 
-- 当前下一步：`P1.2 Step 1`，写品牌标记与 shell 层级 RED contract。
+- 当前下一步：`P1.3 Step 1`，写控件、状态、卡片和内容表面 RED contract。
