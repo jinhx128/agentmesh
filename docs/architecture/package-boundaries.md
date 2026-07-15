@@ -39,7 +39,7 @@ steps remain in the root plan.
   the root CLI tarball is installable without unresolved workspace dependency
   gaps; Desktop Studio mutations consume app-server/runtime/studio-web artifacts
   rather than a CLI artifact, while optional Agent Integrations may install a
-  user-confirmed PATH wrapper to an app-managed CLI resource.
+  public npm CLI detection, installation, and update operations.
 - Desktop bootstrap: App Server binds `127.0.0.1`, uses a per-launch token that
   is not passed in argv or query strings, and validates Host/Origin/CORS.
 - Packet schema: active code, tests, fixtures, docs, and examples use one

@@ -96,9 +96,9 @@ If npm prompts for two-factor authentication, pass the one-time password with:
 npm run publish:npm -- --otp <one-time-code>
 ```
 
-Before installing, linking, or switching a PATH shim, the installer must
-inspect the current PATH-visible `agentmesh`, show its path and observed
-version/status, and require user confirmation before replacement. The expected
+Before installing or updating from Desktop, the app detects the PATH-visible
+`agentmesh`, executes `--version`, and shows the path and actual installed version.
+It invokes public npm without a bin path input, then re-detects the command. The expected
 verification after any command install is:
 
 ```sh
@@ -107,9 +107,8 @@ agentmesh doctor --json
 agentmesh skill verify --target <host> --json
 ```
 
-Raw `npm install -g` does not provide that confirmation by itself; the
-confirmation requirement belongs to team install docs, rollout wrappers, and
-the optional DMG command-line tool action.
+Permission, network, npm discovery, and PATH-order failures must remain visible
+to the user.
 
 See `docs/distribution/cli-command-install.md` for the source checkout,
 tarball, npm registry, and PATH-visible `agentmesh` user flow.
@@ -123,8 +122,7 @@ build artifacts:
 - built Node runtime and package code under `dist-node`
 - built Studio web assets under `dist-node/apps/studio-web/frontend`
 - app-managed runtime dependencies under the desktop sidecar resources
-- built CLI and Skill resources used only by the optional user-confirmed
-  command-line wrapper and per-target Skill installer
+- built Skill resources used by the per-target Skill installer
 
 Desktop packaging consumes the bundled App Server and runtime APIs for Studio
 reads and writes. Studio behavior must not depend on a PATH-visible,
@@ -132,6 +130,5 @@ npm-installed, or app-bundled CLI command artifact.
 
 DMG-only installs satisfy Desktop Studio only. Entry agents and installed
 Skills require a user-selected PATH-visible `agentmesh`. The Settings /
-Agent Integrations "Install Command Line Tool" action is optional, shows
-existing command details before writing a wrapper, and must not silently
-overwrite another channel.
+Agent Integrations command-line action is optional, installs or updates the
+public npm package, and verifies the PATH-visible result without a bin path input.

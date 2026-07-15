@@ -104,9 +104,9 @@ agentmesh doctor --json
 The registry package must preserve the same `bin.agentmesh`, `files`,
 dependency boundary, and clean-install smoke as the local tarball.
 
-`npm install -g` itself does not prompt before changing a global command. Any
-team installer, app action, or rollout wrapper that switches the PATH-visible
-command must do the inspection and confirmation step before invoking it.
+Desktop resolves the existing command first and reports its actual version.
+The install/update action then runs public npm directly and reports the command
+that remains PATH-visible after npm finishes.
 
 ## Skill Install
 
@@ -136,21 +136,16 @@ that host's file status without blocking other selected hosts.
 ## DMG Command-Line Tool Option
 
 `AgentMesh.app` exposes this through Settings / Agent Integrations. The
-"Install Command Line Tool" action must be user-confirmed and must:
+"Install Command Line Tool" action must:
 
-- inspect the current PATH-visible `agentmesh`
-- show the detected path and observed version/status
-- show the new app-managed wrapper target
-- require explicit confirmation before replacing or shadowing anything
-- prefer a wrapper script over a bare symlink, so it can report app channel and
-  version details
-- never silently overwrite an npm, source checkout, Homebrew, or previous app
-  command
+- resolve `agentmesh` through PATH, common install locations, and the login shell
+- execute the resolved command with `--version` and show its actual installed version
+- query the public npm latest version
+- run `npm install --global @jinhx128/agentmesh@latest --no-audit --no-fund`
+- re-detect the PATH-visible command after npm finishes
+- expose no bin path input and never edit shell profiles or request elevation
+- report permission, network, missing npm, and PATH-order failures directly
 
-The app-managed wrapper is only valid after it becomes the PATH-visible
-`agentmesh`. Desktop Studio itself continues to use its bundled App
-Server/runtime and must not call through the global command.
-Because the wrapper stores the app-bundled Node and CLI paths from install
-time, moving `AgentMesh.app` or installing an app update that changes those
-resource paths can break the wrapper; re-run "Install Command Line Tool" after
-such changes.
+Desktop Studio itself continues to use its bundled App Server/runtime and does
+not call through the global CLI. Installing or updating the npm CLI therefore
+does not replace Desktop's internal runtime.

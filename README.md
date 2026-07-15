@@ -195,15 +195,16 @@ agentmesh update check --json
 agentmesh update install --target desktop --dry-run --json
 ```
 
-当前 Desktop 自动更新尚未启用；`desktop` 目标会返回需要下载的新 DMG 地址，由用户手动
-替换 `/Applications/AgentMesh.app`。Studio 的 Settings / About 也会展示同一份版本检查结果。
+`0.1.10` 尚未包含应用内 updater，因此升级到首个 updater 版本时仍需手动用 DMG 替换
+`/Applications/AgentMesh.app`。之后 Settings / About 可以检查、下载、验签、安装并重启。
 
 DMG 只提供 Desktop Studio。Codex、Cursor、Antigravity CLI、OpenCode 或
 Claude Code 如果要通过 Skill 调用 AgentMesh，仍然需要 PATH-visible 的
 `agentmesh` CLI。
 
-Desktop Studio 内的 Settings / Agent Integrations 可以安装 app-managed command-line
-wrapper。该操作会先显示当前 PATH 里的 `agentmesh`，需要用户确认后才会替换或覆盖。
+Desktop Studio 内的 Settings / Agent Integrations 会检测 PATH 中的 `agentmesh`，执行
+`--version` 显示实际版本，并通过公共 npm 安装或更新 `@jinhx128/agentmesh@latest`。
+界面不要求用户输入 Bin 路径，也不会自动修改 shell profile 或请求管理员权限。
 如果从 Finder 启动 Desktop Studio 需要指定项目，可以用
 `AGENTMESH_STUDIO_WORKSPACE=/path/to/project` 或
 `/Applications/AgentMesh.app/Contents/MacOS/agentmesh-studio-desktop --workspace /path/to/project`

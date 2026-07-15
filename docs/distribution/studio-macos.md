@@ -37,8 +37,8 @@ bundled Node directly and does not resolve global `node`, global `agentmesh`,
 
 The Tauri resource map includes the desktop host, App Server, runtime/core/sdk
 packages, Studio Web assets, sidecar launcher directory, runtime dependencies,
-Skill template resources, and the CLI package needed by the optional
-user-confirmed command-line wrapper. Desktop Studio itself still uses the
+Skill template resources, and runtime code needed by the integration panel.
+Desktop Studio itself still uses the
 App Server/runtime path and does not call through the CLI package.
 
 To inspect only the local sidecar bundle proof:
@@ -51,7 +51,7 @@ When the packaging host has Rust and the Tauri CLI installed, the equivalent
 unsigned bundle command is:
 
 ```sh
-npx tauri build --config apps/studio-desktop/src-tauri/tauri.conf.json --bundles dmg --debug
+npx tauri build --config apps/studio-desktop/src-tauri/tauri.conf.json --bundles app,dmg --debug
 ```
 
 The latest internal unsigned local artifact is:
@@ -95,10 +95,9 @@ Required environment:
 - `TAURI_SIGNING_PRIVATE_KEY`: private key used to sign updater artifacts.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: private key password.
 
-Before signing, replace the updater public key placeholder in
-`apps/studio-desktop/src-tauri/tauri.conf.json` with the public half of the
-Tauri updater key. The public key is not a secret; the private key remains in
-the environment.
+The updater public key is committed in
+`apps/studio-desktop/src-tauri/tauri.conf.json`. The matching private key and
+password remain outside git and are provided only to the release build.
 
 Run the guarded signed smoke in a certificate-capable environment:
 
@@ -158,14 +157,22 @@ npm run studio-desktop:update:metadata
 - A DMG-only install is enough for Desktop Studio, but not for entry-agent
   orchestration. Codex, Cursor, Antigravity CLI, OpenCode, and Claude Code
   Skills need a PATH-visible `agentmesh` chosen by the user.
-- The Settings / Agent Integrations "Install Command Line Tool" app action is
-  opt-in, inspects and displays any existing PATH command before writing a
-  wrapper, and requires user confirmation before replacing or shadowing another
-  CLI channel.
-  The wrapper stores absolute app resource paths, so users should re-run the
-  action after moving `AgentMesh.app` or applying an app update that changes
-  bundled runtime paths.
+- The Settings / Agent Integrations command-line action detects the actual
+  PATH-visible CLI version and installs or updates `@jinhx128/agentmesh@latest`
+  through public npm without asking for a bin path.
 - The Settings / Agent Integrations "Install Agent Skill" app action lets the
   user choose targets rather than installing all host integrations. The
   currently supported choices are `codex`, `cursor`, `antigravity`, `opencode`,
   and `claude`.
+
+## In-App Update Migration
+
+The stable updater endpoint is
+`https://github.com/jinhx128/agentmesh/releases/latest/download/latest.json`.
+Each release uploads a signed macOS app archive, its `.sig`, and `latest.json`.
+Settings / About checks, downloads, verifies, installs, and relaunches through
+the official Tauri updater and process plugins.
+
+`0.1.10` does not contain the updater implementation. Users on that version
+must manually install the first updater-enabled DMG once. Later
+updater-enabled versions can update in-app.

@@ -14,9 +14,9 @@ machine, but they must not silently replace or call through each other.
 - Installed AgentMesh Skills call that same PATH-visible agentmesh command; a
   Skill file without a command install cannot make an entry agent invoke
   AgentMesh.
-- If the user explicitly installs the app command-line tool into PATH, that
-  wrapper becomes the PATH-visible agentmesh and can be used by terminal or
-  entry-agent flows.
+- If the user installs or updates the CLI from Desktop, the app runs
+  `npm install --global @jinhx128/agentmesh@latest` and then verifies the
+  PATH-visible command used by terminal and entry-agent flows.
 - DMG-only is Desktop Studio only. CLI and Skill integration are separate
   user-selected installs.
 
@@ -77,15 +77,12 @@ must not overwrite unknown data.
 
 The Settings / Agent Integrations "Install Command Line Tool" action must:
 
-- inspect the current PATH-visible agentmesh target before writing a wrapper
-- show the detected target and the new app-bundled wrapper target
-- require user confirmation before replacing an existing PATH command
-- prefer a wrapper script over a bare symlink so the app can surface version
-  and channel details
-- never silently overwrite an npm, Homebrew, source checkout, or previous app
-  command
-- document that moving or updating `AgentMesh.app` can require re-installing
-  the wrapper because it stores absolute app resource paths
+- inspect the current PATH-visible agentmesh and execute `--version`
+- show installed/latest versions and the resolved executable path
+- install or update `@jinhx128/agentmesh@latest` through the resolved npm command
+- re-detect the login-shell command after npm finishes
+- expose no bin path input and no PATH-shadowing confirmation control
+- report permission, network, missing npm, and PATH-order failures
 
 ### Install Agent Skill
 
@@ -158,8 +155,7 @@ Latest local result:
   DMG with an empty `PATH`.
 - Confirm the mounted app reads a run in the shared workspace.
 - Trigger a Studio `attach` mutation and confirm the mutation command uses the
-  runtime API shape rather than the packaged CLI artifact used by the optional
-  command-line wrapper.
+  runtime API shape rather than the separately managed public npm CLI.
 - Confirm the source/global CLI lists the app-written artifact and can still
   read run status after the DMG is detached.
 
