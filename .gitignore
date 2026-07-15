@@ -33,6 +33,7 @@ apps/studio-desktop/src-tauri/target/
 
 # AgentMesh runtime packets
 .agentmesh/
+.superpowers/
 
 # Runtime noise
 *.log

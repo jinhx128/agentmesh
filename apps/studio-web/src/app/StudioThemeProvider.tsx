@@ -7,17 +7,17 @@ import {
 } from "@mantine/core";
 import type { ReactElement, ReactNode } from "react";
 
-const agentmeshBlue: MantineColorsTuple = [
-  "#eef5ff",
-  "#dce8ff",
-  "#b8d0ff",
-  "#8fb4ff",
-  "#6b9cff",
-  "#4b85f0",
-  "#2f6bd8",
-  "#2556b0",
-  "#20498e",
-  "#1f3f76",
+const agentmeshCyan: MantineColorsTuple = [
+  "#e9fbfc",
+  "#d7f6f8",
+  "#adebf0",
+  "#7ddde5",
+  "#58cad6",
+  "#3eb8c8",
+  "#2699a8",
+  "#207b88",
+  "#1f6570",
+  "#1d535c",
 ];
 
 const studioFontFamily =
@@ -25,7 +25,7 @@ const studioFontFamily =
 
 export const studioTheme = createTheme({
   colors: {
-    agentmesh: agentmeshBlue,
+    agentmesh: agentmeshCyan,
   },
   components: {
     Select: Select.extend({
@@ -42,7 +42,7 @@ export const studioTheme = createTheme({
       },
     }),
   },
-  defaultRadius: "sm",
+  defaultRadius: "md",
   focusRing: "auto",
   fontFamily: studioFontFamily,
   headings: {
@@ -51,7 +51,7 @@ export const studioTheme = createTheme({
   },
   primaryColor: "agentmesh",
   primaryShade: {
-    light: 6,
+    light: 5,
     dark: 4,
   },
 });

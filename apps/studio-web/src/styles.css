@@ -1,30 +1,40 @@
 :root {
-  --studio-bg: #f6f7fb;
+  --studio-canvas: #edf0f3;
+  --studio-canvas-deep: #dce1e6;
   --studio-surface: #ffffff;
-  --studio-surface-soft: #fafbfc;
-  --studio-surface-tint: #f4f6f9;
-  --studio-border: #e1e5ed;
-  --studio-border-strong: #c9d1dd;
-  --studio-text: #101828;
-  --studio-muted: #7b8492;
-  --studio-primary: #f45d3d;
-  --studio-primary-soft: #fff3ee;
-  --studio-accent: #13ad9c;
-  --studio-accent-soft: #e9faf7;
-  --studio-success: #20b26b;
-  --studio-success-soft: #e9f8ef;
-  --studio-warning: #e99b16;
-  --studio-warning-soft: #fff6dc;
-  --studio-danger: #f04438;
-  --studio-danger-soft: #fff0f0;
-  --studio-shadow-sm: 0 1px 0 rgb(16 24 40 / 4%);
-  --studio-shadow-md: 0 8px 22px rgb(16 24 40 / 7%);
+  --studio-surface-glass: rgb(255 255 255 / 72%);
+  --studio-surface-grouped: #e7ebef;
+  --studio-border: rgb(111 126 142 / 20%);
+  --studio-border-strong: rgb(91 107 123 / 34%);
+  --studio-ink: #1d2937;
+  --studio-muted: #7b8794;
+  --studio-primary: #3eb8c8;
+  --studio-primary-strong: #2699a8;
+  --studio-primary-soft: #def6f8;
+  --studio-success: #46b978;
+  --studio-success-soft: #e4f7ec;
+  --studio-warning: #e4a63d;
+  --studio-warning-soft: #fff3d9;
+  --studio-danger: #dc6666;
+  --studio-danger-soft: #fee9e9;
+  --studio-radius-shell: 18px;
+  --studio-radius-panel: 14px;
+  --studio-radius-control: 10px;
+  --studio-shadow-sm: 0 3px 10px rgb(37 49 62 / 6%);
+  --studio-shadow-md: 0 10px 28px rgb(37 49 62 / 9%);
+  --studio-motion-fast: 140ms;
   --studio-flow-node-width: 156px;
   --studio-flow-node-min-height: 88px;
   --studio-workflow-node-width: 132px;
   --studio-workflow-node-min-height: 72px;
   --studio-flow-connector-width: 28px;
   --studio-flow-connector-color: #6f7f96;
+  --studio-bg: var(--studio-canvas);
+  --studio-surface-soft: var(--studio-surface-grouped);
+  --studio-surface-tint: var(--studio-surface-grouped);
+  --studio-text: var(--studio-ink);
+  --studio-accent: var(--studio-primary);
+  --studio-accent-soft: var(--studio-primary-soft);
 
   color: var(--studio-text);
   background: var(--studio-bg);
@@ -46,8 +56,8 @@ body,
 body {
   overflow: hidden;
   background:
-    linear-gradient(180deg, #fbf7f4 0%, #f7f8fb 280px, var(--studio-bg) 100%),
-    var(--studio-bg);
+    linear-gradient(145deg, var(--studio-canvas-deep), #f9fafb 44%, var(--studio-canvas)),
+    var(--studio-canvas);
 }
 
 [hidden] {

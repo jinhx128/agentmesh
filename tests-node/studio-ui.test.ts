@@ -441,6 +441,39 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.doesNotMatch(autoRefreshSource, /NativeSelect/);
 });
 
+test("Studio silver theme exposes canonical tokens", () => {
+  const frontendCss = readFileSync(
+    path.join(process.cwd(), "apps", "studio-web", "src", "styles.css"),
+    "utf-8",
+  );
+  const themeSource = readFileSync(
+    path.join(process.cwd(), "apps", "studio-web", "src", "app", "StudioThemeProvider.tsx"),
+    "utf-8",
+  );
+  const gitignoreSource = readFileSync(path.join(process.cwd(), ".gitignore"), "utf-8");
+
+  for (const token of [
+    "--studio-canvas: #edf0f3",
+    "--studio-surface: #ffffff",
+    "--studio-ink: #1d2937",
+    "--studio-primary: #3eb8c8",
+    "--studio-success: #46b978",
+    "--studio-warning: #e4a63d",
+    "--studio-danger: #dc6666",
+    "--studio-radius-shell: 18px",
+    "--studio-motion-fast: 140ms",
+  ]) {
+    assert.ok(frontendCss.includes(token), `missing silver UI token: ${token}`);
+  }
+  assert.doesNotMatch(frontendCss, /#fbf7f4/i);
+  assert.match(themeSource, /const agentmeshCyan: MantineColorsTuple/);
+  assert.match(themeSource, /"#3eb8c8"/i);
+  assert.match(themeSource, /defaultRadius:\s*"md"/);
+  assert.match(themeSource, /primaryShade:\s*\{[\s\S]*light:\s*5/);
+  assert.doesNotMatch(themeSource, /agentmeshBlue/);
+  assert.match(gitignoreSource, /(?:^|\n)\.superpowers\/(?:\n|$)/);
+});
+
 test("Studio frontend build keeps JavaScript chunks under the Vite warning threshold", async () => {
   const result = await viteBuild({
     configFile: path.join(process.cwd(), "apps", "studio-web", "vite.config.ts"),
