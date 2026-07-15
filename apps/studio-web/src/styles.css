@@ -7,7 +7,7 @@
   --studio-border: rgb(111 126 142 / 20%);
   --studio-border-strong: rgb(91 107 123 / 34%);
   --studio-ink: #1d2937;
-  --studio-muted: #7b8794;
+  --studio-muted: #5e6b77;
   --studio-primary: #3eb8c8;
   --studio-primary-strong: #2699a8;
   --studio-primary-soft: #def6f8;
@@ -1356,6 +1356,32 @@ button:not(:disabled),
 .status.stale,
 .status.missing {
   color: var(--studio-muted);
+}
+
+@media (max-width: 64em) {
+  .studio-workspace-shell {
+    padding: 10px;
+  }
+
+  .run-workspace-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 236px);
+    gap: 10px;
+  }
+
+  .studio-info-item {
+    padding: 7px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @media (max-width: 36em) {

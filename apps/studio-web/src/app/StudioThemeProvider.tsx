@@ -1,5 +1,7 @@
 import {
+  Drawer,
   MantineProvider,
+  Modal,
   MultiSelect,
   Select,
   createTheme,
@@ -24,10 +26,21 @@ const studioFontFamily =
   "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
 
 export const studioTheme = createTheme({
+  autoContrast: true,
   colors: {
     agentmesh: agentmeshCyan,
   },
   components: {
+    Modal: Modal.extend({
+      defaultProps: {
+        closeButtonProps: { "aria-label": "关闭" },
+      },
+    }),
+    Drawer: Drawer.extend({
+      defaultProps: {
+        closeButtonProps: { "aria-label": "关闭" },
+      },
+    }),
     Select: Select.extend({
       defaultProps: {
         searchable: true,

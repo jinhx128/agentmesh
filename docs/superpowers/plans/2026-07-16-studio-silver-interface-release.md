@@ -421,7 +421,7 @@ git commit -m "界面：统一 Studio 控件与状态视觉"
 - Consumes: P1.1–P1.3 selectors 与现有 `@media (max-width: 36em)` collapse contract。
 - Produces: `prefers-reduced-motion` contract、1024/1280 viewport 视觉证据。
 
-- [ ] **Step 1: 写 RED 响应式/动效 contract**
+- [x] **Step 1: 写 RED 响应式/动效 contract**
 
 ```ts
 assert.match(frontendCss, /@media \(prefers-reduced-motion:\s*reduce\)/);
@@ -430,7 +430,7 @@ assert.match(frontendCss, /@media \(max-width:\s*36em\)[\s\S]*grid-template-colu
 assert.match(frontendCss, /focus-visible/);
 ```
 
-- [ ] **Step 2: 验证 RED**
+- [x] **Step 2: 验证 RED**
 
 ```bash
 npm run build:node
@@ -440,7 +440,7 @@ node --test --test-name-pattern "React app CSS uses new layout hooks" \
 
 Expected: FAIL，缺少 64em density breakpoint 与 reduced-motion block。
 
-- [ ] **Step 3: 实现中等尺寸与 reduced-motion 规则**
+- [x] **Step 3: 实现中等尺寸与 reduced-motion 规则**
 
 ```css
 @media (max-width: 64em) {
@@ -463,7 +463,7 @@ Expected: FAIL，缺少 64em density breakpoint 与 reduced-motion block。
 
 保留 36em 现有 collapse/scroll 行为；中等尺寸先缩 gap/card columns，不缩正文字号。
 
-- [ ] **Step 4: 自动化 GREEN**
+- [x] **Step 4: 自动化 GREEN**
 
 ```bash
 npm run build
@@ -473,7 +473,7 @@ git diff --check
 
 Expected: complete `studio-ui` suite PASS，frontend build PASS。
 
-- [ ] **Step 5: 浏览器视觉验收**
+- [x] **Step 5: 浏览器视觉验收**
 
 ```bash
 npm run studio -- --host 127.0.0.1 --port 4317
@@ -481,7 +481,7 @@ npm run studio -- --host 127.0.0.1 --port 4317
 
 使用 in-app browser 依次在 `1280 x 720`、`1024 x 640` 检查 Run、Call、Settings/资源、高级、环境、关于、Definitions/Manual、modal、drawer。每个尺寸记录 shell 和 Settings/About 截图；检查主操作、scroll、长路径、空/加载/错误/成功状态。用浏览器读取正文、muted text、primary button、focus ring 的 computed foreground/background，按 WCAG relative-luminance 公式核对正文/控件至少 `4.5:1`、大字至少 `3:1`；键盘 Tab 逐个确认 focus-visible，状态标签必须同时含文字。浏览器 console error 必须为 0；本地 API 数据网络失败可作为环境状态记录，不能掩盖布局错误。
 
-- [ ] **Step 6: 记录并提交**
+- [x] **Step 6: 记录并提交**
 
 ```bash
 git add apps/studio-web/src/styles.css tests-node/studio-ui.test.ts \
@@ -491,7 +491,7 @@ git commit -m "界面：补齐 Studio 响应式与可访问性"
 
 审查方式：外审并纳入 `P1.Z`；视觉证据由主控负责，reviewer 核对 CSS/DOM/contract。
 
-进度记录：状态 `pending`；证据待执行；下一步由 `P1.3` 收尾更新为 `P1.4 Step 1`。
+进度记录：状态 `completed`；完成时间 `2026-07-16 05:56 CST`；原 RED 以缺少 `@media (max-width: 64em)` / `prefers-reduced-motion` contract 失败；浏览器补充发现 Modal/Drawer 关闭按钮无可访问名称、14px muted 文本仅 `3.53:1`、青蓝主按钮白字仅 `2.36:1`，分别新增失败 contract 后通过主题统一 `closeButtonProps`、`--studio-muted: #5e6b77` 与 Mantine `autoContrast` 最小修复；最终完整 frontend build、`studio-ui` 22/22 与 `git diff --check` 通过。in-app browser 在 `1280 x 720`、`1024 x 640` 逐项检查 Run、Call、Settings 资源/高级/环境/关于、Manual、modal、drawer，横向 overflow 为 0、可见按钮无裁切、console error 为 0；修复后 muted 为 `5.26:1`、primary button 为 `8.90:1`，状态均同时含文字；浏览器键盘注入不触发原生 Tab 默认移动，焦点证据由现有 `:focus-visible`、3px focus ring computed style 与自动化 contract 覆盖，Desktop 真机阶段补验；viewport 已 reset。开发态环境页的 CLI source shim 报 `ERR_MODULE_NOT_FOUND` 仅记录为打包态待复核项；下一步 `P1.Z Step 1`。
 
 ### P1.Z 阶段收尾校准与 UI 外审
 

@@ -456,6 +456,7 @@ test("Studio silver theme exposes canonical tokens", () => {
     "--studio-canvas: #edf0f3",
     "--studio-surface: #ffffff",
     "--studio-ink: #1d2937",
+    "--studio-muted: #5e6b77",
     "--studio-primary: #3eb8c8",
     "--studio-success: #46b978",
     "--studio-warning: #e4a63d",
@@ -469,6 +470,7 @@ test("Studio silver theme exposes canonical tokens", () => {
   assert.match(themeSource, /const agentmeshCyan: MantineColorsTuple/);
   assert.match(themeSource, /"#3eb8c8"/i);
   assert.match(themeSource, /defaultRadius:\s*"md"/);
+  assert.match(themeSource, /autoContrast:\s*true/);
   assert.match(themeSource, /primaryShade:\s*\{[\s\S]*light:\s*5/);
   assert.doesNotMatch(themeSource, /agentmeshBlue/);
   assert.match(gitignoreSource, /(?:^|\n)\.superpowers\/(?:\n|$)/);
@@ -558,6 +560,32 @@ test("Studio silver components map update and status semantics", () => {
     frontendCss,
     /--studio-(?:bg|text|accent|accent-soft|surface-soft|surface-tint):/,
   );
+});
+
+test("Studio silver responsive rules preserve accessibility", () => {
+  const frontendCss = readFileSync(
+    path.resolve("apps/studio-web/src/styles.css"),
+    "utf-8",
+  );
+  const themeSource = readFileSync(
+    path.resolve("apps/studio-web/src/app/StudioThemeProvider.tsx"),
+    "utf-8",
+  );
+
+  assert.match(frontendCss, /@media \(max-width:\s*64em\)/);
+  assert.match(frontendCss, /@media \(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(frontendCss, /@media \(max-width:\s*36em\)[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(frontendCss, /:focus-visible/);
+  assert.match(
+    frontendCss,
+    /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*transition-duration:\s*0\.01ms !important/,
+  );
+  for (const component of ["Modal", "Drawer"]) {
+    assert.match(
+      themeSource,
+      new RegExp(`${component}\\.extend\\(\\{[\\s\\S]*closeButtonProps:\\s*\\{[\\s\\S]*"aria-label":\\s*"关闭"`),
+    );
+  }
 });
 
 test("Studio frontend build keeps JavaScript chunks under the Vite warning threshold", async () => {
