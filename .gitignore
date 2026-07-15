@@ -37,3 +37,6 @@ apps/studio-desktop/src-tauri/target/
 # Runtime noise
 *.log
 *.tmp
+
+# Local implementation worktrees
+.worktrees/
