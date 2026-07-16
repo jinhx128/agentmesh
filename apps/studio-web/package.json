@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/studio-web",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "type": "module",
   "description": "AgentMesh React frontend.",

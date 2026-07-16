@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/studio",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "type": "module",
   "description": "AgentMesh local launcher.",
@@ -12,6 +12,6 @@
     "./src/*": "./src/*"
   },
   "dependencies": {
-    "@agentmesh/app-server": "0.1.12"
+    "@agentmesh/app-server": "0.1.13"
   }
 }

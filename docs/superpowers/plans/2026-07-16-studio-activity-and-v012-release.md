@@ -284,6 +284,7 @@
   - 发布：推送 feature/main，创建不可变 `v0.1.13` 和 GitHub Release；npm 仍需要有效登录，认证失败时明确保留 partial，不声称全渠道完成。
   - 审查方式：只做一次最终发布门禁验证，不重复多模型 review。
   - 当前下一步：完成后回到 P5.Z，补齐 npm 与最终证据。
+  - 进度记录：状态 `in_progress`；`0.1.13` canonical version、README、release notes 与当前/未来测试夹具已同步。版本 RED 正确命中实际 0.1.12；第二轮全量 `npm test` 为 560/560，Desktop package `ok: true` 且 0 issues/warnings、Cargo check、Rust test 1/1、audit 0、`git diff --check` 通过。首轮四类版本夹具失败已按事实修复并全量回归；当前下一步是提交 clean 0.1.13 release commit，再从该提交重建七项签名资产。
 
 ## 4. 整体验证矩阵
 
@@ -310,4 +311,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P6.Z`，同步 `0.1.13`、完成全量回归、签名资产与真机发布；P5 npm 发布继续等待有效 `npm login`。
+- 当前下一步：`P6.Z`，提交 clean `0.1.13` release commit 并重建、验证七项签名资产；P5 npm 发布继续等待有效 `npm login`。
