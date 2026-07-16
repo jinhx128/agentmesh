@@ -1,11 +1,11 @@
 {
-  "version": "0.1.10",
-  "notes": "AgentMesh Studio beta 0.1.10",
-  "pub_date": "2026-07-15T12:14:02Z",
+  "version": "0.1.11",
+  "notes": "AgentMesh Studio beta 0.1.11",
+  "pub_date": "2026-07-16T02:50:02Z",
   "platforms": {
     "darwin-aarch64": {
       "signature": "EXAMPLE_TAURI_UPDATE_SIGNATURE_REPLACE_AT_RELEASE",
-      "url": "https://github.com/jinhx128/agentmesh/releases/download/studio-beta/AgentMesh_0.1.10_aarch64.app.tar.gz"
+      "url": "https://github.com/jinhx128/agentmesh/releases/download/studio-beta/AgentMesh_0.1.11_aarch64.app.tar.gz"
     }
   }
 }

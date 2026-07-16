@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/studio-web",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "type": "module",
   "description": "AgentMesh React frontend.",
@@ -22,6 +22,6 @@
     "postcss": "8.5.14",
     "postcss-preset-mantine": "1.18.0",
     "postcss-simple-vars": "7.0.1",
-    "vite": "^8.0.13"
+    "vite": "^8.0.16"
   }
 }

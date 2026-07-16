@@ -1,6 +1,6 @@
 {
   "name": "@jinhx128/agentmesh",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": false,
   "type": "module",
   "description": "CLI for orchestrating local AI coding agents through traceable run packets.",
@@ -52,7 +52,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "^5.9.0",
-    "vite": "^8.0.13"
+    "vite": "^8.0.16"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

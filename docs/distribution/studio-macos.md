@@ -2,10 +2,10 @@
 
 `schema_version`: 1
 
-This document defines the first macOS distribution path for `AgentMesh.app`.
-The packaged app is distributed outside the Mac App Store as a DMG, signed with
-Developer ID, notarized by Apple, and updated through Tauri signed update
-artifacts.
+This document defines the current macOS distribution path for `AgentMesh.app`.
+The packaged app is distributed outside the Mac App Store as an unsigned,
+non-notarized Apple Silicon DMG. Starting with `0.1.11`, later app versions can
+be delivered through Tauri updater archives signed by the dedicated updater key.
 
 ## Source References
 
@@ -77,29 +77,31 @@ For internal smoke only:
 xattr -dr com.apple.quarantine /Applications/AgentMesh.app
 ```
 
-Do not use the quarantine command for public release instructions; public
-builds must be signed and notarized instead.
+Do not use the quarantine command as the default release instruction. Published
+unsigned builds should first use right-click Open or approval in System Settings
+/ Privacy & Security; quarantine removal is an explicit local troubleshooting step.
 
-## Signed And Notarized Build
+## Updater-Signed Release Build
 
-Signing and notarization secrets must come from the environment or the macOS
-keychain. Do not commit certificates, app-specific passwords, private updater
-keys, notarization tokens, or generated signatures.
+Updater signing secrets must come from the environment or the macOS keychain.
+Do not commit private updater keys, passwords, or generated signatures. The
+current `release:assets` path builds an unsigned/non-notarized debug DMG while
+signing the Tauri app archive used by the updater.
 
-Required environment:
+Required updater environment:
 
-- `APPLE_SIGNING_IDENTITY`: Developer ID Application identity in the keychain.
-- `APPLE_ID`: Apple ID used for notarization.
-- `APPLE_PASSWORD`: app-specific password or CI-provided notarization secret.
-- `APPLE_TEAM_ID`: Apple developer team id.
 - `TAURI_SIGNING_PRIVATE_KEY`: private key used to sign updater artifacts.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: private key password.
+
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`
+remain reserved for a future Developer ID/notarized distribution path and are
+not a completion claim for the current release.
 
 The updater public key is committed in
 `apps/studio-desktop/src-tauri/tauri.conf.json`. The matching private key and
 password remain outside git and are provided only to the release build.
 
-Run the guarded signed smoke in a certificate-capable environment:
+Run the stricter future signing/notarization gate in a certificate-capable environment:
 
 ```sh
 npm run studio-desktop:package:signed
@@ -114,10 +116,10 @@ node dist-node/apps/studio-desktop/src/sidecar-bundle.js --verify
 node dist-node/apps/studio-desktop/src/distribution-smoke.js --mode signed --dry-run
 ```
 
-The real signed package command for the packaging host is:
+The current release asset command is:
 
 ```sh
-npx tauri build --config apps/studio-desktop/src-tauri/tauri.conf.json --bundles dmg
+npm run release:assets
 ```
 
 ## App-Managed Updates
@@ -134,10 +136,10 @@ under `apps/studio-desktop/distribution/`:
 - `latest.stable.darwin-aarch64.example.json`
 - `latest.beta.darwin-aarch64.example.json`
 
-Each release must publish:
+Each current release must publish:
 
-- signed DMG for direct installation
-- app archive used by Tauri updater
+- unsigned/non-notarized Apple Silicon DMG for direct installation
+- signed app archive used by Tauri updater
 - updater signature for that app archive
 - channel metadata JSON pointing at the archive and signature
 
@@ -174,5 +176,5 @@ Settings / About checks, downloads, verifies, installs, and relaunches through
 the official Tauri updater and process plugins.
 
 `0.1.10` does not contain the updater implementation. Users on that version
-must manually install the first updater-enabled DMG once. Later
-updater-enabled versions can update in-app.
+must manually install the first updater-enabled `0.1.11` DMG once. After
+`0.1.11` is installed, later updater-enabled versions can update in-app.
