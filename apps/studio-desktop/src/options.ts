@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,8 +17,6 @@ export interface StudioDesktopDefaults {
 }
 
 const WORKSPACE_ENV = "AGENTMESH_STUDIO_WORKSPACE";
-const MAX_WORKSPACE_DISCOVERY_DEPTH = 4;
-const MAX_WORKSPACE_DISCOVERY_DIRS = 2000;
 
 export function parseStudioDesktopArgs(
   args: string[],
@@ -50,7 +48,7 @@ function defaultWorkspace(cwd: string, homeDir: string): string {
   if (cwd !== path.parse(cwd).root) {
     return cwd;
   }
-  return discoverAgentMeshWorkspace(homeDir) ?? homeDir;
+  return mostRecentRegisteredWorkspace(homeDir) ?? homeDir;
 }
 
 function resolveWorkspace(value: string, cwd: string): string {
@@ -98,127 +96,61 @@ export function defaultBundledStudioAssetDir(): string {
   );
 }
 
-function discoverAgentMeshWorkspace(homeDir: string): string | undefined {
-  const candidateRoots = uniquePaths([
-    path.join(homeDir, "Documents", "WebStorm"),
-    path.join(homeDir, "Documents"),
-    path.join(homeDir, "Developer"),
-    path.join(homeDir, "Code"),
-    path.join(homeDir, "Projects"),
-    homeDir,
-  ]).filter(isDirectory);
-  const found: WorkspaceCandidate[] = [];
-  let scanned = 0;
-  for (const root of candidateRoots) {
-    scanWorkspaceCandidates(root, MAX_WORKSPACE_DISCOVERY_DEPTH, found, () => {
-      scanned += 1;
-      return scanned <= MAX_WORKSPACE_DISCOVERY_DIRS;
-    });
-    if (scanned > MAX_WORKSPACE_DISCOVERY_DIRS) {
-      break;
-    }
-  }
-  found.sort((left, right) =>
-    right.score - left.score
-    || right.updatedAtMs - left.updatedAtMs
-    || left.workspace.localeCompare(right.workspace)
-  );
-  return found[0]?.workspace;
-}
-
-interface WorkspaceCandidate {
-  workspace: string;
-  score: number;
-  updatedAtMs: number;
-}
-
-function scanWorkspaceCandidates(
-  directory: string,
-  depth: number,
-  found: WorkspaceCandidate[],
-  shouldContinue: () => boolean,
-): void {
-  if (!shouldContinue()) {
-    return;
-  }
-  const candidate = workspaceCandidate(directory);
-  if (candidate) {
-    found.push(candidate);
-  }
-  if (depth <= 0) {
-    return;
-  }
-  let entries;
+function mostRecentRegisteredWorkspace(homeDir: string): string | undefined {
+  const registryPath = path.join(homeDir, ".config", "agentmesh", "workspaces.json");
+  let payload: unknown;
   try {
-    entries = readdirSync(directory, { withFileTypes: true });
+    payload = JSON.parse(readFileSync(registryPath, "utf-8"));
   } catch {
-    return;
+    return undefined;
   }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || shouldSkipWorkspaceDiscoveryEntry(entry.name)) {
-      continue;
-    }
-    scanWorkspaceCandidates(path.join(directory, entry.name), depth - 1, found, shouldContinue);
+  if (!isRecord(payload) || payload.schema_version !== 1 || !Array.isArray(payload.workspaces)) {
+    return undefined;
   }
-}
-
-function workspaceCandidate(directory: string): WorkspaceCandidate | undefined {
-  const runRoot = path.join(directory, ".agentmesh", "runs");
-  const runTimestamp = newestStatusTimestamp(runRoot);
-  if (runTimestamp !== undefined) {
-    return { workspace: directory, score: 3, updatedAtMs: runTimestamp };
+  const entries = payload.workspaces.filter(isDesktopWorkspaceRegistryEntry);
+  if (entries.length !== payload.workspaces.length) {
+    return undefined;
   }
-  const configPath = path.join(directory, ".agentmesh", "config.toml");
-  if (isFile(configPath)) {
-    return { workspace: directory, score: 2, updatedAtMs: fileMtimeMs(configPath) };
-  }
-  const rootConfigPath = path.join(directory, "agentmesh.toml");
-  if (isFile(rootConfigPath)) {
-    return { workspace: directory, score: 1, updatedAtMs: fileMtimeMs(rootConfigPath) };
-  }
-  return undefined;
-}
-
-function newestStatusTimestamp(runRoot: string): number | undefined {
-  let newest = 0;
-  for (const statusPath of statusFiles(runRoot)) {
-    newest = Math.max(newest, fileMtimeMs(statusPath));
-  }
-  return newest > 0 ? newest : undefined;
-}
-
-function statusFiles(runRoot: string): string[] {
-  let entries;
-  try {
-    entries = readdirSync(runRoot, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  // Keep launcher parsing local to preserve the Desktop -> App Server boundary.
+  // This ordering mirrors runtime workspace registry ordering and is locked by tests.
   return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(runRoot, entry.name, "status.json"))
-    .filter(isFile);
+    .filter((entry) => entry.enabled && isDirectory(entry.path))
+    .sort((left, right) =>
+      workspaceActivity(right).localeCompare(workspaceActivity(left))
+      || left.label.localeCompare(right.label)
+      || left.path.localeCompare(right.path))[0]
+    ?.path;
 }
 
-function shouldSkipWorkspaceDiscoveryEntry(name: string): boolean {
-  return name === "node_modules"
-    || name === ".git"
-    || name === "dist-node"
-    || name === "target"
-    || name === "Library"
-    || name === "Applications";
+interface DesktopWorkspaceRegistryEntry {
+  path: string;
+  label: string;
+  enabled: boolean;
+  created_at: string;
+  last_seen_at: string;
+  last_recorded_at?: string;
 }
 
-function uniquePaths(paths: string[]): string[] {
-  return [...new Set(paths.map((value) => path.resolve(value)))];
-}
-
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
+function isDesktopWorkspaceRegistryEntry(value: unknown): value is DesktopWorkspaceRegistryEntry {
+  if (!isRecord(value)) {
     return false;
   }
+  return typeof value.path === "string"
+    && path.isAbsolute(value.path)
+    && typeof value.label === "string"
+    && value.label.trim().length > 0
+    && typeof value.enabled === "boolean"
+    && typeof value.created_at === "string"
+    && typeof value.last_seen_at === "string"
+    && (value.last_recorded_at === undefined || typeof value.last_recorded_at === "string");
+}
+
+function workspaceActivity(entry: DesktopWorkspaceRegistryEntry): string {
+  return entry.last_recorded_at ?? entry.last_seen_at ?? entry.created_at;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isDirectory(directory: string): boolean {
@@ -226,13 +158,5 @@ function isDirectory(directory: string): boolean {
     return statSync(directory).isDirectory();
   } catch {
     return false;
-  }
-}
-
-function fileMtimeMs(filePath: string): number {
-  try {
-    return statSync(filePath).mtimeMs;
-  } catch {
-    return 0;
   }
 }

@@ -128,27 +128,74 @@ test("parseStudioDesktopArgs uses workspace env when app cwd is filesystem root"
   }
 });
 
-test("parseStudioDesktopArgs discovers a recent workspace when app cwd is filesystem root", () => {
+test("parseStudioDesktopArgs uses the most recent registered workspace when app cwd is filesystem root", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const fakeHome = path.join(workspace, "home");
-  const discoveredWorkspace = path.join(fakeHome, "Documents", "WebStorm", "agentmesh");
-  mkdirSync(path.join(discoveredWorkspace, "frontend-dist"), { recursive: true });
-  writeRun(discoveredWorkspace, "discovered-run");
+  const registeredWorkspace = path.join(workspace, "registered-workspace");
+  const tiedWorkspace = path.join(workspace, "tied-workspace");
+  const olderWorkspace = path.join(workspace, "older-workspace");
+  const disabledWorkspace = path.join(workspace, "disabled-workspace");
+  mkdirSync(path.join(registeredWorkspace, "frontend-dist"), { recursive: true });
+  mkdirSync(path.join(tiedWorkspace, "frontend-dist"), { recursive: true });
+  mkdirSync(olderWorkspace, { recursive: true });
+  mkdirSync(disabledWorkspace, { recursive: true });
+  const registryPath = path.join(fakeHome, ".config", "agentmesh", "workspaces.json");
+  mkdirSync(path.dirname(registryPath), { recursive: true });
+  writeFileSync(registryPath, `${JSON.stringify({
+    schema_version: 1,
+    workspaces: [
+      {
+        id: "ws-1111111111111111",
+        path: olderWorkspace,
+        label: "older",
+        enabled: true,
+        created_at: "2026-07-01T00:00:00.000Z",
+        last_seen_at: "2026-07-14T00:00:00.000Z",
+      },
+      {
+        id: "ws-2222222222222222",
+        path: registeredWorkspace,
+        label: "zzz-recent",
+        enabled: true,
+        created_at: "2026-07-02T00:00:00.000Z",
+        last_seen_at: "2026-07-15T00:00:00.000Z",
+        last_recorded_at: "2026-07-16T00:00:00.000Z",
+      },
+      {
+        id: "ws-4444444444444444",
+        path: tiedWorkspace,
+        label: "aaa-tied-recent",
+        enabled: true,
+        created_at: "2026-07-02T00:00:00.000Z",
+        last_seen_at: "2026-07-15T00:00:00.000Z",
+        last_recorded_at: "2026-07-16T00:00:00.000Z",
+      },
+      {
+        id: "ws-3333333333333333",
+        path: disabledWorkspace,
+        label: "disabled",
+        enabled: false,
+        created_at: "2026-07-03T00:00:00.000Z",
+        last_seen_at: "2026-07-16T01:00:00.000Z",
+        last_recorded_at: "2026-07-16T01:00:00.000Z",
+      },
+    ],
+  }, null, 2)}\n`);
 
   const previousWorkspace = process.env.AGENTMESH_STUDIO_WORKSPACE;
   delete process.env.AGENTMESH_STUDIO_WORKSPACE;
   try {
     assert.deepEqual(
-      parseStudioDesktopArgs(["--asset-dir", path.join(discoveredWorkspace, "frontend-dist")], {
+      parseStudioDesktopArgs(["--asset-dir", path.join(tiedWorkspace, "frontend-dist")], {
         cwd: path.parse(workspace).root,
         homeDir: fakeHome,
       }),
       {
         host: "127.0.0.1",
         port: 0,
-        workspace: discoveredWorkspace,
-        assetDir: path.join(discoveredWorkspace, "frontend-dist"),
+        workspace: tiedWorkspace,
+        assetDir: path.join(tiedWorkspace, "frontend-dist"),
       },
     );
   } finally {
@@ -180,6 +227,64 @@ test("parseStudioDesktopArgs falls back to home instead of filesystem root", () 
         assetDir: path.join(workspace, "frontend-dist"),
       },
     );
+  } finally {
+    if (previousWorkspace !== undefined) {
+      process.env.AGENTMESH_STUDIO_WORKSPACE = previousWorkspace;
+    }
+  }
+});
+
+test("parseStudioDesktopArgs falls back to home for unusable workspace registries", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const fakeHome = path.join(workspace, "home");
+  const assetDir = path.join(workspace, "frontend-dist");
+  const disabledWorkspace = path.join(workspace, "disabled-workspace");
+  const registryPath = path.join(fakeHome, ".config", "agentmesh", "workspaces.json");
+  mkdirSync(path.dirname(registryPath), { recursive: true });
+  mkdirSync(assetDir);
+  mkdirSync(disabledWorkspace);
+
+  const registryCases = [
+    "{not-json",
+    JSON.stringify({ schema_version: 2, workspaces: [] }),
+    JSON.stringify({
+      schema_version: 1,
+      workspaces: [{
+        id: "ws-5555555555555555",
+        path: disabledWorkspace,
+        label: "disabled",
+        enabled: false,
+        created_at: "2026-07-01T00:00:00.000Z",
+        last_seen_at: "2026-07-16T00:00:00.000Z",
+      }],
+    }),
+    JSON.stringify({
+      schema_version: 1,
+      workspaces: [{
+        id: "ws-6666666666666666",
+        path: path.join(workspace, "deleted-workspace"),
+        label: "deleted",
+        enabled: true,
+        created_at: "2026-07-01T00:00:00.000Z",
+        last_seen_at: "2026-07-16T00:00:00.000Z",
+      }],
+    }),
+  ];
+
+  const previousWorkspace = process.env.AGENTMESH_STUDIO_WORKSPACE;
+  delete process.env.AGENTMESH_STUDIO_WORKSPACE;
+  try {
+    for (const registryPayload of registryCases) {
+      writeFileSync(registryPath, `${registryPayload}\n`);
+      assert.equal(
+        parseStudioDesktopArgs(["--asset-dir", assetDir], {
+          cwd: path.parse(workspace).root,
+          homeDir: fakeHome,
+        }).workspace,
+        fakeHome,
+      );
+    }
   } finally {
     if (previousWorkspace !== undefined) {
       process.env.AGENTMESH_STUDIO_WORKSPACE = previousWorkspace;
@@ -810,7 +915,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.11/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.12/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",
