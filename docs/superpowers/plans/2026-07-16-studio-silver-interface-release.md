@@ -74,7 +74,7 @@
 
 ### P1. 银灰界面实现与验证
 
-- [ ] P1 阶段完成门禁（仅在 `P1.Z` 完成审查、日志和 commit 后勾选）
+- [x] ~~P1 阶段完成门禁（仅在 `P1.Z` 完成审查、日志和 commit 后勾选）~~
 - 阶段目标：在不改变产品行为的前提下完成主题、shell、组件、响应式与可访问性改造。
 - 阶段门禁：`P1.1`–`P1.4` 全部 GREEN，`P1.Z` 外审通过且不存在未解决 Must Fix/Should Fix。
 
@@ -412,6 +412,8 @@ git commit -m "界面：统一 Studio 控件与状态视觉"
 
 ### P1.4 响应式、可访问性与浏览器视觉验收
 
+- [x] ~~P1.4 响应式、可访问性与浏览器视觉验收。~~
+
 **Files:**
 - Modify: `apps/studio-web/src/styles.css`
 - Modify: `tests-node/studio-ui.test.ts`
@@ -495,7 +497,9 @@ git commit -m "界面：补齐 Studio 响应式与可访问性"
 
 ### P1.Z 阶段收尾校准与 UI 外审
 
-- [ ] **Step 1: 阶段自动化验证**
+- [x] ~~P1.Z 阶段收尾校准与 UI 外审。~~
+
+- [x] **Step 1: 阶段自动化验证**
 
 ```bash
 npm test
@@ -507,7 +511,7 @@ git status --short --branch
 
 Expected: 全量 Node tests、Rust check 和 Desktop dev package PASS；只允许计划/日志的预期修改，`.superpowers/` 已被 ignore。
 
-- [ ] **Step 2: AgentMesh Review Gate**
+- [x] **Step 2: AgentMesh Review Gate**
 
 ```bash
 base="$(git merge-base origin/main HEAD)"
@@ -519,7 +523,7 @@ git diff "$base"...HEAD -- apps/studio-web tests-node/studio-ui.test.ts .gitigno
 
 外审失败策略：单 reviewer 失败先 retry 一次；仍失败可由另外两名 reviewer 形成结论，但必须记录原因。少于两份可用审查，或存在未解决 Must/Should 时，P1 为 `needs_decision`，不得进入 P2。
 
-- [ ] **Step 3: 同步日志并提交阶段收尾**
+- [x] **Step 3: 同步日志并提交阶段收尾**
 
 按 `my-changelog` 在 `changelog/2026-07-16.md` 追加当前时间条目，记录 UI 改动、自动化验证、视觉尺寸和外审结论。更新本计划：`P1.1`–`P1.Z` 标为 `[x]`、任务文本加删除线、写入 commit/证据，P1 门禁标为 `[x]`，当前下一步改为 `P2.1 Step 1`。
 
@@ -530,6 +534,8 @@ git commit -m "记录 Studio 银灰界面验收结果"
 ```
 
 审查方式：外审。判定依据：跨前端与 Desktop 共享 UI，且下一阶段进入公开发布。
+
+进度记录：状态 `completed`；完成时间 `2026-07-16 10:36 CST`。阶段自动化按无竞态顺序重跑：`npm test` 为 551/551、`npm run studio-desktop:package:dev` 报 `ok: true`，随后 `cargo check --manifest-path apps/studio-desktop/src-tauri/Cargo.toml` 通过，`git diff --check` 通过；先前并行执行 test/cargo 的失败来自 `npm test` 清理 `dist-node` 与 sidecar 读取发生竞态，不是产品缺陷。完整 UI Review Gate `studio-silver-ui-review-20260716-0559-2` 的接受项已在 `dba4a21` 修复；定点复审 `studio-silver-ui-rereview-20260716-0615` 中 Cursor、Claude 正常返回 `LGTM`，GLM 完成审查与 551 tests 后因递归 `flow attach` 竞争外层锁超时，完整 review 由主控人工 attach，最终三方均为 `0 Must / 0 Should / 0 Nit`，decision 为 approved、run 状态为 `decide_completed`。已拒绝项继续保留事实依据：Tauri 动态 import 依赖必须由 `studio-web` workspace 解析；Web unavailable card 是批准的跨端能力说明；`pendingUpdate` 由现有 UI 状态与 availability guard 限制并发入口。浏览器验收覆盖 `1280 x 720`、`1024 x 640` 的 Run、Call、Settings、Manual、modal、drawer；无横向溢出、可见按钮裁切或 console error，muted/active Tab/primary button 对比度分别为 `5.26:1`、`6.66:1`、`8.90:1`。原生 Tab 遍历保留到打包 Desktop 真机验证。changelog 已同步；收尾 commit 见本 slice 提交；下一步 `P2.1 Step 1`。
 
 ---
 
@@ -901,4 +907,4 @@ defaults read /Applications/AgentMesh.app/Contents/Info CFBundleShortVersionStri
 
 ## 8. 当前下一步
 
-- 当前下一步：`P1.4 Step 1`，写响应式、focus 与 reduced-motion RED contract。
+- 当前下一步：`P2.1 Step 1`，核验 npm、GitHub Release 与远端 tag 后确定唯一补丁版本。
