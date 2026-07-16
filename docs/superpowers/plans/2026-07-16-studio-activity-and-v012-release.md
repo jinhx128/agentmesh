@@ -268,13 +268,14 @@
   - 提交：`修复：保留原生更新的安全错误信息`。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 21:22 CST`。RED 为 TypeScript `TS2305`（缺少 `normalizeDesktopUpdaterError` export）；GREEN 聚焦 1/1、完整 Studio UI 25/25、`git diff --check` 通过。Error/Tauri string、fallback、URL query/fragment、Home 用户名和 240 字符 contract 已锁定；仅两个原生 updater catch 改用专用 normalizer，主控自审确认未改变通用 App Server 错误策略。日志见 `changelog/2026-07-16.md`，唯一下一步为 `P6.2`。
 
-- [ ] P6.2 真机取得根因并最小修复
+- [x] ~~P6.2 真机取得根因并最小修复~~
   - Slice：`P6.2`
   - 依赖：P6.1 GREEN。
   - 动作：构建 Desktop 开发包并在相同 endpoint 点击检查；记录安全原始错误。基于唯一错误提出单一假设，用最小探针验证；确认根因后先增加失败测试，再修改对应 Rust/config/frontend 文件。若开发包返回 current，则不猜改网络配置，记录 0.1.12 失败不可稳定复现并保留 P6.1 可观测性修复。
   - 验证：focused tests、`npm run studio-desktop:package:dev`、Cargo check/test、真机 updater check、`git diff --check`。
   - 审查方式：主控自审；不启动 reviewer。若根因涉及签名、公钥、权限或 release metadata，则 P6.Z 发布门禁必须阻断到真实验签与资产验证完成。
   - 提交：按明确根因使用中文 commit；无额外根因修复时不创建空提交。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 21:36 CST`。P6.1 开发 App 真机取得原始错误：窗口导航到 `http://127.0.0.1:<port>` 后，`updater.check` 只允许 `local` context，ACL 拒绝 main WebView。RED capability contract 确认 `remote.urls` 为 `undefined`；最小修复只增加 `http://127.0.0.1:*`，不允许 localhost、其他 IP 或公共 remote origin。重建开发 App 后原生检查返回“已是最新”；Desktop package `ok: true` 且 0 issues/warnings、distribution + Studio UI 32/32、Cargo check、Rust test 1/1、`git diff --check` 通过。debug bundle 因未注入发布私钥在生成 updater archive 后按预期退出 1，不影响已生成 App 真机验证，也未读取或输出私钥。唯一下一步为 `P6.Z`。
 
 - [ ] P6.Z 0.1.13 回归、发布与收尾
   - Slice：`P6.Z`
@@ -309,4 +310,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P6.2`，构建 Desktop 开发包并用真机安全原始错误定位唯一根因；P5 npm 发布继续等待有效 `npm login`。
+- 当前下一步：`P6.Z`，同步 `0.1.13`、完成全量回归、签名资产与真机发布；P5 npm 发布继续等待有效 `npm login`。

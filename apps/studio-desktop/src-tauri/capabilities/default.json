@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Main AgentMesh window. Web content has no filesystem or shell command permissions; it may invoke the signed updater and restart the app.",
+  "description": "Main AgentMesh window. Only bundled local content and the loopback App Server origin may invoke the signed updater and restart the app; neither receives filesystem or shell command permissions.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
   "permissions": [
     "core:default",
     "updater:default",

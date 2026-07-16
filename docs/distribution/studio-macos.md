@@ -136,6 +136,13 @@ under `apps/studio-desktop/distribution/`:
 - `latest.stable.darwin-aarch64.example.json`
 - `latest.beta.darwin-aarch64.example.json`
 
+After bootstrap, the main WebView navigates to the authenticated App Server at
+`http://127.0.0.1:<ephemeral-port>`. The main Tauri capability therefore grants
+updater and restart IPC only to bundled local content and the exact loopback
+URLPattern `http://127.0.0.1:*`. It does not grant those commands to
+`localhost`, other IP addresses, HTTPS origins, or public remote content, and
+it grants no filesystem or shell command permissions.
+
 Each current release must publish:
 
 - unsigned/non-notarized Apple Silicon DMG for direct installation

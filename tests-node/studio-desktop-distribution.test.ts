@@ -176,11 +176,16 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
   const capability = JSON.parse(readFileSync(
     path.join(root, "apps", "studio-desktop", "src-tauri", "capabilities", "default.json"),
     "utf-8",
-  )) as { description?: string; permissions?: string[] };
+  )) as {
+    description?: string;
+    permissions?: string[];
+    remote?: { urls?: string[] };
+  };
   assert.match(capability.description ?? "", /updater/i);
   assert.match(capability.description ?? "", /restart/i);
   assert.equal(capability.permissions?.includes("updater:default"), true);
   assert.equal(capability.permissions?.includes("process:allow-restart"), true);
+  assert.deepEqual(capability.remote?.urls, ["http://127.0.0.1:*"]);
 
   const updaterConfig = tauriConfig as typeof tauriConfig & {
     bundle?: { targets?: string[] };
