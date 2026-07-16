@@ -296,6 +296,8 @@ test("App uses one activity navigator without losing run and call detail routing
   assert.match(appSource, /onClick=\{\(\) => setWorkspaceView\("settings"\)\}/);
   assert.match(appSource, /onClick=\{\(\) => setWorkspaceView\("definitions"\)\}/);
   assert.doesNotMatch(appSource, /setSelectedRunKey\(undefined\)|setSelectedCallKey\(undefined\)/);
+  assert.match(appSource, /function refreshAfterMutation[\s\S]*loadRunsWithClient\(apiClient, \{ showLoading: false \}\)/);
+  assert.match(appSource, /async function submitCallAdoption[\s\S]*loadCallsWithClient\(apiClient, \{ showLoading: false \}\)/);
   assert.match(app, /aria-label="搜索活动"/);
   assert.match(app, /title="刷新活动"/);
   assert.doesNotMatch(app, /navigator-data-switch|studio-data-switch/);

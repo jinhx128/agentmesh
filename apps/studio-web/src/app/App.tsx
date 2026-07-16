@@ -538,7 +538,7 @@ export function App(): ReactElement {
 
   function refreshAfterMutation(): void {
     if (apiClient) {
-      loadRunsWithClient(apiClient);
+      loadRunsWithClient(apiClient, { showLoading: false });
       setRunDetailReloadKey((current) => current + 1);
     }
   }
@@ -645,7 +645,7 @@ export function App(): ReactElement {
     );
     if (response.ok && "call" in response.payload) {
       setCallDetailState({ status: "ready", detail: response.payload });
-      loadCallsWithClient(apiClient);
+      loadCallsWithClient(apiClient, { showLoading: false });
     }
     return response;
   }
