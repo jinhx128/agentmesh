@@ -458,6 +458,7 @@ test("Studio silver theme exposes canonical tokens", () => {
     "--studio-ink: #1d2937",
     "--studio-muted: #5e6b77",
     "--studio-primary: #3eb8c8",
+    "--studio-primary-ink: #1f6570",
     "--studio-success: #46b978",
     "--studio-warning: #e4a63d",
     "--studio-danger: #dc6666",
@@ -530,6 +531,14 @@ test("Studio silver components map update and status semantics", () => {
     path.resolve("apps/studio-web/src/styles.css"),
     "utf-8",
   );
+  const integrationsSource = readFileSync(
+    path.resolve("apps/studio-web/src/features/settings/AgentIntegrationsPanel.tsx"),
+    "utf-8",
+  );
+  const settingsAboutSource = readFileSync(
+    path.resolve("apps/studio-web/src/features/settings/SettingsAboutPanel.tsx"),
+    "utf-8",
+  );
 
   assert.match(settings, /class="[^"]*studio-subcard[^"]*"/);
   assert.match(settings, /class="[^"]*studio-update-card[^"]*"/);
@@ -548,6 +557,18 @@ test("Studio silver components map update and status semantics", () => {
   }
   assert.match(frontendCss, /\.status\.ready,[\s\S]*var\(--studio-success\)/);
   assert.match(frontendCss, /\.status\.failed,[\s\S]*var\(--studio-danger\)/);
+  assert.match(frontendCss, /--mantine-color-dimmed:\s*var\(--studio-muted\)/);
+  assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\][^{]*\{[^}]*color:\s*var\(--studio-primary-ink\)/s);
+  assert.match(frontendCss, /\.mantine-Tabs-tab:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--studio-primary-ink\)/s);
+  assert.match(frontendCss, /\.status\.current,[\s\S]*\.status\.running\s*\{[^}]*color:\s*var\(--studio-primary-ink\)/s);
+  assert.doesNotMatch(frontendCss, /#7b8492|#5d6674/i);
+  assert.match(integrationsSource, /<Tabs\.List grow aria-label=\{t\("environment"\)\}>/);
+  assert.match(integrationsSource, /commandStatusLabel\(commandLine\.status\)/);
+  assert.doesNotMatch(integrationsSource, /\{commandLine\.status\}/);
+  assert.match(settingsAboutSource, /state\.status === "error" \? "red"/);
+  assert.match(settingsAboutSource, /state\.status === "error" \? <Alert color="red"/);
+  assert.match(settingsAboutSource, /role="status"/);
+  assert.match(settingsAboutSource, /aria-live="polite"/);
   assert.doesNotMatch(
     frontendCss,
     /#f45d3d|#fff3ee|#ffd0c4|#ffe0d7|#b5432d|#fffdfc|#fff8f5|#fffaf8|#ffc7ba|#ffb19f|#ffb4b0/i,
@@ -559,6 +580,10 @@ test("Studio silver components map update and status semantics", () => {
   assert.doesNotMatch(
     frontendCss,
     /--studio-(?:bg|text|accent|accent-soft|surface-soft|surface-tint):/,
+  );
+  assert.doesNotMatch(
+    readFileSync(path.resolve("tests-node/studio-ui.test.ts"), "utf-8"),
+    /\}\s+as unknown as Extract<AgentIntegrationsState/,
   );
 });
 
@@ -1611,6 +1636,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(integrations, /CLI 检测/);
   assert.match(integrations, /OpenCode CLI/);
   assert.match(integrations, /\.opencode\/bin\/opencode/);
+  assert.match(integrations, /可更新/);
+  assert.doesNotMatch(integrations, /update_available/);
   assert.match(integrations, /更新命令行工具/);
   assert.match(integrations, /0\.1\.9/);
   assert.match(integrations, /0\.1\.10/);
@@ -2867,7 +2894,7 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
         },
       ],
     },
-  } as unknown as Extract<AgentIntegrationsState, { status: "ready" }>["report"];
+  };
 }
 
 function advancedSettingsFixture(): StudioAdvancedSettingsPayload {

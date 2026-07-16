@@ -129,7 +129,11 @@ function DesktopUpdaterCard({
       <Stack gap="md">
         <Group justify="space-between" align="flex-start" gap="sm">
           <Title order={3} size="h4">应用更新</Title>
-          <Badge color={state.status === "current" ? "green" : state.status === "error" ? "yellow" : "blue"}>
+          <Badge
+            color={state.status === "current" ? "green" : state.status === "error" ? "red" : "blue"}
+            role="status"
+            aria-live="polite"
+          >
             {desktopUpdaterLabel(state)}
           </Badge>
         </Group>
@@ -141,11 +145,11 @@ function DesktopUpdaterCard({
         ) : null}
         {state.status === "update_available" && state.notes ? <Text size="sm">{state.notes}</Text> : null}
         {state.status === "downloading" ? (
-          <Text size="sm">已下载 {formatBytes(state.downloadedBytes)}{state.totalBytes
+          <Text size="sm" role="status" aria-live="polite">已下载 {formatBytes(state.downloadedBytes)}{state.totalBytes
             ? ` / ${formatBytes(state.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
             : ""}</Text>
         ) : null}
-        {state.status === "error" ? <Alert color="yellow" variant="light">{state.message}</Alert> : null}
+        {state.status === "error" ? <Alert color="red" variant="light" role="alert">{state.message}</Alert> : null}
         {state.status !== "unavailable" ? (
           <Group gap="sm">
             <Button size="xs" variant="light" disabled={checking || downloading} onClick={() => void onCheck()}>

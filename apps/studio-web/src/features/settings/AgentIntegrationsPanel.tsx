@@ -104,7 +104,7 @@ export function AgentIntegrationsPanel({
         mt="md"
         data-studio-section="agent-integrations-tabs"
       >
-        <Tabs.List grow>
+        <Tabs.List grow aria-label={t("environment")}>
           <Tabs.Tab value="command-line" data-studio-section="agent-integrations-command-tab">
             {t("commandLineTool")}
           </Tabs.Tab>
@@ -120,7 +120,7 @@ export function AgentIntegrationsPanel({
             <Group justify="space-between" align="flex-start" mb="sm">
               <Title order={3} size="h4">{t("commandLineTool")}</Title>
               <Badge color={commandLine.status === "current" ? "green" : commandLine.status === "update_available" ? "yellow" : "gray"}>
-                {commandLine.status}
+                {commandStatusLabel(commandLine.status)}
               </Badge>
             </Group>
             <Stack gap={4} mb="md">
@@ -129,8 +129,8 @@ export function AgentIntegrationsPanel({
               <Fact label={t("latestVersion")} value={commandLine.latest_version} />
               <Fact label={t("source")} value={commandLine.source} />
             </Stack>
-            {commandLine.diagnostics.map((diagnostic) => (
-              <Alert key={diagnostic} color="yellow" variant="light" mb="sm">{diagnostic}</Alert>
+            {commandLine.diagnostics.map((diagnostic, diagnosticIndex) => (
+              <Alert key={`${diagnostic}-${diagnosticIndex}`} color="yellow" variant="light" mb="sm">{diagnostic}</Alert>
             ))}
             <Button
               mt="sm"
@@ -270,6 +270,17 @@ function commandActionKey(
     return "commandLineUpdate";
   }
   return "commandLineReinstall";
+}
+
+function commandStatusLabel(
+  status: StudioIntegrationsReport["command_line_tool"]["status"],
+): string {
+  switch (status) {
+    case "current": return "已是最新";
+    case "update_available": return "可更新";
+    case "missing": return "未安装";
+    case "unknown": return "状态未知";
+  }
 }
 
 function providerCliSourceText(

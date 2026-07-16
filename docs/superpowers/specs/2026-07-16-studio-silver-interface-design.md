@@ -69,8 +69,9 @@ The canonical CSS tokens are organized by role rather than by individual page:
 - primary surface: translucent or solid near-white around `#FFFFFF`
 - secondary surface: cool grouped gray around `#E7EBEF`
 - strong ink: graphite around `#1D2937`
-- muted ink: cool gray around `#7B8794`
+- muted ink: accessible cool gray around `#5E6B77`
 - primary cyan: around `#3EB8C8`
+- primary ink: deep cyan around `#1F6570` for text and focus indicators
 - primary soft: pale cyan around `#DEF6F8`
 - success: around `#46B978`
 - warning: warm amber around `#E4A63D`

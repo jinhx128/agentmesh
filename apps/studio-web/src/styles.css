@@ -9,6 +9,7 @@
   --studio-ink: #1d2937;
   --studio-muted: #5e6b77;
   --studio-primary: #3eb8c8;
+  --studio-primary-ink: #1f6570;
   --studio-primary-strong: #2699a8;
   --studio-primary-soft: #def6f8;
   --studio-success: #46b978;
@@ -29,6 +30,7 @@
   --studio-workflow-node-min-height: 72px;
   --studio-flow-connector-width: 28px;
   --studio-flow-connector-color: #6f7f96;
+  --mantine-color-dimmed: var(--studio-muted);
   color: var(--studio-ink);
   background: var(--studio-canvas);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -192,21 +194,21 @@ button:not(:disabled),
   padding: 6px 13px;
   border: 1px solid transparent !important;
   border-radius: calc(var(--studio-radius-control) - 2px);
-  color: #5d6674;
+  color: var(--studio-muted);
   font-weight: 800;
   white-space: nowrap;
 }
 
 .mantine-Tabs-tab:not(:disabled):hover {
   background: #ffffff;
-  color: var(--studio-primary);
+  color: var(--studio-primary-ink);
   box-shadow: none;
 }
 
 .mantine-Tabs-tab[data-active] {
   border-color: rgb(62 184 200 / 30%) !important;
   background: #ffffff;
-  color: var(--studio-primary);
+  color: var(--studio-primary-ink);
   box-shadow: inset 0 -2px 0 var(--studio-primary);
 }
 
@@ -215,7 +217,7 @@ button:not(:disabled),
 }
 
 .mantine-Tabs-tab:focus-visible {
-  outline: 2px solid var(--mantine-color-agentmesh-4);
+  outline: 2px solid var(--studio-primary-ink);
   outline-offset: 2px;
 }
 
@@ -395,12 +397,12 @@ button:not(:disabled),
 
 .studio-data-switch .mantine-SegmentedControl-label {
   min-height: 28px;
-  color: #5d6674;
+  color: var(--studio-muted);
   font-weight: 850;
 }
 
 .studio-data-switch .mantine-SegmentedControl-control[data-active] .mantine-SegmentedControl-label {
-  color: var(--studio-primary);
+  color: var(--studio-primary-ink);
 }
 
 .studio-data-switch .mantine-SegmentedControl-indicator {
@@ -453,7 +455,7 @@ button:not(:disabled),
 
 .studio-nav-group-toggle .mantine-Badge-root {
   background: #eef1f5;
-  color: #7b8492;
+  color: var(--studio-muted);
 }
 
 .studio-main {
@@ -904,7 +906,7 @@ button:not(:disabled),
 
 .artifact-sidebar-list-heading .mantine-Badge-root {
   background: #eef1f5;
-  color: #7b8492;
+  color: var(--studio-muted);
 }
 
 .artifact-sidebar-list {
@@ -1349,7 +1351,7 @@ button:not(:disabled),
 
 .status.current,
 .status.running {
-  color: var(--studio-primary-strong);
+  color: var(--studio-primary-ink);
 }
 
 .status.pending,
