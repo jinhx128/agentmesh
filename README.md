@@ -64,7 +64,8 @@ AgentMesh 由三层组成。
 
 Studio 是本地 Web UI。它读取同一套 runtime API 和 packet 文件，可以查看：
 
-- Runs、Calls、events、artifacts、review evidence 和 release evidence。
+- Runs 与 Calls 会按活动时间混排在统一导航中，支持中文展示标题、日期分组、组内 5 条预览、搜索和自动刷新。
+- 运行/调用详情、events、artifacts、review evidence 和 release evidence。
 - Agents、workflows、presets、MCP、默认 agent、fallback 和高级设置。
 - Agent lifecycle 操作的命令、stdout、stderr、状态和错误。
 
