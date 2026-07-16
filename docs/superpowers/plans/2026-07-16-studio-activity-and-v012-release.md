@@ -225,15 +225,16 @@
 
 ### P5. 推送、发布与本机升级
 
-- [ ] P5 阶段完成门禁（P5.1、P5.2、P5.Z 完成后勾选）
+- [x] ~~P5 阶段完成门禁（P5.1、P5.2、P5.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:18 CST`。GitHub、npm、七项资产、全局 CLI、Desktop、原生 updater 与发布后证据全部完成，最终全渠道结论为 `ready`。
 
-- [ ] P5.1 推送 release commit 并发布 npm/GitHub
+- [x] ~~P5.1 推送 release commit 并发布 npm/GitHub~~
   - Slice：`P5.1`
   - 前置核对：`npm view` latest 仍低于 `0.1.12`；`gh release view v0.1.12` 不存在；root worktree main 无用户未提交变更；fetch 后 `main` 必须是 feature release commit 的祖先且可 fast-forward。main 超前、分叉、受保护或需要非 fast-forward 时状态 `needs_decision`，不得先推 tag/发布任一渠道。
   - 动作：推送 `codex/desktop-updates`；fast-forward main；在唯一 release commit 创建 annotated `v0.1.12` 并推送；发布 npm tgz；创建 GitHub non-draft/non-prerelease Release 并上传七项资产。
   - 远端验证：npm version/dist-tag=`0.1.12`；GitHub tag/Release/assets 数量与 digest 正确；远端 `latest.json` 内容正确。
   - 失败策略：npm/GitHub 半发布时保留相同 release commit/tag，只补齐失败渠道；不得重写 tag 或重新发布同版本 npm。
-  - 进度记录：状态 `partial`；feature/main 已推送 `70929b4`，annotated tag `v0.1.12` 与 GitHub Release 已发布，七项远端资产 size/SHA256 与本地一致。npm `0.1.12` 未发布，且已被修复 updater ACL 的 `0.1.13` 取代，不再补发该缺陷历史版本；`0.1.13` GitHub Release 已完成，当前只等待有效 `npm login` 后发布 `@jinhx128/agentmesh@0.1.13`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:18 CST`。`0.1.12` npm 未补发，已由 updater ACL 修复版 `0.1.13` 取代；clean release commit `03880576ed76550850122c52a4d182c6a51a5cb5`、annotated `v0.1.13`、GitHub latest Release 七项资产与 npm `@jinhx128/agentmesh@0.1.13` 均已发布。npm 发布使用与 GitHub 相同的已验证 tgz，registry `dist.shasum` 与本地 SHA1 一致，`latest=0.1.13`；GitHub size/SHA256、远端 `latest.json` 与本地一致。
 
 - [x] ~~P5.2 更新本机 CLI 与 Desktop~~
   - Slice：`P5.2`
@@ -243,17 +244,18 @@
   - 回滚：Desktop 启动失败时恢复 `/Applications/AgentMesh.app` 备份；CLI 失败时保留已发布 npm 并诊断 PATH，不撤销远端版本。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:08 CST`。CLI 从 GitHub `v0.1.13` tarball 原位更新，路径仍为 `/opt/homebrew/bin/agentmesh`，版本 `0.1.13`，`agentmesh update check --json` 确认 CLI/Desktop 均为 current。Desktop 从已验证 DMG 直接替换 `/Applications/AgentMesh.app`，bundle 与 Resources package version 均为 `0.1.13`；无参数启动后主进程、bundled sidecar、最近 registry 工作区和统一活动页正常，Settings / About 显示 runtime `0.1.13`，原生检查返回“已是最新”。0.1.12 回滚备份保留于 `/tmp/AgentMesh.app.backup-0.1.12-20260716220609`。
 
-- [ ] P5.Z 最终证据与项目收尾
+- [x] ~~P5.Z 最终证据与项目收尾~~
   - Slice：`P5.Z`
   - 日志：按 `my-changelog` 写 npm、GitHub、七项资产、真机 CLI/Desktop、updater current 和残余风险。
   - 计划：所有 P 阶段门禁标为 `[x]` 并加删除线，写完成时间、验证、审查、commit/tag/release 证据；当前下一步改为“无，任务完成”。
   - 提交/推送：提交发布后证据并推送 feature/main。
   - 最终结论：仅在 npm、GitHub、CLI、Desktop 和发布后证据都完成时给 `ready`。
-  - 进度记录：状态 `partial`；GitHub、七项资产、CLI、Desktop、原生 updater 与发布后证据均已完成，npm registry 仍为 `0.1.10`，官方发布脚本在写入前因 `npm whoami` 401 安全停止。当前唯一下一步是用户完成 `npm login`，随后发布已验证的 `@jinhx128/agentmesh@0.1.13` 并补一份远端版本证据；在此之前不宣称全渠道 `ready`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:18 CST`。npm 账号恢复后以 TTY 网页 2FA 完成发布；registry identity/version/dist-tag/digest、公共 npm 全新安装、本机全局 npm CLI、GitHub Release、Desktop bundle/runtime 和原生 updater current 均已验证。日志与唯一计划已补齐，最终结论为 `ready`，下一步为无。
 
 ### P6. 原生 updater 诊断与 0.1.13 热修
 
-- [ ] P6 阶段完成门禁（P6.1、P6.2、P6.Z 完成后勾选）
+- [x] ~~P6 阶段完成门禁（P6.1、P6.2、P6.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:18 CST`。诊断、最小 capability 修复、0.1.13 全量门禁、签名资产、GitHub/npm 发布和真机回归均完成。
 - 阶段目标：安全展示 Tauri updater 原始错误，取得真机根因并只修复被证据确认的问题；不重复审查已经完成的 0.1.12 功能。
 
 - [x] ~~P6.1 安全透传 updater 真实错误~~
@@ -278,14 +280,14 @@
   - 提交：按明确根因使用中文 commit；无额外根因修复时不创建空提交。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 21:36 CST`。P6.1 开发 App 真机取得原始错误：窗口导航到 `http://127.0.0.1:<port>` 后，`updater.check` 只允许 `local` context，ACL 拒绝 main WebView。RED capability contract 确认 `remote.urls` 为 `undefined`；最小修复只增加 `http://127.0.0.1:*`，不允许 localhost、其他 IP 或公共 remote origin。重建开发 App 后原生检查返回“已是最新”；Desktop package `ok: true` 且 0 issues/warnings、distribution + Studio UI 32/32、Cargo check、Rust test 1/1、`git diff --check` 通过。debug bundle 因未注入发布私钥在生成 updater archive 后按预期退出 1，不影响已生成 App 真机验证，也未读取或输出私钥。唯一下一步为 `P6.Z`。
 
-- [ ] P6.Z 0.1.13 回归、发布与收尾
+- [x] ~~P6.Z 0.1.13 回归、发布与收尾~~
   - Slice：`P6.Z`
   - 版本：任何用户可见代码变化都发布 `0.1.13`，不得移动 `v0.1.12`。
   - 验证：同步版本与 release notes/changelog；全量 `npm test`、Desktop package、Cargo check/test、audit 0；重建七项资产并验证 DMG/checksum/signature/latest.json/tgz/Skill metadata；真机 CLI/Desktop 与原生 updater current。
   - 发布：推送 feature/main，创建不可变 `v0.1.13` 和 GitHub Release；npm 仍需要有效登录，认证失败时明确保留 partial，不声称全渠道完成。
   - 审查方式：只做一次最终发布门禁验证，不重复多模型 review。
   - 当前下一步：完成后回到 P5.Z，补齐 npm 与最终证据。
-  - 进度记录：状态 `partial`；完成时间 `2026-07-16 22:08 CST`。clean release commit `03880576ed76550850122c52a4d182c6a51a5cb5` 已推送 feature/main，annotated `v0.1.13` 与 GitHub latest Release 已发布。fresh 门禁为 `npm test` 560/560、Desktop package `ok: true` 且 0 issues/warnings、Cargo check、Rust test 1/1、audit 0、`git diff --check` 通过；七项资产从该 commit 完整重建，DMG VALID、六项 checksum OK、updater archive 用内嵌公钥验签成功，metadata/signature/不可变 URL、npm tgz 与 Skill version 均为 `0.1.13`。GitHub 七项远端 size/digest 与本地一致，远端 `latest.json` 内容一致；真机 CLI/Desktop/runtime 均为 `0.1.13`，原生 updater 返回“已是最新”。未启动重复 reviewer。唯一未完成渠道为 npm：`npm whoami` 401，官方发布脚本在 publish 前停止，registry latest 仍为 `0.1.10`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 22:18 CST`。clean release commit `03880576ed76550850122c52a4d182c6a51a5cb5` 已推送 feature/main，annotated `v0.1.13`、GitHub latest Release 与 npm `@jinhx128/agentmesh@0.1.13` 已发布。fresh 门禁为 `npm test` 560/560、Desktop package `ok: true` 且 0 issues/warnings、Cargo check、Rust test 1/1、audit 0、`git diff --check` 通过；七项资产从该 commit 完整重建，DMG VALID、六项 checksum OK、updater archive 用内嵌公钥验签成功，metadata/signature/不可变 URL、npm tgz 与 Skill version 均为 `0.1.13`。GitHub 七项远端 size/digest 与本地一致，远端 `latest.json` 内容一致；npm `latest=0.1.13`、registry tarball digest 与本地 tgz 一致、公共 npm clean install 返回 `0.1.13`；真机 CLI/Desktop/runtime 均为 `0.1.13`，原生 updater 返回“已是最新”。未启动重复 reviewer，残余阻塞为无。
 
 ## 4. 整体验证矩阵
 
@@ -312,4 +314,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：等待有效 `npm login`，只补发已验证的 `@jinhx128/agentmesh@0.1.13` 并完成 P5.Z/P6.Z；不得移动 `v0.1.13` 或替换现有 GitHub 资产。
+- 当前下一步：无，任务完成。`v0.1.13` 与现有 GitHub/npm 资产保持不可变。
