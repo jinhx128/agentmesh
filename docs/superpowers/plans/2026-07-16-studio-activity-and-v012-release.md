@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Do not create a second active plan.
 
-**Goal:** 合并并完成 Studio 品牌栏、活动分组、中文展示标题、统一运行/调用导航以及 AgentMesh `0.1.12` 发布和本机升级。
+**Goal:** 合并并完成 Studio 品牌栏、活动分组、中文展示标题、统一运行/调用导航、AgentMesh `0.1.12` 发布，以及原生 updater 的 `0.1.13` 真机热修。
 
-**Architecture:** Runtime 新增纯函数标题解析层，将展示标题持久化到运行状态和调用记录；CLI、SDK、App Server 与 AgentMesh skill 只负责传递或读取该字段。Studio 新建统一 `ActivityNavigator`，在不合并右侧详情状态机的前提下投影、排序和渲染运行/调用；最终从干净 release commit 重建全部签名产物并发布。
+**Architecture:** Runtime 新增纯函数标题解析层，将展示标题持久化到运行状态和调用记录；CLI、SDK、App Server 与 AgentMesh skill 只负责传递或读取该字段。Studio 使用统一 `ActivityNavigator` 投影运行/调用，并通过 updater 专用安全错误归一化保留 Tauri IPC 根因；每个公开版本都从干净 release commit 重建全部签名产物。
 
 **Tech Stack:** TypeScript 5.9、Node.js `node:test`、React 19、Mantine 9、Vite 8、Tauri 2、Rust、npm、GitHub CLI、macOS codesign/updater。
 
@@ -20,9 +20,9 @@
 - 统一活动列表按时间降序、按日期分组；日期组整体折叠与组内默认 5 条预览是两套独立状态。
 - 活动项第一行只显示标题；第二行左侧只显示 `[运行]` / `[调用]` 标签，右侧显示时间。
 - 旧记录没有标题时只在读取/显示时回退技术 ID，不回写历史证据。
-- 当前 `dist-release/` 的 `0.1.12` 七项资产基于旧提交，必须删除并完整重建，禁止复用。
+- `v0.1.12` tag、GitHub Release 与七项资产已经公开且不可重写；任何后续代码变化使用 `0.1.13`。
 - 保留历史 `v0.1.11`；不得补发 npm `0.1.11`，不得覆盖 `v0.1.11` tag 或 Release。
-- npm 只发布 `@jinhx128/agentmesh@0.1.12`；GitHub 只新建 `v0.1.12`。
+- npm `0.1.12` 因本机登录失效仍待补发；`0.1.13` 只从新的 release commit 发布，两个版本都不得覆盖或重写。
 - 签名私钥和密码仅从仓库外文件、环境或 Keychain 加载，不打印、不写入计划/changelog/日志。
 
 ---
@@ -182,39 +182,46 @@
 
 ### P3. 总回归、发布门禁与 clean release commit
 
-- [ ] P3 阶段完成门禁（P3.1 和 P3.Z 完成后勾选）
+- [x] ~~P3 阶段完成门禁（P3.1 和 P3.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 20:19 CST`。release commit 为 `70929b4233e3b53b00ef3aef72672ebeabf56e67`；全量 559/559、Desktop dev package、Cargo check/test、audit 0、双 viewport 和最终 Release Check `v012-final-release-check-20260716` 均通过，release verdict 为 `ready`。
 
-- [ ] P3.1 聚合代码、文档和发布前证据
+- [x] ~~P3.1 聚合代码、文档和发布前证据~~
   - Slice：`P3.1`
   - 动作：检查 README、release notes、Skill、计划、changelog；确认版本源仍全部是 `0.1.12`；搜索 active source 不含 Copilot 产品入口；确认工作区只剩有意 diff。
   - 验证：`npm test`、`npm run studio-desktop:package:dev`、Cargo check/test、audit 0、`git diff --check`。
   - 审查：三 reviewer 发布前全量审查；release verdict 必须 `ready`，无 needs decision。
   - 提交：按逻辑边界提交剩余文档/审查证据，中文 commit message。
+  - 进度记录：状态 `completed`；代码、README、release notes、Skill、changelog 与版本源已聚合；Copilot 产品入口已删除，验证和 Release Check 证据见 P3 阶段记录。
 
-- [ ] P3.Z clean commit 校准
+- [x] ~~P3.Z clean commit 校准~~
   - Slice：`P3.Z`
   - 验证：`git status --short` 为空；记录 release commit SHA；`git log` 中标题和 UI 提交均在该 SHA 祖先链；当前下一步为 `P4.1`。此时 `dist-release/` 仍全部视为失效，直至 P4.1 删除重建。
   - 发布门禁：此时只给 `code_ready`，未生成新资产前不得宣称 release ready。
+  - 进度记录：状态 `completed`；clean release commit `70929b4233e3b53b00ef3aef72672ebeabf56e67` 包含标题、活动导航与操作后静默重载修复，随后进入 P4 全量资产重建。
 
 ### P4. 重建与验证 0.1.12 签名产物
 
-- [ ] P4 阶段完成门禁（P4.1、P4.2、P4.Z 完成后勾选）
+- [x] ~~P4 阶段完成门禁（P4.1、P4.2、P4.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；七项 0.1.12 资产已从 release commit 完整重建。DMG `hdiutil verify`、六项内容 checksum、Tauri 内嵌公钥验签、metadata/tgz/Skill version 均通过；最终 Release Check 为 `ready`。
 
-- [ ] P4.1 删除失效资产并完整重建
+- [x] ~~P4.1 删除失效资产并完整重建~~
   - Slice：`P4.1`
   - 动作：`rm -rf dist-release` 后从仓库外 updater key 和 Keychain 安全注入密码，执行 `npm run release:assets`；不得输出 secret。
   - 验证：命令 exit 0；生成 npm tgz、DMG、updater archive、signature、`latest.json`、Skill markdown、`SHA256SUMS` 恰好七项。
   - 审查方式：自审 + 确定性脚本；签名失败不得降级为无签名发布。
+  - 进度记录：状态 `completed`；生成七项资产，archive 36,210,534 bytes、DMG 35,910,385 bytes、npm tgz 508,038 bytes。
 
-- [ ] P4.2 验证资产与 release metadata
+- [x] ~~P4.2 验证资产与 release metadata~~
   - Slice：`P4.2`
   - 验证：`hdiutil verify` DMG；`shasum -a 256 -c SHA256SUMS`；Tauri archive 公钥验签；`latest.json` version=`0.1.12`、signature 一致、URL 指向不可变 `v0.1.12`；npm tgz package version=`0.1.12`；Skill metadata=`0.1.12`。
   - 证据：记录七项名称、字节数、SHA256 和验证结论，不记录 secret。
+  - 进度记录：状态 `completed`；archive SHA256 `81909baa8e39de7bfdc8d339cceda61ea91012a8f99786e8476cd3eb84bab416`、DMG `ed3413d15dd3ff7a5f5df6a46ee81fcd5c42a68d9afce873d3bd5e8a09e23a4e`、npm tgz `2fa41edc3ab7828f54236e7d180db3cb77099c678c9672201e5881d695d916d7`；全部确定性验证通过。
 
-- [ ] P4.Z 资产发布门禁
+- [x] ~~P4.Z 资产发布门禁~~
   - Slice：`P4.Z`
   - 审查：Release Check 聚合 final diff、测试、review、签名和资产证据；结论必须 `ready`。
   - 失败策略：任何 checksum/signature/version/URL 不一致都删除全部 `dist-release` 并从 P4.1 重建，不局部替换。
+  - 进度记录：状态 `completed`；`v012-final-release-check-20260716` 为 `decide_completed`，`release_verdict=ready`。
 
 ### P5. 推送、发布与本机升级
 
@@ -226,6 +233,7 @@
   - 动作：推送 `codex/desktop-updates`；fast-forward main；在唯一 release commit 创建 annotated `v0.1.12` 并推送；发布 npm tgz；创建 GitHub non-draft/non-prerelease Release 并上传七项资产。
   - 远端验证：npm version/dist-tag=`0.1.12`；GitHub tag/Release/assets 数量与 digest 正确；远端 `latest.json` 内容正确。
   - 失败策略：npm/GitHub 半发布时保留相同 release commit/tag，只补齐失败渠道；不得重写 tag 或重新发布同版本 npm。
+  - 进度记录：状态 `partial`；feature/main 已推送 `70929b4`，annotated tag `v0.1.12` 与 GitHub latest Release 已发布，七项远端资产 size/SHA256 与本地一致。npm 仍为 `0.1.10`；`npm whoami` 返回 401，`npm publish` 返回权限错误，明确阻塞为本机 npm 登录失效，等待用户执行 `npm login` 后只补发既有 0.1.12 tgz。
 
 - [ ] P5.2 更新本机 CLI 与 Desktop
   - Slice：`P5.2`
@@ -233,6 +241,7 @@
   - Desktop：退出 AgentMesh；挂载已验证 DMG；替换 `/Applications/AgentMesh.app`；无参数启动。
   - 真机验证：App/sidecar version `0.1.12`；最近 registry 工作区加载；统一活动 UI 可见；Settings/About updater current；退出后进程和挂载清理。
   - 回滚：Desktop 启动失败时恢复 `/Applications/AgentMesh.app` 备份；CLI 失败时保留已发布 npm 并诊断 PATH，不撤销远端版本。
+  - 进度记录：状态 `partial`；CLI 已从 GitHub tarball 安装到 `/opt/homebrew/bin/agentmesh`，版本 `0.1.12` 且 update check 为 current。Desktop bundle/resources 为 `0.1.12`，无参数启动后活动列表、详情、CLI/Desktop 版本检查均正常；原生应用更新检查的真实错误被通用 API normalizer 掩盖，迁移到 P6 处理。0.1.11 备份暂保留于 `/tmp/AgentMesh.app.backup-0.1.11-20260716`。
 
 - [ ] P5.Z 最终证据与项目收尾
   - Slice：`P5.Z`
@@ -240,6 +249,39 @@
   - 计划：所有 P 阶段门禁标为 `[x]` 并加删除线，写完成时间、验证、审查、commit/tag/release 证据；当前下一步改为“无，任务完成”。
   - 提交/推送：提交发布后证据并推送 feature/main。
   - 最终结论：仅在 npm、GitHub、CLI、Desktop 和发布后证据都完成时给 `ready`。
+
+### P6. 原生 updater 诊断与 0.1.13 热修
+
+- [ ] P6 阶段完成门禁（P6.1、P6.2、P6.Z 完成后勾选）
+- 阶段目标：安全展示 Tauri updater 原始错误，取得真机根因并只修复被证据确认的问题；不重复审查已经完成的 0.1.12 功能。
+
+- [ ] P6.1 安全透传 updater 真实错误
+  - Slice：`P6.1`
+  - 文件：修改 `apps/studio-web/src/api/desktop-updater.ts`、`apps/studio-web/src/app/App.tsx`、`tests-node/studio-ui.test.ts`。
+  - Interfaces：新增 `normalizeDesktopUpdaterError(error: unknown): string`；只供原生 updater 检查、下载、重启三个 catch 使用。
+  - [ ] Step 1：在 `studio-ui.test.ts` 导入 `normalizeDesktopUpdaterError`，写 RED 断言 `Error` 和 Tauri IPC 字符串保留消息，空值回退 `应用更新检查失败`，URL query/fragment 与 `/Users/<name>` 脱敏，输出不超过 240 字符。
+  - [ ] Step 2：运行 `npm run build:node && node --test --test-name-pattern "desktop updater" dist-node/tests-node/studio-ui.test.js`；预期因 export 缺失或返回通用网络错误而失败。
+  - [ ] Step 3：在 `desktop-updater.ts` 实现纯函数；消息候选仅来自 `Error.message` 或非空 string，先 trim，再脱敏 URL query/fragment 和 Home 用户名，最后截断到 240 字符；无候选时返回固定中文 fallback。
+  - [ ] Step 4：`App.tsx` 导入该函数，并把 `checkDesktopUpdater()`、`installDesktopUpdater()` 的 updater catch 改为 `message: normalizeDesktopUpdaterError(error)`；当前实现下载与重启共用一个 catch，因此共两处，不改其他 App Server API catch。
+  - [ ] Step 5：重跑 Step 2 和完整 `studio-ui.test.js`；预期 0 failed，再运行 `git diff --check`。
+  - 审查方式：主控自审。依据：用户明确要求不频繁 review；改动局部、纯函数可确定性测试、不改变 updater 协议或签名边界。
+  - 提交：`修复：保留原生更新的安全错误信息`。
+
+- [ ] P6.2 真机取得根因并最小修复
+  - Slice：`P6.2`
+  - 依赖：P6.1 GREEN。
+  - 动作：构建 Desktop 开发包并在相同 endpoint 点击检查；记录安全原始错误。基于唯一错误提出单一假设，用最小探针验证；确认根因后先增加失败测试，再修改对应 Rust/config/frontend 文件。若开发包返回 current，则不猜改网络配置，记录 0.1.12 失败不可稳定复现并保留 P6.1 可观测性修复。
+  - 验证：focused tests、`npm run studio-desktop:package:dev`、Cargo check/test、真机 updater check、`git diff --check`。
+  - 审查方式：主控自审；不启动 reviewer。若根因涉及签名、公钥、权限或 release metadata，则 P6.Z 发布门禁必须阻断到真实验签与资产验证完成。
+  - 提交：按明确根因使用中文 commit；无额外根因修复时不创建空提交。
+
+- [ ] P6.Z 0.1.13 回归、发布与收尾
+  - Slice：`P6.Z`
+  - 版本：任何用户可见代码变化都发布 `0.1.13`，不得移动 `v0.1.12`。
+  - 验证：同步版本与 release notes/changelog；全量 `npm test`、Desktop package、Cargo check/test、audit 0；重建七项资产并验证 DMG/checksum/signature/latest.json/tgz/Skill metadata；真机 CLI/Desktop 与原生 updater current。
+  - 发布：推送 feature/main，创建不可变 `v0.1.13` 和 GitHub Release；npm 仍需要有效登录，认证失败时明确保留 partial，不声称全渠道完成。
+  - 审查方式：只做一次最终发布门禁验证，不重复多模型 review。
+  - 当前下一步：完成后回到 P5.Z，补齐 npm 与最终证据。
 
 ## 4. 整体验证矩阵
 
@@ -266,4 +308,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P3.1`，聚合发布前代码、文档、版本源与 clean gate 证据。
+- 当前下一步：`P6.1 Step 1`，先用失败测试锁定 updater 专用安全错误透传；P5 npm 发布继续等待有效 `npm login`。
