@@ -111,6 +111,7 @@ import {
   checkDesktopAppUpdate,
   installDesktopAppUpdate,
   isDesktopUpdaterAvailable,
+  normalizeDesktopUpdaterError,
   relaunchDesktopApp,
   type DesktopAppUpdaterState,
 } from "../api/desktop-updater.js";
@@ -302,7 +303,7 @@ export function App(): ReactElement {
     try {
       setDesktopUpdaterState(await checkDesktopAppUpdate());
     } catch (error) {
-      setDesktopUpdaterState({ status: "error", message: normalizeStudioApiError(error).message });
+      setDesktopUpdaterState({ status: "error", message: normalizeDesktopUpdaterError(error) });
     }
   }
 
@@ -319,7 +320,7 @@ export function App(): ReactElement {
       setDesktopUpdaterState({ status: "restarting" });
       await relaunchDesktopApp();
     } catch (error) {
-      setDesktopUpdaterState({ status: "error", message: normalizeStudioApiError(error).message });
+      setDesktopUpdaterState({ status: "error", message: normalizeDesktopUpdaterError(error) });
     }
   }
 

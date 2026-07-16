@@ -255,17 +255,18 @@
 - [ ] P6 阶段完成门禁（P6.1、P6.2、P6.Z 完成后勾选）
 - 阶段目标：安全展示 Tauri updater 原始错误，取得真机根因并只修复被证据确认的问题；不重复审查已经完成的 0.1.12 功能。
 
-- [ ] P6.1 安全透传 updater 真实错误
+- [x] ~~P6.1 安全透传 updater 真实错误~~
   - Slice：`P6.1`
   - 文件：修改 `apps/studio-web/src/api/desktop-updater.ts`、`apps/studio-web/src/app/App.tsx`、`tests-node/studio-ui.test.ts`。
   - Interfaces：新增 `normalizeDesktopUpdaterError(error: unknown): string`；只供原生 updater 检查、下载、重启三个 catch 使用。
-  - [ ] Step 1：在 `studio-ui.test.ts` 导入 `normalizeDesktopUpdaterError`，写 RED 断言 `Error` 和 Tauri IPC 字符串保留消息，空值回退 `应用更新检查失败`，URL query/fragment 与 `/Users/<name>` 脱敏，输出不超过 240 字符。
-  - [ ] Step 2：运行 `npm run build:node && node --test --test-name-pattern "desktop updater" dist-node/tests-node/studio-ui.test.js`；预期因 export 缺失或返回通用网络错误而失败。
-  - [ ] Step 3：在 `desktop-updater.ts` 实现纯函数；消息候选仅来自 `Error.message` 或非空 string，先 trim，再脱敏 URL query/fragment 和 Home 用户名，最后截断到 240 字符；无候选时返回固定中文 fallback。
-  - [ ] Step 4：`App.tsx` 导入该函数，并把 `checkDesktopUpdater()`、`installDesktopUpdater()` 的 updater catch 改为 `message: normalizeDesktopUpdaterError(error)`；当前实现下载与重启共用一个 catch，因此共两处，不改其他 App Server API catch。
-  - [ ] Step 5：重跑 Step 2 和完整 `studio-ui.test.js`；预期 0 failed，再运行 `git diff --check`。
+  - [x] Step 1：在 `studio-ui.test.ts` 导入 `normalizeDesktopUpdaterError`，写 RED 断言 `Error` 和 Tauri IPC 字符串保留消息，空值回退 `应用更新检查失败`，URL query/fragment 与 `/Users/<name>` 脱敏，输出不超过 240 字符。
+  - [x] Step 2：运行 `npm run build:node && node --test --test-name-pattern "desktop updater" dist-node/tests-node/studio-ui.test.js`；预期因 export 缺失或返回通用网络错误而失败。
+  - [x] Step 3：在 `desktop-updater.ts` 实现纯函数；消息候选仅来自 `Error.message` 或非空 string，先 trim，再脱敏 URL query/fragment 和 Home 用户名，最后截断到 240 字符；无候选时返回固定中文 fallback。
+  - [x] Step 4：`App.tsx` 导入该函数，并把 `checkDesktopUpdater()`、`installDesktopUpdater()` 的 updater catch 改为 `message: normalizeDesktopUpdaterError(error)`；当前实现下载与重启共用一个 catch，因此共两处，不改其他 App Server API catch。
+  - [x] Step 5：重跑 Step 2 和完整 `studio-ui.test.js`；预期 0 failed，再运行 `git diff --check`。
   - 审查方式：主控自审。依据：用户明确要求不频繁 review；改动局部、纯函数可确定性测试、不改变 updater 协议或签名边界。
   - 提交：`修复：保留原生更新的安全错误信息`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 21:22 CST`。RED 为 TypeScript `TS2305`（缺少 `normalizeDesktopUpdaterError` export）；GREEN 聚焦 1/1、完整 Studio UI 25/25、`git diff --check` 通过。Error/Tauri string、fallback、URL query/fragment、Home 用户名和 240 字符 contract 已锁定；仅两个原生 updater catch 改用专用 normalizer，主控自审确认未改变通用 App Server 错误策略。日志见 `changelog/2026-07-16.md`，唯一下一步为 `P6.2`。
 
 - [ ] P6.2 真机取得根因并最小修复
   - Slice：`P6.2`
@@ -308,4 +309,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P6.1 Step 1`，先用失败测试锁定 updater 专用安全错误透传；P5 npm 发布继续等待有效 `npm login`。
+- 当前下一步：`P6.2`，构建 Desktop 开发包并用真机安全原始错误定位唯一根因；P5 npm 发布继续等待有效 `npm login`。

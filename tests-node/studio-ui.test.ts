@@ -13,6 +13,7 @@ import {
   checkDesktopAppUpdate,
   installDesktopAppUpdate,
   isDesktopUpdaterAvailable,
+  normalizeDesktopUpdaterError,
   relaunchDesktopApp,
 } from "../apps/studio-web/src/api/desktop-updater.js";
 import {
@@ -2179,6 +2180,26 @@ test("browser Studio keeps native updater APIs unavailable", async () => {
     relaunchDesktopApp(),
     /Desktop app updater is only available from AgentMesh\.app/,
   );
+});
+
+test("desktop updater errors preserve safe native diagnostics", () => {
+  assert.equal(
+    normalizeDesktopUpdaterError(new Error("Could not fetch a valid release JSON")),
+    "Could not fetch a valid release JSON",
+  );
+  assert.equal(
+    normalizeDesktopUpdaterError("the platform `darwin-aarch64` was not found"),
+    "the platform `darwin-aarch64` was not found",
+  );
+  assert.equal(normalizeDesktopUpdaterError("  "), "应用更新检查失败");
+  assert.equal(normalizeDesktopUpdaterError(undefined), "应用更新检查失败");
+  assert.equal(
+    normalizeDesktopUpdaterError(
+      "request https://release-assets.githubusercontent.com/archive?token=secret#fragment failed for /Users/zz/Downloads",
+    ),
+    "request https://release-assets.githubusercontent.com/archive?<redacted> failed for ~/Downloads",
+  );
+  assert.equal(normalizeDesktopUpdaterError("x".repeat(300)).length, 240);
 });
 
 test("Studio API clients keep App Server endpoint contracts", async () => {

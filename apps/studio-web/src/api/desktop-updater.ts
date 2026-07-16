@@ -12,6 +12,26 @@ export type DesktopAppUpdaterState =
 
 let pendingUpdate: Update | undefined;
 
+const MAX_DESKTOP_UPDATER_ERROR_LENGTH = 240;
+
+export function normalizeDesktopUpdaterError(error: unknown): string {
+  const message = error instanceof Error
+    ? error.message.trim()
+    : typeof error === "string"
+      ? error.trim()
+      : "";
+  if (!message) {
+    return "应用更新检查失败";
+  }
+  return message
+    .replace(/https?:\/\/\S+/g, (value) => {
+      const sensitiveIndex = value.search(/[?#]/);
+      return sensitiveIndex === -1 ? value : `${value.slice(0, sensitiveIndex)}?<redacted>`;
+    })
+    .replace(/\/Users\/[^/\s]+/g, "~")
+    .slice(0, MAX_DESKTOP_UPDATER_ERROR_LENGTH);
+}
+
 export function isDesktopUpdaterAvailable(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
