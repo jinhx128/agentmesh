@@ -92,7 +92,8 @@
 
 ### P1. 展示标题 Runtime、CLI、SDK 与 Skill
 
-- [ ] P1 阶段完成门禁（P1.1、P1.2、P1.Z 完成后勾选）
+- [x] ~~P1 阶段完成门禁（P1.1、P1.2、P1.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:00 CST`。P1.1 `1061a83` 与 P1.2 `560eeaf` 已进入祖先链；P1.Z 全仓 `npm test` 558/558、audit 0、临时 run/call 技术 ID 与默认标题真值抽查通过。阶段门禁 run `studio-display-title-p1-gate-20260716` 与 Claude retry `studio-display-title-p1-claude-retry-20260716` 均为 `decide_completed`；Cursor、GLM 5.2、Claude 4.8 有效审查均无 Must，Cursor 两个 HTTP legacy Should 已关闭。日志见 `changelog/2026-07-16.md`，唯一下一步为 `P2.1 Step 1`。
 
 - [x] ~~P1.1 建立确定性标题解析并写入新记录~~
   - Slice：`P1.1`
@@ -126,12 +127,13 @@
   - 提交：`功能：支持 Agent 自动生成中文活动标题`。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 18:34 CST`。`--title` 已贯通 call、bare preset run、workflow run、SDK/App Server/Studio API types 与 canonical Skill；human `flow status` 同步显示标题，旧 run 无字段不回填。TDD RED 命中缺失 SDK/Studio types、human status 与 workflow README 示例；fresh focused verification 为 197/197，Studio frontend production build 与 `git diff --check` 通过。外审 run `studio-display-title-cli-sdk-review-20260716` 为 `decide_completed`，Cursor Composer 2.5、OpenCode GLM 5.2、Claude Opus 4.8 均 exit 0、0 Must；接受默认 fallback、旧 SDK、help、README 与 human status finding，UI 消费明确迁移到 P2，无 needs decision。唯一下一步为 `P1.Z`。
 
-- [ ] P1.Z 标题阶段收尾校准
+- [x] ~~P1.Z 标题阶段收尾校准~~
   - Slice：`P1.Z`
   - 验证：`npm test`、`npm audit --json`、`git diff --check`；抽查一个未传标题的临时运行和调用记录，确认技术 ID/目录未改变且标题非空。
   - 审查：通过 AgentMesh 使用 Cursor、Claude 4.8、GLM 5.2 审查 P1 diff；Must/Should 事实核对后修复并重跑对应门禁。
   - 外审失败策略：重试一次或换同类 reviewer；少于两份有效审查或存在未解决 Must/Should 时状态 `needs_decision`，不进入 P2。
   - 日志：按 `my-changelog` 记录标题模型、兼容性和验证。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:00 CST`。`npm test` 558/558、`npm audit --json` 0 vulnerabilities、`git diff --check` 通过；`/tmp` 未传标题 run/call 抽查确认技术 ID/目录不变并生成 `工作区名-摘要`。Cursor 与 GLM 初审有效，Claude 首轮因权限未取得 diff 不计入结论；附加累计 diff 和 verification 后 Claude 4.8 重试为 0 Must / 0 Should。Cursor 提出的旧 run/call HTTP 不回填标题 contract 已补测并以 38/38 focused tests 回归；changelog 已同步。
 
 ### P2. 统一活动导航并吸收当前 UI 改动
 
@@ -260,4 +262,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P1.Z`，执行标题阶段全量测试、audit、真实临时 run/call 抽查、三模型阶段门禁与 changelog。
+- 当前下一步：`P2.1 Step 1`，为统一活动投影、混排、日期分组、5 条预览与局部错误写失败测试。

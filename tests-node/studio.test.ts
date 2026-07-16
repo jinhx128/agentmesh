@@ -916,6 +916,7 @@ test("Studio server aggregates runs from registered workspaces", async () => {
       assert.equal(index.runs[0].workspace.path, realpathSync(remoteWorkspace));
       assert.equal(index.runs[0].workspace.current, false);
       assert.equal(index.runs[1].workspace.current, true);
+      assert.equal(index.runs.some((run) => Object.hasOwn(run, "title")), false);
       assert.equal(index.workspaces.length, 2);
       assert.deepEqual(index.diagnostics, []);
 
@@ -1006,6 +1007,7 @@ test("Studio server exposes read-only direct call index and details", async () =
     promptContent: "still running",
   });
   writeCallRecordPatch(stale.callDir, {
+    title: undefined,
     created_at: "2026-05-17T01:00:00.000Z",
     started_at: "2026-05-17T01:00:00.000Z",
     heartbeat_at: "1970-01-01T00:00:00.000Z",
@@ -1099,6 +1101,7 @@ test("Studio server exposes read-only direct call index and details", async () =
     stale.record.id,
   ]);
   assert.equal(index.calls.find((call) => call.id === stale.record.id)?.status, "stale");
+  assert.equal(Object.hasOwn(index.calls.find((call) => call.id === stale.record.id) ?? {}, "title"), false);
   const newerSummary = index.calls.find((call) => call.id === newer.record.id);
   assert.equal(newerSummary?.read_only, true);
   assert.equal(newerSummary?.unsupported_schema, true);
