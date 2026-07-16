@@ -5,6 +5,9 @@ import { defineConfig } from "vite";
 
 const studioRoot = fileURLToPath(new URL(".", import.meta.url));
 const frontendRoot = fileURLToPath(new URL("./src/", import.meta.url));
+const canonicalIconDir = fileURLToPath(
+  new URL("../studio-desktop/src-tauri/icons/", import.meta.url),
+);
 const builtAssetDir = path.resolve(studioRoot, "..", "..", "dist-node", "apps", "studio-web", "frontend");
 
 export default defineConfig({
@@ -34,7 +37,7 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [studioRoot],
+      allow: [studioRoot, canonicalIconDir],
     },
   },
 });

@@ -490,25 +490,34 @@ test("Studio silver shell renders the approved brand hierarchy", () => {
     path.resolve("apps/studio-web/src/styles.css"),
     "utf-8",
   );
+  const viteConfigSource = readFileSync(
+    path.resolve("apps/studio-web/vite.config.ts"),
+    "utf-8",
+  );
 
   assert.match(brandSource, /export function StudioBrandMark\(\): ReactElement/);
+  assert.match(brandSource, /new URL\(/);
+  assert.match(brandSource, /agentmesh\.svg\?no-inline/);
+  assert.match(brandSource, /import\.meta\.url/);
+  assert.doesNotMatch(brandSource, /\?url/);
+  assert.match(brandSource, /<img/);
   assert.match(brandSource, /className="studio-brand-mark"/);
-  assert.match(brandSource, /className="studio-brand-core"/);
-  assert.match(brandSource, /className="studio-brand-track studio-brand-track-a"/);
-  assert.match(brandSource, /className="studio-brand-track studio-brand-track-b"/);
+  assert.match(brandSource, /src=\{agentMeshIconUrl\}/);
+  assert.match(brandSource, /alt=""/);
   assert.match(brandSource, /aria-hidden="true"/);
+  assert.match(brandSource, /draggable=\{false\}/);
+  assert.doesNotMatch(brandSource, /studio-brand-(?:core|track)/);
   assert.match(appSource, /import \{ StudioBrandMark \}/);
   assert.match(appSource, /className="studio-brand-lockup"/);
   assert.match(appSource, /<StudioBrandMark\s*\/>/);
   for (const selector of [
     ".studio-brand-lockup",
     ".studio-brand-mark",
-    ".studio-brand-core",
-    ".studio-brand-track-a",
-    ".studio-brand-track-b",
   ]) {
     assert.ok(frontendCss.includes(selector), `missing silver shell selector: ${selector}`);
   }
+  assert.doesNotMatch(frontendCss, /\.studio-brand-(?:core|track)/);
+  assert.match(viteConfigSource, /studio-desktop\/src-tauri\/icons/);
   assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
 });
 
