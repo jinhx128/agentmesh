@@ -1,5 +1,7 @@
 # Studio 精简品牌栏实施计划
 
+> 状态（2026-07-16）：已合并。已实现部分与剩余视觉/日志/提交步骤统一迁入 `2026-07-16-studio-activity-and-v012-release.md`；本文件保留为历史设计证据，不再维护独立“当前下一步”。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将 Studio 左上角改为左侧 `AgentMesh` / `编排你的Agent` 两行文字、右侧设置/手册双图标按钮的单行紧凑品牌栏。
@@ -33,7 +35,7 @@
 - Consumes: `workspaceView: "runs" | "calls" | "settings" | "definitions"`、`setWorkspaceView(...)`、`t("settings")`、`t("definitions")`、`t("viewNavigation")`。
 - Produces: `.studio-brand-header` 单行布局、`.studio-brand-copy` 两行文字、`.studio-brand-actions` 双 `ActionIcon` 导航。
 
-- [ ] **Step 1: 写 RED shell contract**
+- [x] **Step 1: 写 RED shell contract**
 
 把 `tests-node/studio-ui.test.ts` 的品牌 contract 改为直接读取 `App.tsx`、CSS 与 Vite config，并断言：
 
@@ -78,7 +80,7 @@ assert.doesNotMatch(app, />设置<\/button>/);
 assert.doesNotMatch(app, />手册<\/button>/);
 ```
 
-- [ ] **Step 2: 运行 RED 并确认失败原因**
+- [x] **Step 2: 运行 RED 并确认失败原因**
 
 Run:
 
@@ -90,13 +92,13 @@ node --test --test-name-pattern "React app renders the one-shot Mantine shell se
 
 Expected: FAIL，至少报告 `Studio page brand logo component must be removed`；失败来自现有 `StudioBrandMark.tsx` 和旧 DOM，而不是编译错误。
 
-- [ ] **Step 3: 写最小 React 实现**
+- [x] **Step 3: 写最小 React 实现**
 
 在 `App.tsx` 的 Mantine imports 加入 `ActionIcon`，删除 `StudioBrandMark` import，把 `Paper` 内部替换为：
 
 ```tsx
 <Group className="studio-brand-header" justify="space-between" align="center" wrap="nowrap">
-  <Stack className="studio-brand-copy" gap={1}>
+  <Stack className="studio-brand-copy" gap={4}>
     <Title order={1}>AgentMesh</Title>
     <Text className="studio-brand-subtitle" size="xs">编排你的Agent</Text>
   </Stack>
@@ -141,7 +143,7 @@ Expected: FAIL，至少报告 `Studio page brand logo component must be removed`
 
 删除 `apps/studio-web/src/app/StudioBrandMark.tsx`。不修改其他 `workspaceView` 分支或 handler。
 
-- [ ] **Step 4: 写最小 CSS 与 Vite 收敛**
+- [x] **Step 4: 写最小 CSS 与 Vite 收敛**
 
 删除 `.studio-brand-lockup`、`.studio-brand-mark`、旧 `.studio-brand-panel .mantine-Button-root` 以及窄屏对应规则，增加：
 
@@ -166,7 +168,7 @@ Expected: FAIL，至少报告 `Studio page brand logo component must be removed`
 .studio-brand-subtitle {
   overflow: hidden;
   color: var(--studio-muted);
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -212,7 +214,7 @@ server: {
 },
 ```
 
-- [ ] **Step 5: 运行 GREEN 与 production asset contract**
+- [x] **Step 5: 运行 GREEN 与 production asset contract**
 
 Run:
 
@@ -226,6 +228,8 @@ git diff --check
 ```
 
 Expected: selected tests PASS；Studio frontend 不再产出品牌 SVG；Desktop canonical icon contract 仍 PASS；diff check 无输出。
+
+进度记录：RED 为 0/2，分别缺少 `aria-label="设置"` 和仍存在 `StudioBrandMark.tsx`；最小实现后 GREEN 为 3/3。production frontend 从 808 降为 807 modules，assets 中无 `agentmesh-*.svg`，Desktop canonical icon contract 保持通过，`git diff --check` 无输出。
 
 ### Task 2: 浏览器验收、回归、日志与提交
 
@@ -242,7 +246,7 @@ Expected: selected tests PASS；Studio frontend 不再产出品牌 SVG；Desktop
 
 在 `1280 x 720` 与 `1024 x 640` 检查：`AgentMesh` / `编排你的Agent` 左对齐；设置与手册按钮右对齐且均为 `30 x 30`；当前按钮选中态正确；无 logo、文字/按钮裁切、横向溢出或 console error。
 
-- [ ] **Step 2: 完整回归**
+- [x] **Step 2: 完整回归**
 
 Run:
 
@@ -254,9 +258,15 @@ git diff --check
 
 Expected: Node tests 0 failed；Desktop package `ok: true`；diff check 无输出。记录实际测试数。
 
+进度记录：`npm test` 553/553，`npm run studio-desktop:package:dev` 为 `ok: true`，`git diff --check` 通过。in-app browser 自动化连续两次无法附着现有或新建标签页，未使用其他浏览器工具绕过；Task 2 Step 1 保持未完成，等待当前 `4317` 标签人工刷新确认。
+
+视觉调整记录：用户查看初版后确认副标题偏大，已将 `编排你的Agent` 从 `13px` 收敛到 `11px`；字号 contract 先以实际 `13px` 正确 RED，再修改 CSS。
+
+间距调整记录：用户确认标题与副标题过近，已将文字 stack 从 `gap={1}` 增加到 `gap={4}`；结构 contract 先以实际 `gap={1}` 正确 RED，再修改 React。
+
 - [ ] **Step 3: 同步 changelog 与两个计划**
 
-在 `changelog/2026-07-16.md` 追加精简品牌栏事实、两个尺寸与自动化验证结果。本计划勾选实际完成项；总发布计划记录 UI slice 在 `0.1.12` 产物生成前完成，并把当前下一步恢复为 `P3.2 Step 1`。
+历史要求为追加精简品牌栏事实、两个尺寸与自动化验证结果；该步骤现已迁入统一总计划，不再从本文件恢复发布下一步。
 
 - [ ] **Step 4: 提交 UI slice**
 

@@ -1,5 +1,7 @@
 # Tauri App Updater Implementation Plan
 
+> 状态（2026-07-16）：历史已完成。Updater、签名产物和应用内状态机由 `3db1892` 及 `0.1.11` 发布链交付；下方未勾选项不再作为执行状态。当前唯一事实源为 `2026-07-16-studio-activity-and-v012-release.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add signed in-app update/check/install/relaunch behavior and publishable Tauri updater artifacts.
@@ -206,4 +208,3 @@ Run: `git add docs README.md && git commit -m "补充桌面更新迁移说明"` 
 - Signed updater archive/signature and valid `latest.json` are produced locally.
 - Full Node tests, Rust check, Desktop smoke, DMG validation, local install/startup, and `git diff --check` pass.
 - Publishing is explicitly not performed.
-

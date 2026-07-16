@@ -1,5 +1,7 @@
 # Context Handoff Hardening Implementation Plan
 
+> 状态（2026-07-16）：历史已完成。代码、测试与文档已由 `d5dbbe4` 交付；下方未勾选项属于陈旧状态，不重新执行。当前唯一事实源为 `2026-07-16-studio-activity-and-v012-release.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use inline execution with TDD checkpoints.
 
 **Goal:** Make AgentMesh context capture safe and faithful when handing evidence to a downstream agent.

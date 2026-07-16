@@ -1,5 +1,7 @@
 # AgentMesh Converge Icon Implementation Plan
 
+> 状态（2026-07-16）：历史已完成。实现提交为 `2d10272`，后续品牌收敛提交为 `9ed581d`；下方未勾选项不再作为执行状态。当前唯一事实源为 `2026-07-16-studio-activity-and-v012-release.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the current AgentMesh desktop icon with the approved Converge mark and verify the generated app assets on a real macOS installation.

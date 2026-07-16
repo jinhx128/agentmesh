@@ -1,5 +1,7 @@
 # Desktop CLI Management And Copilot Removal Implementation Plan
 
+> 状态（2026-07-16）：历史已完成。Copilot 删除、CLI 检测/安装/更新分别由 `17cf08c`、`9fc4abb` 及后续文档提交交付；下方未勾选项不再作为执行状态。当前唯一事实源为 `2026-07-16-studio-activity-and-v012-release.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace Desktop's wrapper writer with public npm CLI detection/install/update and remove Copilot from all active AgentMesh product surfaces.
@@ -224,4 +226,3 @@ Run: `git add README.md index.html docs apps/studio-desktop tests-node && git co
 - UI has no path input or shadowing checkbox.
 - Active product scan has no Copilot reference.
 - Full Node suite, frontend build, Desktop dev package smoke, and `git diff --check` pass.
-

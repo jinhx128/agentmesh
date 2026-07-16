@@ -1,5 +1,7 @@
 # Studio Converge 品牌标记实施计划
 
+> 状态（2026-07-16）：历史已完成。实现提交为 `9ed581d`；随后用户批准从 Studio 页面移除 logo，Desktop canonical 图标仍保留。下方未勾选项不再作为执行状态，当前唯一事实源为 `2026-07-16-studio-activity-and-v012-release.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Studio 左上角直接复用唯一 canonical Converge SVG，删除独立设计的圆芯/双轨道标记。
