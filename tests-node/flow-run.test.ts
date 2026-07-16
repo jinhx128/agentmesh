@@ -4,6 +4,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { createFlowRun } from "../packages/runtime/src/flow/index.js";
+import { setStageState } from "../packages/runtime/src/flow/state.js";
+import { loadStatus, saveStatus } from "../packages/runtime/src/packet/io.js";
 import {
   readWorkspaceCompatibilityMetadata,
   workspaceCompatibilityDiagnostics,
@@ -55,6 +57,7 @@ test("workflow run accepts a temporary workflow file with packet provenance", ()
   const status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "temporary-flow", "status.json"), "utf-8"),
   );
+  assert.equal(status.title, `${path.basename(workspace)}-temporary workflow release gate`);
   assert.equal(status.workflow, "one-off-release");
   assert.equal(Object.hasOwn(status, "workflow_status"), false);
   assert.deepEqual(status.stages, ["review", "decide"]);
@@ -71,6 +74,12 @@ test("workflow run accepts a temporary workflow file with packet provenance", ()
     "utf-8",
   );
   assert.doesNotMatch(assignment, /workflow_status/);
+
+  const runDir = path.join(workspace, ".agentmesh", "runs", "temporary-flow");
+  const reloadedStatus = loadStatus(runDir);
+  setStageState(reloadedStatus, "review", "running");
+  saveStatus(runDir, reloadedStatus);
+  assert.equal(loadStatus(runDir).title, status.title);
 
   const list = runCli(workspace, ["workflows", "list", "--json"]);
   assert.equal(list.status, 0, list.stderr);

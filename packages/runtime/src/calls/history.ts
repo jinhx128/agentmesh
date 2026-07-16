@@ -13,6 +13,7 @@ import path from "node:path";
 import type { AgentCallResult } from "../adapters.js";
 import { formatLocalTimestamp, reserveTimestampedId } from "../generated-id.js";
 import { writeFileAtomic } from "../packet/io.js";
+import { resolveDisplayTitle } from "../display-title.js";
 
 export const CALL_RECORD_SCHEMA_VERSION = 1 as const;
 export const CALLS_RELATIVE_DIR = path.join(".agentmesh", "calls");
@@ -51,6 +52,7 @@ export interface CallArtifactRef {
 export interface DirectCallRecord {
   schema_version: number;
   id: string;
+  title?: string;
   agent_id: string | null;
   adapter: string;
   model: string | null;
@@ -101,6 +103,7 @@ export interface CreateCallRecordInput {
   agentId: string | null;
   adapter: string;
   model?: string | null;
+  title?: string;
   purpose?: string;
   promptSource: CallPromptSource;
   promptContent?: string;
@@ -166,6 +169,12 @@ export function createCallRecord(input: CreateCallRecordInput): CreatedCallRecor
   const record: DirectCallRecord = {
     schema_version: CALL_RECORD_SCHEMA_VERSION,
     id,
+    title: resolveDisplayTitle({
+      title: input.title,
+      workspace: input.workspace,
+      summaries: [input.purpose, input.promptContent],
+      createdAt,
+    }),
     agent_id: input.agentId,
     adapter: input.adapter,
     model: input.model ?? null,

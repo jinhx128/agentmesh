@@ -290,6 +290,7 @@ export const PacketStatusSchema = z
   .object({
     schema_version: PacketSchemaVersionSchema,
     run_id: NonEmptyStringSchema,
+    title: NonEmptyStringSchema.optional(),
     created_at: NonEmptyStringSchema,
     updated_at: NonEmptyStringSchema,
     status: NonEmptyStringSchema,

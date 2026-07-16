@@ -16,6 +16,7 @@ import test from "node:test";
 
 import {
   appendCallAdoptionEvent,
+  completeCallRecord,
   createCallRecord,
   formatCallIdTimestamp,
   listCallRecords,
@@ -98,7 +99,9 @@ test("direct call ids use local second precision without ISO separators", () => 
     });
     assert.equal(created.record.id, "call-20260616104252");
     assert.equal(second.record.id, "call-20260616104252-1");
+    assert.equal(created.record.title, `${path.basename(workspace)}-10:42:52`);
     assert.doesNotMatch(created.record.id, /T|Z|\.\d/);
+    assert.equal(completeCallRecord(created, { status: "success", stdout: "ok" }).title, created.record.title);
   } finally {
     if (previousTimezone === undefined) {
       delete process.env.TZ;
@@ -411,6 +414,7 @@ test("call record reader marks stale running records and newer schemas as read-o
     promptSource: "inline",
     promptContent: "reader prompt",
   });
+  assert.equal(created.record.title, `${path.basename(workspace)}-reader prompt`);
 
   const staleRecord = {
     ...created.record,
@@ -421,6 +425,13 @@ test("call record reader marks stale running records and newer schemas as read-o
     `${JSON.stringify(staleRecord, null, 2)}\n`,
   );
   assert.equal(readCallRecord(created.callDir).status, "stale");
+
+  const { title: _title, ...legacyRecord } = created.record;
+  writeFileSync(
+    path.join(created.callDir, "call.json"),
+    `${JSON.stringify(legacyRecord, null, 2)}\n`,
+  );
+  assert.equal(readCallRecord(created.callDir).title, undefined);
 
   const newerRecord = {
     ...created.record,
@@ -466,6 +477,7 @@ test("call adoption records a single append-only transition without changing art
   });
 
   assert.equal(updated.adoption_status, "accepted");
+  assert.equal(updated.title, created.record.title);
   assert.deepEqual(updated.related_run_ids, ["run-2026-05-17"]);
   assert.deepEqual(readCallRecord(created.callDir).related_run_ids, ["run-2026-05-17"]);
   assert.equal(readFileSync(path.join(created.callDir, "prompt.md"), "utf-8"), promptBefore);

@@ -29,6 +29,7 @@ export interface FlowRunInput {
   stageAssignments?: Record<string, string[]>;
   task: string;
   runId: string;
+  title?: string;
   userGate?: boolean;
   workflow?: string;
   workflowSource?: Record<string, unknown>;

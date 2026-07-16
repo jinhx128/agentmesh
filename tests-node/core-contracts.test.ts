@@ -145,6 +145,8 @@ test("core exports packet contract schemas with schema version policy", () => {
       diagnostic: "human decision required",
     },
   }));
+  assert.equal(status.title, undefined);
+  assert.equal(PacketStatusSchema.parse(packetStatus({ title: "优化活动列表" })).title, "优化活动列表");
   assert.equal(status.release_verdict?.value, "needs_decision");
   assert.equal(status.stage_timing.plan.attempt_count, 1);
   assert.equal(status.agent_timing.plan.planner.duration_ms, 1000);

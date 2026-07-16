@@ -42,6 +42,7 @@ import type {
   FlowRunInput,
   WorkflowCompatibilityInput,
 } from "./types.js";
+import { resolveDisplayTitle } from "../display-title.js";
 
 type TimeoutProvenance = "cli" | "preset_fallback" | "global_fallback" | "agent" | "system_default" | "current";
 type FallbackProvenance = "preset_fallback" | "global_fallback" | "none";
@@ -80,7 +81,8 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   const stageAssignments = assignmentResolution.assignments;
   const routingResolution = resolveExecutionRouting(input, stageNodes, stageAssignments);
   const runDir = path.resolve(cwd, ".agentmesh", "runs", input.runId);
-  const now = new Date().toISOString();
+  const createdAt = new Date();
+  const now = createdAt.toISOString();
   mkdirSync(runDir, { recursive: true });
   writeFileAtomic(path.join(runDir, "request.md"), `# Request\n\n${input.task.trim()}\n`);
   writeFileAtomic(
@@ -90,6 +92,12 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   const status: PacketStatus = {
     schema_version: CURRENT_PACKET_SCHEMA_VERSION,
     run_id: input.runId,
+    title: resolveDisplayTitle({
+      title: input.title,
+      workspace: cwd,
+      summaries: [input.task],
+      createdAt,
+    }),
     created_at: now,
     updated_at: now,
     status: "created",

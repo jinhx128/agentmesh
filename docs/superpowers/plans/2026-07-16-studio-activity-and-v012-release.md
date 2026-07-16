@@ -94,7 +94,7 @@
 
 - [ ] P1 阶段完成门禁（P1.1、P1.2、P1.Z 完成后勾选）
 
-- [ ] P1.1 建立确定性标题解析并写入新记录
+- [x] ~~P1.1 建立确定性标题解析并写入新记录~~
   - Slice：`P1.1`
   - 依赖：P0.Z。
   - 文件：新增 `packages/runtime/src/display-title.ts`、`tests-node/display-title.test.ts`；修改 core schema、flow types/create、calls history 及对应测试。
@@ -104,13 +104,14 @@
     - `FlowRunInput.title?: string`
     - `CreateCallRecordInput.title?: string`
     - `DirectCallRecord.title?: string`（reader 兼容旧记录，新 writer 始终写入）
-  - [ ] Step 1：写 RED，断言显式标题 trim/collapse、默认 `agentmesh-优化活动列表`、Markdown 首句清理、无摘要 `agentmesh-17:26:08`、ASCII `-` 和 Unicode 安全限长。workspace 部分固定为 `path.basename(path.resolve(input.workspace))`；时间使用创建主机的本地 `Date#getHours/getMinutes/getSeconds` 一次性烘焙，测试注入固定本地 `Date`。
-  - [ ] Step 2：运行 `npm run build:node && node --test dist-node/tests-node/display-title.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/call-history.test.js`，确认失败来自 helper/字段缺失。
-  - [ ] Step 3：最小实现纯函数；在 `createFlowRun` 用 `input.task` 和创建时间解析标题写入 `status.title`；在 `createCallRecord` 用原始 `input.purpose`、`promptContent` 和创建时间写入 `record.title`，缺省值 `general` 视为无摘要，不能遮蔽 prompt/time fallback。call 保持 schema version `1`，reader 的 `title` 为 optional。
-  - [ ] Step 4：增加兼容/往返 contract：旧 packet/call 无标题仍可读；运行发生一次 stage 状态更新并重写 `status.json` 后 `title` 仍保留；App Server runs/calls API 对新记录返回标题。
-  - [ ] Step 5：重跑 Step 2 与新增兼容测试，预期 0 failed；运行 `git diff --check`。
+  - [x] Step 1：写 RED，断言显式标题 trim/collapse、默认 `agentmesh-优化活动列表`、Markdown 首句清理、无摘要 `agentmesh-17:26:08`、ASCII `-` 和 Unicode 安全限长。workspace 部分固定为 `path.basename(path.resolve(input.workspace))`；时间使用创建主机的本地 `Date#getHours/getMinutes/getSeconds` 一次性烘焙，测试注入固定本地 `Date`。
+  - [x] Step 2：运行 `npm run build:node && node --test dist-node/tests-node/display-title.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/call-history.test.js`，确认失败来自 helper/字段缺失。
+  - [x] Step 3：最小实现纯函数；在 `createFlowRun` 用 `input.task` 和创建时间解析标题写入 `status.title`；在 `createCallRecord` 用原始 `input.purpose`、`promptContent` 和创建时间写入 `record.title`，缺省值 `general` 视为无摘要，不能遮蔽 prompt/time fallback。call 保持 schema version `1`，reader 的 `title` 为 optional。
+  - [x] Step 4：增加兼容/往返 contract：旧 packet/call 无标题仍可读；运行发生一次 stage 状态更新并重写 `status.json` 后 `title` 仍保留；App Server runs/calls API 对新记录返回标题。
+  - [x] Step 5：重跑 Step 2 与新增兼容测试，预期 0 failed；运行 `git diff --check`。
   - 审查方式：外审。依据：公共 packet/call schema 与所有新写入路径变化。
   - 提交：`功能：为运行与调用持久化展示标题`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 18:15 CST`。确定性标题 helper、run/call optional title 持久化、旧记录兼容与状态重写保留 contract 已实现；fresh focused verification 为 55/55、`git diff --check` 通过。外审 run `studio-display-title-runtime-review-20260716` 为 `decide_completed`，三 reviewer 均为 0 Must；接受 `# Request`、组合限长、root/CRLF/general fallback、call completion/adoption 保留标题等 finding，schema v1 升版与字素簇扩展依据兼容策略和既定范围拒绝，无 needs decision。唯一下一步为 `P1.2 Step 1`。
 
 - [ ] P1.2 打通 CLI、SDK/API 和 Agent 自动标题规范
   - Slice：`P1.2`
@@ -258,4 +259,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P1.1 Step 1`，为确定性展示标题写失败测试。
+- 当前下一步：`P1.2 Step 1`，为 CLI、SDK/API 与 canonical skill 标题链路写失败测试。
