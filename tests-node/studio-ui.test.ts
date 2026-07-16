@@ -92,26 +92,21 @@ import {
   type CatalogViewState,
 } from "../apps/studio-web/src/features/catalog/CatalogView.js";
 import {
-  RunNavigator,
-  type RunNavigatorState,
-} from "../apps/studio-web/src/features/runs/RunNavigator.js";
-import {
   parseAutoRefreshSeconds,
 } from "../apps/studio-web/src/features/navigation/AutoRefreshSelect.js";
 import {
   ACTIVITY_GROUP_PREVIEW_LIMIT,
   ActivityNavigator,
+  activityCalls,
+  activityGroupCollapsed,
   activityItems,
+  activityRuns,
   filterActivityItems,
   groupActivityItems,
   visibleActivityGroupItems,
   type ActivityCallsState,
   type ActivityRunsState,
 } from "../apps/studio-web/src/features/navigation/ActivityNavigator.js";
-import {
-  CallNavigator,
-  type CallNavigatorState,
-} from "../apps/studio-web/src/features/calls/CallNavigator.js";
 import {
   CallDetailView,
   type CallDetailState,
@@ -205,7 +200,7 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   const app = renderStudioElement(React.createElement(App));
 
   assert.match(app, /data-studio-section="react-baseline"/);
-  assert.match(app, /data-studio-section="run-navigator"/);
+  assert.match(app, /data-studio-section="activity-navigator"/);
   assert.match(app, /data-studio-section="workspace-brand"/);
   assert.doesNotMatch(app, /data-studio-section="language-settings"/);
   assert.doesNotMatch(app, /data-studio-section="language-switch"/);
@@ -214,17 +209,20 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(app, /AgentMesh Studio/);
   assert.doesNotMatch(app, />English</);
   assert.doesNotMatch(app, />配置</);
-  assert.match(app, />设置</);
-  assert.match(app, />手册</);
+  assert.match(app, /aria-label="设置"/);
+  assert.match(app, /aria-label="手册"/);
+  assert.match(app, /title="设置"/);
+  assert.match(app, /title="手册"/);
+  assert.match(app, />编排你的Agent</);
+  assert.doesNotMatch(app, />设置<\/button>/);
+  assert.doesNotMatch(app, />手册<\/button>/);
   assert.match(app, />资源</);
   assert.match(app, />环境</);
   assert.match(app, />关于</);
-  assert.match(app, /data-studio-section="navigator-data-switch"/);
-  assert.match(app, /studio-data-switch/);
-  assert.match(app, />运行</);
-  assert.match(app, />调用</);
-  assert.match(app, /aria-label="搜索运行"/);
-  assert.match(app, /title="刷新运行"/);
+  assert.doesNotMatch(app, /data-studio-section="navigator-data-switch"/);
+  assert.doesNotMatch(app, /studio-data-switch/);
+  assert.match(app, /aria-label="搜索活动"/);
+  assert.match(app, /title="刷新活动"/);
   assert.match(app, /data-studio-section="navigator-auto-refresh"/);
   assert.match(app, /aria-label="自动刷新"/);
   assert.match(app, /data-studio-section="navigator-auto-refresh"[\s\S]*value="15s"/);
@@ -280,6 +278,31 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(mainSource, /StudioI18nProvider/);
 });
 
+test("App uses one activity navigator without losing run and call detail routing", () => {
+  const appSource = readFileSync(
+    path.resolve("apps/studio-web/src/app/App.tsx"),
+    "utf-8",
+  );
+  const app = renderStudioElement(React.createElement(App));
+
+  assert.match(appSource, /ActivityNavigator/);
+  assert.match(appSource, /const \[activityQuery, setActivityQuery\]/);
+  assert.doesNotMatch(appSource, /navigatorView|setNavigatorView|runQuery|callQuery|SegmentedControl/);
+  assert.match(appSource, /function loadActivitiesWithClient/);
+  assert.match(appSource, /loadRunsWithClient\(client, options\);\s*loadCallsWithClient\(client, options\);/);
+  assert.match(appSource, /selectedKind=\{workspaceView === "runs" \? "run" : workspaceView === "calls" \? "call" : undefined\}/);
+  assert.match(appSource, /onSelectRun=\{\(runKey\) => \{[\s\S]*setSelectedRunKey\(runKey\);[\s\S]*setWorkspaceView\("runs"\)/);
+  assert.match(appSource, /onSelectCall=\{\(callKey\) => \{[\s\S]*setSelectedCallKey\(callKey\);[\s\S]*setWorkspaceView\("calls"\)/);
+  assert.match(appSource, /onClick=\{\(\) => setWorkspaceView\("settings"\)\}/);
+  assert.match(appSource, /onClick=\{\(\) => setWorkspaceView\("definitions"\)\}/);
+  assert.doesNotMatch(appSource, /setSelectedRunKey\(undefined\)|setSelectedCallKey\(undefined\)/);
+  assert.match(app, /aria-label="搜索活动"/);
+  assert.match(app, /title="刷新活动"/);
+  assert.doesNotMatch(app, /navigator-data-switch|studio-data-switch/);
+  assert.equal(existsSync(path.resolve("apps/studio-web/src/features/runs/RunNavigator.tsx")), false);
+  assert.equal(existsSync(path.resolve("apps/studio-web/src/features/calls/CallNavigator.tsx")), false);
+});
+
 test("React app CSS uses new layout hooks and no legacy selector contract", () => {
   const frontendCss = readFileSync(
     path.join(process.cwd(), "apps", "studio-web", "src", "styles.css"),
@@ -301,7 +324,7 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-auto-refresh-select\s*\{[^}]*flex:\s*0 0 56px/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
-  assert.match(frontendCss, /\.studio-data-switch\s*\{[^}]*min-height:\s*36px/s);
+  assert.doesNotMatch(frontendCss, /\.studio-data-switch\s*\{/);
   assert.match(frontendCss, /\.studio-resource-card-layout\s*\{[^}]*flex-wrap:\s*nowrap;/s);
   assert.match(frontendCss, /\.studio-resource-card-main\s*\{[^}]*flex:\s*1 1 auto;/s);
   assert.match(frontendCss, /\.studio-resource-card-main\s*\{[^}]*min-width:\s*0;/s);
@@ -354,7 +377,6 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*overflow-y:\s*auto;/s);
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*padding:\s*3px 4px 4px;/s);
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*box-sizing:\s*border-box;/s);
-  assert.match(frontendCss, /\.studio-nav-item\[aria-current="true"\],\s*\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--mantine-color-agentmesh-6\);/s);
   assert.doesNotMatch(frontendCss, /\.studio-nav-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
   assert.match(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--mantine-color-agentmesh-6\);/s);
   assert.doesNotMatch(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
@@ -489,9 +511,8 @@ test("Studio silver theme exposes canonical tokens", () => {
 
 test("Studio silver shell renders the approved brand hierarchy", () => {
   const brandPath = path.resolve("apps/studio-web/src/app/StudioBrandMark.tsx");
-  assert.equal(existsSync(brandPath), true, "StudioBrandMark.tsx must exist");
+  assert.equal(existsSync(brandPath), false, "Studio page brand logo component must be removed");
 
-  const brandSource = readFileSync(brandPath, "utf-8");
   const appSource = readFileSync(
     path.resolve("apps/studio-web/src/app/App.tsx"),
     "utf-8",
@@ -505,29 +526,31 @@ test("Studio silver shell renders the approved brand hierarchy", () => {
     "utf-8",
   );
 
-  assert.match(brandSource, /export function StudioBrandMark\(\): ReactElement/);
-  assert.match(brandSource, /new URL\(/);
-  assert.match(brandSource, /agentmesh\.svg\?no-inline/);
-  assert.match(brandSource, /import\.meta\.url/);
-  assert.doesNotMatch(brandSource, /\?url/);
-  assert.match(brandSource, /<img/);
-  assert.match(brandSource, /className="studio-brand-mark"/);
-  assert.match(brandSource, /src=\{agentMeshIconUrl\}/);
-  assert.match(brandSource, /alt=""/);
-  assert.match(brandSource, /aria-hidden="true"/);
-  assert.match(brandSource, /draggable=\{false\}/);
-  assert.doesNotMatch(brandSource, /studio-brand-(?:core|track)/);
-  assert.match(appSource, /import \{ StudioBrandMark \}/);
-  assert.match(appSource, /className="studio-brand-lockup"/);
-  assert.match(appSource, /<StudioBrandMark\s*\/>/);
+  assert.doesNotMatch(appSource, /StudioBrandMark/);
+  assert.match(appSource, /className="studio-brand-header"/);
+  assert.match(appSource, /className="studio-brand-copy" gap=\{4\}/);
+  assert.match(appSource, /className="studio-brand-subtitle"/);
+  assert.match(appSource, />编排你的Agent</);
+  assert.match(appSource, /className="studio-brand-actions"/);
+  assert.match(appSource, /className="studio-brand-action studio-brand-settings-action"/);
+  assert.match(appSource, /className="studio-brand-action studio-brand-manual-action"/);
+  assert.equal((appSource.match(/<ActionIcon/g) ?? []).length >= 2, true);
+  assert.equal((appSource.match(/<svg/g) ?? []).length >= 2, true);
+  assert.match(appSource, /aria-pressed=\{workspaceView === "settings"\}/);
+  assert.match(appSource, /aria-pressed=\{workspaceView === "definitions"\}/);
   for (const selector of [
-    ".studio-brand-lockup",
-    ".studio-brand-mark",
+    ".studio-brand-header",
+    ".studio-brand-copy",
+    ".studio-brand-subtitle",
+    ".studio-brand-actions",
+    ".studio-brand-action",
   ]) {
-    assert.ok(frontendCss.includes(selector), `missing silver shell selector: ${selector}`);
+    assert.ok(frontendCss.includes(selector), `missing compact brand selector: ${selector}`);
   }
-  assert.doesNotMatch(frontendCss, /\.studio-brand-(?:core|track)/);
-  assert.match(viteConfigSource, /studio-desktop\/src-tauri\/icons/);
+  assert.doesNotMatch(frontendCss, /\.studio-brand-mark/);
+  assert.match(frontendCss, /\.studio-brand-subtitle\s*\{[^}]*font-size:\s*11px;/s);
+  assert.doesNotMatch(viteConfigSource, /canonicalIconDir|studio-desktop\/src-tauri\/icons/);
+  assert.match(viteConfigSource, /allow:\s*\[studioRoot\]/);
   assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
 });
 
@@ -860,38 +883,6 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
   );
 });
 
-test("Run and call navigators render search, refresh, selection and empty states", () => {
-  const runKey = studioRunKey(studioRunSummariesFixture()[1]);
-  const runs = renderRunNavigator({ status: "ready", runs: studioRunSummariesFixture() }, runKey, "review");
-  assert.match(runs, /aria-label="搜索运行"/);
-  assert.match(runs, /title="刷新运行"/);
-  assert.match(runs, /data-studio-section="navigator-auto-refresh"/);
-  assert.match(runs, /data-studio-section="navigator-auto-refresh"[\s\S]*value="Off"/);
-  assert.doesNotMatch(runs, /mantine-NativeSelect/);
-  assert.match(runs, /data-nav-group=/);
-  assert.match(runs, /class="[^"]*studio-nav-item-title/);
-  assert.match(runs, /aria-expanded="true"/);
-  assert.match(runs, /run-2/);
-  assert.match(runs, /aria-current="true"/);
-  assert.doesNotMatch(runs, /navigator-data-tab|run-search-row/);
-  assert.match(renderRunNavigator({ status: "ready", runs: [] }, undefined, ""), /暂无运行。/);
-  assert.match(renderRunNavigator({ status: "error", message: "no runs" }, undefined, ""), /运行加载失败/);
-
-  const callKey = studioCallKey(studioCallSummariesFixture()[0]);
-  const calls = renderCallNavigator({ status: "ready", calls: studioCallSummariesFixture() }, callKey, "review");
-  assert.match(calls, /aria-label="搜索调用"/);
-  assert.match(calls, /title="刷新调用"/);
-  assert.match(calls, /data-studio-section="navigator-auto-refresh"/);
-  assert.match(calls, /data-nav-group=/);
-  assert.match(calls, /aria-expanded="true"/);
-  assert.match(calls, /call-1/);
-  assert.match(calls, /不支持的 schema/);
-  assert.doesNotMatch(calls, /call-search-row|call-badges/);
-  assert.match(renderCallNavigator({ status: "ready", calls: [] }, undefined, ""), /暂无调用。/);
-  assert.equal(parseAutoRefreshSeconds("15"), 15);
-  assert.equal(parseAutoRefreshSeconds("bad"), 0);
-});
-
 test("Unified activities sort runs and calls, group missing timestamps, and search stable fields", () => {
   const run = {
     ...studioRunSummariesFixture()[0],
@@ -985,12 +976,18 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.equal(visibleActivityGroupItems(items, false, "").length, 5);
   assert.equal(visibleActivityGroupItems(items, true, "").length, 7);
   assert.equal(visibleActivityGroupItems(items, false, "activity").length, 7);
+  assert.equal(activityGroupCollapsed(true, ""), true);
+  assert.equal(activityGroupCollapsed(true, "activity"), false);
+  assert.equal(parseAutoRefreshSeconds("15"), 15);
+  assert.equal(parseAutoRefreshSeconds("bad"), 0);
 
   const previewMarkup = renderActivityNavigator(
     { status: "ready", runs: [] },
     { status: "ready", calls },
   );
   assert.match(previewMarkup, /data-nav-group=/);
+  assert.match(previewMarkup, /studio-activity-refresh-icon/);
+  assert.doesNotMatch(previewMarkup, />↻</);
   assert.match(previewMarkup, /aria-expanded="true"/);
   assert.match(previewMarkup, /aria-expanded="false"/);
   assert.match(previewMarkup, /展开其余 2 条/);
@@ -1007,6 +1004,25 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(searchMarkup, /activity-call-7/);
   assert.doesNotMatch(searchMarkup, /展开其余/);
 
+  const selectedCallKey = studioCallKey(calls[0]);
+  const selectedMarkup = renderActivityNavigator(
+    { status: "ready", runs: [] },
+    { status: "ready", calls },
+    "",
+    { selectedKind: "call", selectedCallKey },
+  );
+  assert.match(
+    selectedMarkup,
+    new RegExp(`data-activity-key="${escapeRegExp(selectedCallKey)}"[^>]*aria-current="true"`),
+  );
+  const overlayMarkup = renderActivityNavigator(
+    { status: "ready", runs: [] },
+    { status: "ready", calls },
+    "",
+    { selectedKind: undefined, selectedCallKey },
+  );
+  assert.doesNotMatch(overlayMarkup, /aria-current="true"/);
+
   const markup = renderActivityNavigator(
     { status: "error", message: "run endpoint failed" },
     { status: "ready", calls: [call] },
@@ -1017,6 +1033,24 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(markup, /\[调用\]/);
   assert.match(markup, new RegExp(formatLocalTime(call.created_at)));
   assert.doesNotMatch(markup, /internal-summary-must-not-render/);
+
+  const staleRun = studioRunSummariesFixture()[0];
+  const staleMarkup = renderActivityNavigator(
+    { status: "error", message: "run refresh failed", runs: [staleRun] },
+    { status: "error", message: "call refresh failed", calls: [call] },
+  );
+  assert.deepEqual(
+    activityRuns({ status: "error", message: "run refresh failed", runs: [staleRun] }),
+    [staleRun],
+  );
+  assert.deepEqual(
+    activityCalls({ status: "error", message: "call refresh failed", calls: [call] }),
+    [call],
+  );
+  assert.match(staleMarkup, /编排发布流程/);
+  assert.match(staleMarkup, /可用调用记录/);
+  assert.match(staleMarkup, /运行加载失败/);
+  assert.match(staleMarkup, /调用加载失败/);
 
   const symmetricMarkup = renderActivityNavigator(
     { status: "ready", runs: [studioRunSummariesFixture()[0]] },
@@ -1042,11 +1076,6 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(missingTimeMarkup, /时间未知/);
   assert.doesNotMatch(missingTimeMarkup, /<time/);
 
-  const activitySource = readFileSync(
-    path.resolve("apps/studio-web/src/features/navigation/ActivityNavigator.tsx"),
-    "utf-8",
-  );
-  assert.match(activitySource, /query\.trim\(\)\.length === 0\s*&& collapsedGroups\.has\(group\.date\)/);
 });
 
 test("Run overview, artifacts, events and review release render Mantine panels", () => {
@@ -2428,53 +2457,22 @@ function renderPresetManualFields(): string {
   }));
 }
 
-function renderRunNavigator(
-  state: RunNavigatorState,
-  selectedRunKey: string | undefined,
-  query: string,
-): string {
-  return renderStudioElement(React.createElement(RunNavigator, {
-    state,
-    selectedRunKey,
-    query,
-    toolbar: React.createElement("div", { "data-studio-section": "test-switch" }, "Runs Calls"),
-    autoRefreshSeconds: 0,
-    onQueryChange: () => {},
-    onAutoRefreshSecondsChange: () => {},
-    onRefresh: () => {},
-    onSelectRun: () => {},
-  }));
-}
-
-function renderCallNavigator(
-  state: CallNavigatorState,
-  selectedCallKey: string | undefined,
-  query: string,
-): string {
-  return renderStudioElement(React.createElement(CallNavigator, {
-    state,
-    selectedCallKey,
-    query,
-    toolbar: React.createElement("div", { "data-studio-section": "test-switch" }, "Runs Calls"),
-    autoRefreshSeconds: 0,
-    onQueryChange: () => {},
-    onAutoRefreshSecondsChange: () => {},
-    onRefresh: () => {},
-    onSelectCall: () => {},
-  }));
-}
-
 function renderActivityNavigator(
   runsState: ActivityRunsState,
   callsState: ActivityCallsState,
   query = "",
+  selection: {
+    selectedKind?: "run" | "call";
+    selectedRunKey?: string;
+    selectedCallKey?: string;
+  } = {},
 ): string {
   return renderStudioElement(React.createElement(ActivityNavigator, {
     runsState,
     callsState,
-    selectedKind: undefined,
-    selectedRunKey: undefined,
-    selectedCallKey: undefined,
+    selectedKind: selection.selectedKind,
+    selectedRunKey: selection.selectedRunKey,
+    selectedCallKey: selection.selectedCallKey,
     query,
     autoRefreshSeconds: 0,
     onQueryChange: () => {},
@@ -2483,6 +2481,10 @@ function renderActivityNavigator(
     onSelectRun: () => {},
     onSelectCall: () => {},
   }));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderRunOverview(

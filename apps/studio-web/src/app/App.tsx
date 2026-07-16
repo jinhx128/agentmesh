@@ -1,11 +1,11 @@
 import {
+  ActionIcon,
   Alert,
   AppShell,
   Box,
   Button,
   Group,
   Paper,
-  SegmentedControl,
   Stack,
   Tabs,
   Text,
@@ -13,7 +13,6 @@ import {
 } from "@mantine/core";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "./copy.js";
-import { StudioBrandMark } from "./StudioBrandMark.js";
 import {
   bootstrapStudio,
   type StudioBootstrapPayload,
@@ -137,16 +136,15 @@ import {
   type WorkflowDisplayNames,
 } from "../features/runs/RunOverview.js";
 import {
-  RunNavigator,
-  type RunNavigatorState,
-} from "../features/runs/RunNavigator.js";
-import {
   type AutoRefreshSeconds,
 } from "../features/navigation/AutoRefreshSelect.js";
 import {
-  CallNavigator,
-  type CallNavigatorState,
-} from "../features/calls/CallNavigator.js";
+  ActivityNavigator,
+  activityCalls,
+  activityRuns,
+  type ActivityCallsState,
+  type ActivityRunsState,
+} from "../features/navigation/ActivityNavigator.js";
 import {
   CallDetailView,
   type CallDetailState,
@@ -187,20 +185,18 @@ export function App(): ReactElement {
   const [advancedSettingsState, setAdvancedSettingsState] = useState<AdvancedSettingsState>({ status: "loading" });
   const [agentIntegrationsState, setAgentIntegrationsState] = useState<AgentIntegrationsState>({ status: "loading" });
   const [agentLifecycleState, setAgentLifecycleState] = useState<AgentLifecycleState>({ status: "loading" });
-  const [runsState, setRunsState] = useState<RunNavigatorState>({ status: "loading" });
+  const [runsState, setRunsState] = useState<ActivityRunsState>({ status: "loading" });
   const [runDetailState, setRunDetailState] = useState<RunOverviewState>({ status: "empty" });
-  const [callsState, setCallsState] = useState<CallNavigatorState>({ status: "loading" });
+  const [callsState, setCallsState] = useState<ActivityCallsState>({ status: "loading" });
   const [callDetailState, setCallDetailState] = useState<CallDetailState>({ status: "empty" });
   const [selectedArtifactName, setSelectedArtifactName] = useState<string | undefined>(undefined);
   const [artifactPreviewState, setArtifactPreviewState] = useState<ArtifactPreviewState>({ status: "idle" });
   const [artifactDrawerOpened, setArtifactDrawerOpened] = useState(false);
   const [selectedRunKey, setSelectedRunKey] = useState<string | undefined>(undefined);
   const [selectedCallKey, setSelectedCallKey] = useState<string | undefined>(undefined);
-  const [runQuery, setRunQuery] = useState("");
-  const [callQuery, setCallQuery] = useState("");
+  const [activityQuery, setActivityQuery] = useState("");
   const [apiClient, setApiClient] = useState<StudioApiClient | undefined>(undefined);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("runs");
-  const [navigatorView, setNavigatorView] = useState<"runs" | "calls">("runs");
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState<AutoRefreshSeconds>(15);
   const [runDetailTab, setRunDetailTab] = useState<RunDetailTab>("details");
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
@@ -216,8 +212,11 @@ export function App(): ReactElement {
         setSelectedRunKey((current) => nextSelectedRunKey(runs, current));
       })
       .catch((error: unknown) => {
-        setRunsState({ status: "error", message: normalizeStudioApiError(error).message });
-        setSelectedRunKey(undefined);
+        setRunsState((current) => ({
+          status: "error",
+          message: normalizeStudioApiError(error).message,
+          runs: activityRuns(current),
+        }));
       });
   }
 
@@ -231,9 +230,20 @@ export function App(): ReactElement {
         setSelectedCallKey((current) => nextSelectedCallKey(calls, current));
       })
       .catch((error: unknown) => {
-        setCallsState({ status: "error", message: normalizeStudioApiError(error).message });
-        setSelectedCallKey(undefined);
+        setCallsState((current) => ({
+          status: "error",
+          message: normalizeStudioApiError(error).message,
+          calls: activityCalls(current),
+        }));
       });
+  }
+
+  function loadActivitiesWithClient(
+    client: StudioApiClient,
+    options: NavigatorLoadOptions = {},
+  ): void {
+    loadRunsWithClient(client, options);
+    loadCallsWithClient(client, options);
   }
 
   function loadAgentLifecycleWithClient(
@@ -342,8 +352,7 @@ export function App(): ReactElement {
         if (active) {
           setBootstrapState({ status: "ready", bootstrap });
           setApiClient(client);
-          loadRunsWithClient(client);
-          loadCallsWithClient(client);
+          loadActivitiesWithClient(client);
           loadAgentLifecycleWithClient(client);
           loadCompatibilityWithClient(client);
           loadAdvancedSettingsWithClient(client);
@@ -381,16 +390,12 @@ export function App(): ReactElement {
       return undefined;
     }
     const timer = window.setInterval(() => {
-      if (navigatorView === "calls") {
-        loadCallsWithClient(apiClient, { showLoading: false });
-        return;
-      }
-      loadRunsWithClient(apiClient, { showLoading: false });
+      loadActivitiesWithClient(apiClient, { showLoading: false });
     }, autoRefreshSeconds * 1000);
     return () => {
       window.clearInterval(timer);
     };
-  }, [apiClient, autoRefreshSeconds, navigatorView]);
+  }, [apiClient, autoRefreshSeconds]);
 
   useEffect(() => {
     const previousRunKey = previousSelectedRunKeyRef.current;
@@ -407,9 +412,8 @@ export function App(): ReactElement {
     }
   }, [workspaceView]);
 
-  const selectedRun = runsState.status === "ready"
-    ? runsState.runs.find((run) => studioRunKey(run) === selectedRunKey)
-    : undefined;
+  const selectedRun = activityRuns(runsState)
+    .find((run) => studioRunKey(run) === selectedRunKey);
 
   useEffect(() => {
     if (!apiClient || !selectedRun) {
@@ -437,9 +441,8 @@ export function App(): ReactElement {
     };
   }, [apiClient, selectedRun?.run_id, selectedRun?.workspace.id, runDetailReloadKey]);
 
-  const selectedCall = callsState.status === "ready"
-    ? callsState.calls.find((call) => studioCallKey(call) === selectedCallKey)
-    : undefined;
+  const selectedCall = activityCalls(callsState)
+    .find((call) => studioCallKey(call) === selectedCallKey);
 
   useEffect(() => {
     if (!apiClient || !selectedCall) {
@@ -728,25 +731,6 @@ export function App(): ReactElement {
     setArtifactDrawerOpened(true);
   }
 
-  const navigatorToolbar = (
-    <SegmentedControl
-      className="studio-data-switch"
-      fullWidth
-      aria-label={`${t("runs")} / ${t("calls")}`}
-      data-studio-section="navigator-data-switch"
-      value={navigatorView}
-      data={[
-        { value: "runs", label: t("runs") },
-        { value: "calls", label: t("calls") },
-      ]}
-      onChange={(value) => {
-        const nextView = value === "calls" ? "calls" : "runs";
-        setNavigatorView(nextView);
-        setWorkspaceView(nextView);
-      }}
-    />
-  );
-
   return (
     <AppShell
       className="studio-shell"
@@ -754,77 +738,78 @@ export function App(): ReactElement {
       navbar={{ width: 300, breakpoint: "xs" }}
       padding={0}
     >
-      <AppShell.Navbar className="studio-navbar" data-studio-section="run-navigator">
+      <AppShell.Navbar className="studio-navbar" data-studio-section="activity-navigator">
         <Stack gap="sm" h="100%" p="md">
           <Paper className="studio-brand-panel" withBorder p="md" radius="md" data-studio-section="workspace-brand">
-            <Stack gap={10}>
-              <Group className="studio-brand-lockup" gap="sm" wrap="nowrap">
-                <StudioBrandMark />
-                <Title order={1} size="h2">AgentMesh</Title>
-              </Group>
-              <Group grow gap="xs" component="nav" aria-label={t("viewNavigation")}>
-                <Button
-                  variant={workspaceView === "settings" ? "filled" : "light"}
-                  size="xs"
+            <Group className="studio-brand-header" justify="space-between" align="center" wrap="nowrap">
+              <Stack className="studio-brand-copy" gap={4}>
+                <Title order={1}>AgentMesh</Title>
+                <Text className="studio-brand-subtitle" size="xs">编排你的Agent</Text>
+              </Stack>
+              <Group
+                className="studio-brand-actions"
+                gap={6}
+                wrap="nowrap"
+                component="nav"
+                aria-label={t("viewNavigation")}
+              >
+                <ActionIcon
+                  className="studio-brand-action studio-brand-settings-action"
+                  variant="light"
+                  size={30}
+                  title={t("settings")}
+                  aria-label={t("settings")}
                   aria-pressed={workspaceView === "settings"}
                   onClick={() => setWorkspaceView("settings")}
                 >
-                  {t("settings")}
-                </Button>
-                <Button
-                  variant={workspaceView === "definitions" ? "filled" : "light"}
-                  size="xs"
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04-2.86 2.86-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.06A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.04.04-2.86-2.86.04-.04A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H1V9.6h.9A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.04-.04 2.86-2.86.04.04A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V1h4v.9A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.04-.04 2.86 2.86-.04.04A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.9v4h-.9A1.7 1.7 0 0 0 19.4 15Z" />
+                  </svg>
+                </ActionIcon>
+                <ActionIcon
+                  className="studio-brand-action studio-brand-manual-action"
+                  variant="light"
+                  size={30}
+                  title={t("definitions")}
+                  aria-label={t("definitions")}
                   aria-pressed={workspaceView === "definitions"}
                   onClick={() => setWorkspaceView("definitions")}
                 >
-                  {t("definitions")}
-                </Button>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M3 5.5A2.5 2.5 0 0 1 5.5 3H9a3 3 0 0 1 3 3v14a3 3 0 0 0-3-3H3Z" />
+                    <path d="M21 5.5A2.5 2.5 0 0 0 18.5 3H15a3 3 0 0 0-3 3v14a3 3 0 0 1 3-3h6Z" />
+                  </svg>
+                </ActionIcon>
               </Group>
-            </Stack>
+            </Group>
           </Paper>
           <Box className="studio-navigator-list">
-            {navigatorView === "calls" ? (
-              <CallNavigator
-                state={callsState}
-                selectedCallKey={workspaceView === "calls" ? selectedCallKey : undefined}
-                query={callQuery}
-                toolbar={navigatorToolbar}
-                autoRefreshSeconds={autoRefreshSeconds}
-                onQueryChange={setCallQuery}
-                onAutoRefreshSecondsChange={setAutoRefreshSeconds}
-                onRefresh={() => {
-                  if (apiClient) {
-                    loadCallsWithClient(apiClient);
-                  }
-                }}
-                onSelectCall={(callKey) => {
-                  setSelectedCallKey(callKey);
-                  setNavigatorView("calls");
-                  setWorkspaceView("calls");
-                }}
-              />
-            ) : (
-              <RunNavigator
-                state={runsState}
-                selectedRunKey={workspaceView === "runs" ? selectedRunKey : undefined}
-                query={runQuery}
-                toolbar={navigatorToolbar}
-                autoRefreshSeconds={autoRefreshSeconds}
-                onQueryChange={setRunQuery}
-                onAutoRefreshSecondsChange={setAutoRefreshSeconds}
-                onRefresh={() => {
-                  if (apiClient) {
-                    loadRunsWithClient(apiClient);
-                  }
-                }}
-                onSelectRun={(runKey) => {
-                  setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunKey, runKey, current));
-                  setSelectedRunKey(runKey);
-                  setNavigatorView("runs");
-                  setWorkspaceView("runs");
-                }}
-              />
-            )}
+            <ActivityNavigator
+              runsState={runsState}
+              callsState={callsState}
+              selectedKind={workspaceView === "runs" ? "run" : workspaceView === "calls" ? "call" : undefined}
+              selectedRunKey={selectedRunKey}
+              selectedCallKey={selectedCallKey}
+              query={activityQuery}
+              autoRefreshSeconds={autoRefreshSeconds}
+              onQueryChange={setActivityQuery}
+              onAutoRefreshSecondsChange={setAutoRefreshSeconds}
+              onRefresh={() => {
+                if (apiClient) {
+                  loadActivitiesWithClient(apiClient, { showLoading: false });
+                }
+              }}
+              onSelectRun={(runKey) => {
+                setRunDetailTab((current) => runDetailTabAfterRunSelection(selectedRunKey, runKey, current));
+                setSelectedRunKey(runKey);
+                setWorkspaceView("runs");
+              }}
+              onSelectCall={(callKey) => {
+                setSelectedCallKey(callKey);
+                setWorkspaceView("calls");
+              }}
+            />
           </Box>
         </Stack>
       </AppShell.Navbar>

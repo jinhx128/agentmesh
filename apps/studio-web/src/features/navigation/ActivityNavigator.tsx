@@ -21,12 +21,12 @@ import {
 export type ActivityRunsState =
   | { status: "loading" }
   | { status: "ready"; runs: StudioRunSummary[] }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; runs?: StudioRunSummary[] };
 
 export type ActivityCallsState =
   | { status: "loading" }
   | { status: "ready"; calls: StudioCallSummary[] }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; calls?: StudioCallSummary[] };
 
 export type StudioActivityItem =
   | {
@@ -71,6 +71,18 @@ export interface ActivityNavigatorProps {
 }
 
 export const ACTIVITY_GROUP_PREVIEW_LIMIT = 5;
+
+export function activityRuns(state: ActivityRunsState): StudioRunSummary[] {
+  return state.status === "ready" ? state.runs : state.status === "error" ? state.runs ?? [] : [];
+}
+
+export function activityCalls(state: ActivityCallsState): StudioCallSummary[] {
+  return state.status === "ready" ? state.calls : state.status === "error" ? state.calls ?? [] : [];
+}
+
+export function activityGroupCollapsed(collapsed: boolean, query: string): boolean {
+  return query.trim().length === 0 && collapsed;
+}
 
 export function activityItems(
   runs: StudioRunSummary[],
@@ -181,7 +193,21 @@ export function ActivityNavigator({
             aria-label="刷新活动"
             onClick={onRefresh}
           >
-            ↻
+            <svg
+              className="studio-activity-refresh-icon"
+              viewBox="0 0 18 18"
+              fill="none"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M14.5 5.5V2.75m0 0h-2.75m2.75 0-2.1 2.1A5.75 5.75 0 1 0 14.1 11"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </ActionIcon>
           <AutoRefreshSelect
             ariaLabel="自动刷新"
@@ -228,8 +254,8 @@ function ActivityListContent({
 >): ReactElement {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedItemGroups, setExpandedItemGroups] = useState<Set<string>>(() => new Set());
-  const runs = runsState.status === "ready" ? runsState.runs : [];
-  const calls = callsState.status === "ready" ? callsState.calls : [];
+  const runs = activityRuns(runsState);
+  const calls = activityCalls(callsState);
   const allItems = activityItems(runs, calls);
   const items = filterActivityItems(allItems, query);
   const issues = [
@@ -264,8 +290,7 @@ function ActivityListContent({
       {items.length === 0 && issues.length > 0 && !loading ? null : items.length === 0 ? (
         <NavEmpty label={emptyActivityLabel({ allItems, loading, noSourceItems, query })} />
       ) : groupActivityItems(items).map((group) => {
-        const collapsed = query.trim().length === 0
-          && collapsedGroups.has(group.date);
+        const collapsed = activityGroupCollapsed(collapsedGroups.has(group.date), query);
         const expanded = expandedItemGroups.has(group.date);
         const visibleItems = visibleActivityGroupItems(group.items, expanded, query);
         const showMoreControl = query.trim().length === 0

@@ -156,25 +156,26 @@
   - 提交：`功能：建立 Studio 统一活动导航组件`。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:14 CST`。新增独立 `ActivityNavigator`，实现 run/call 投影、时间降序与 `kind + key` 等时排序、`unknown`、标题/技术 ID fallback、最小搜索字段、合并日期计数、5 条预览、两层独立展开、局部错误保留和两行活动项；App 与旧 navigator 尚未接线/删除。TDD RED 来自组件缺失，GREEN 为 Studio UI 25/25；`npm run build` 与 `git diff --check` 通过。外审 run `studio-activity-navigator-p21-review-20260716` 为 `decide_completed`；1 Must / 4 Should 已通过等时排序、搜索自动展开、a11y、无时间占位与 DOM contract 修正关闭，无 needs decision。唯一下一步为 `P2.2 Step 1`。
 
-- [ ] P2.2 收敛 App 状态、刷新与详情路由
+- [x] ~~P2.2 收敛 App 状态、刷新与详情路由~~
   - Slice：`P2.2`
   - 依赖：P2.1。
   - 文件：`App.tsx`、`styles.css`、`vite.config.ts`、两个旧 navigator、当前品牌/分组 spec/plan、Studio UI test。
   - 状态规则：`workspaceView === "runs"|"calls"` 时对应活动项选中；`settings|definitions` 时活动列表无选中高亮但两个 selected key 原样保留；点击任一活动项立即恢复对应 runs/calls 详情，不新增独立 `lastActivityKind`。
-  - [ ] Step 1：写 RED：`navigatorView`、`SegmentedControl` 和双 query 不再出现；统一 refresh 同时调用 runs/calls；刷新后仍存在的 selected key 和 `workspaceView` 不变；settings/manual 覆盖后点击活动恢复正确详情；旧 `title="刷新运行"` contract 改为统一刷新可访问名称；品牌栏仍是纯文字 + 双 ActionIcon。
-  - [ ] Step 2：运行 focused tests，确认旧 App 结构导致 RED。
-  - [ ] Step 3：删除 `navigatorView`、`runQuery`、`callQuery` 和顶部 toolbar；增加 `activityQuery`；自动/手动刷新同时刷新两类；保留 `WorkspaceView` 的 runs/calls 详情路由与 settings/definitions；App 完成接线后删除两个旧 navigator，确保每个 commit 都可 build。
-  - [ ] Step 4：完成 current dirty UI 的品牌栏、subtitle `11px` / gap `4`、SVG 分组视觉和 Vite allow；不恢复页面 logo。
-  - [ ] Step 5：`npm run build`、focused Studio tests、`git diff --check` 全部通过。
+  - [x] Step 1：写 RED：`navigatorView`、`SegmentedControl` 和双 query 不再出现；统一 refresh 同时调用 runs/calls；刷新后仍存在的 selected key 和 `workspaceView` 不变；settings/manual 覆盖后点击活动恢复正确详情；旧 `title="刷新运行"` contract 改为统一刷新可访问名称；品牌栏仍是纯文字 + 双 ActionIcon。
+  - [x] Step 2：运行 focused tests，确认旧 App 结构导致 RED。
+  - [x] Step 3：删除 `navigatorView`、`runQuery`、`callQuery` 和顶部 toolbar；增加 `activityQuery`；自动/手动刷新同时刷新两类；保留 `WorkspaceView` 的 runs/calls 详情路由与 settings/definitions；App 完成接线后删除两个旧 navigator，确保每个 commit 都可 build。
+  - [x] Step 4：完成 current dirty UI 的品牌栏、subtitle `11px` / gap `4`、SVG 分组视觉和 Vite allow；不恢复页面 logo。
+  - [x] Step 5：`npm run build`、focused Studio tests、`git diff --check` 全部通过。
   - 审查方式：外审。依据：App 状态机和整体导航信息架构变化。
   - 提交：`界面：统一 Studio 活动导航与品牌分组`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:42 CST`。App 已接入单一 `ActivityNavigator` 与 `activityQuery`，手动/自动刷新同时加载 runs/calls，settings/manual 仅覆盖详情且保留选择，旧两个 navigator、切换器和页面 logo 组件已删除；品牌栏与日期分组视觉按批准规格收口。外审 run `studio-activity-navigator-p22-review-20260716` 为 `decide_completed`，三 reviewer 均 0 Must；接受刷新/失败时 stale 列表与详情、选中高亮、搜索绕过折叠和文档漂移 finding，以 error state 保留旧数组、静默手刷、行为 helper/SSR 断言和 spec 同步关闭。fresh Studio UI 24/24、`npm run build`、`git diff --check` 通过。按用户要求不对修复重复发起 reviewer，唯一下一步为 `P2.Z`。
 
 - [ ] P2.Z 浏览器验收与阶段校准
   - Slice：`P2.Z`
   - 手工验证：在 `1280 x 720`、`1024 x 640` 检查品牌栏、统一搜索/刷新、日期折叠、5 条展开/收回、运行/调用混排、类型标签、选中路由、settings/manual；无裁切、横向 overflow 或 console error。
   - 浏览器不可附着策略：保留自动化证据并让用户刷新 `4317` 提供视觉确认；不伪造浏览器证据。
   - 自动化：`npm test`、`npm run studio-desktop:package:dev`、Cargo check/test、`npm audit --json`、`git diff --check`。
-  - 审查：AgentMesh Cursor + Claude 4.8 + GLM 5.2 全量 UI/状态 diff；无未解决 Must/Should 才完成。
+  - 审查：沿用 P2.2 已完成的 Cursor + Claude 4.8 + GLM 5.2 审查与关闭记录，不重复发起相同范围 reviewer。
   - 日志：按 `my-changelog` 聚合精简品牌栏、分组预览和统一活动事实；旧两个 UI 计划标记 merged/completed。
 
 ### P3. 总回归、发布门禁与 clean release commit
@@ -263,4 +264,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P2.2 Step 1`，为 App 单一活动 query/refresh、选择稳定和 runs/calls 详情路由写失败测试。
+- 当前下一步：`P2.Z`，完成双 viewport 浏览器验收、全量自动化与阶段日志。
