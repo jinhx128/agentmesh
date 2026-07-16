@@ -1,6 +1,6 @@
 # Studio 运行分组预览实施计划
 
-> 状态（2026-07-16）：已合并。两层展开和轻量文件树实现将由统一 `ActivityNavigator` 吸收；剩余视觉、日志和提交步骤迁入 `2026-07-16-studio-activity-and-v012-release.md`，本文件不再维护独立“当前下一步”。
+> 状态（2026-07-16）：已合并并完成。两层展开和轻量文件树已由统一 `ActivityNavigator` 吸收，双 viewport 验收、日志与提交均由 `2026-07-16-studio-activity-and-v012-release.md` 完成；本文件不再维护独立“当前下一步”。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -176,11 +176,11 @@ npm run studio-desktop:package:dev
 git diff --check
 ```
 
-- [ ] **Step 3: 同步 changelog、三个实施计划和总发布计划**
+- [x] **Step 3: 同步 changelog、三个实施计划和总发布计划**
 
 历史要求为记录视觉与自动化证据；该步骤现已迁入统一总计划，不再从本文件恢复发布下一步。
 
-- [ ] **Step 4: 提交合并 UI slice**
+- [x] **Step 4: 提交合并 UI slice**
 
 ```bash
 git add apps/studio-web/src tests-node/studio-ui.test.ts \

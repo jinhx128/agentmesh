@@ -137,7 +137,8 @@
 
 ### P2. 统一活动导航并吸收当前 UI 改动
 
-- [ ] P2 阶段完成门禁（P2.1、P2.2、P2.Z 完成后勾选）
+- [x] ~~P2 阶段完成门禁（P2.1、P2.2、P2.Z 完成后勾选）~~
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:53 CST`。P2.1 `09926ea` 与 P2.2 `247b871` 已进入祖先链；统一活动投影、App 接线、紧凑品牌栏、两层日期/组内展开与 stale-data 刷新均完成。双 viewport 浏览器验收、全量 559/559、Desktop dev package、Cargo check/test、audit 0 与 diff check 全部通过；P2.2 三方一次性审查为 0 Must 且有效 Should 已关闭。唯一下一步为 `P3.1`。
 
 - [x] ~~P2.1 建立统一活动投影、分组和活动项~~
   - Slice：`P2.1`
@@ -170,13 +171,14 @@
   - 提交：`界面：统一 Studio 活动导航与品牌分组`。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:42 CST`。App 已接入单一 `ActivityNavigator` 与 `activityQuery`，手动/自动刷新同时加载 runs/calls，settings/manual 仅覆盖详情且保留选择，旧两个 navigator、切换器和页面 logo 组件已删除；品牌栏与日期分组视觉按批准规格收口。外审 run `studio-activity-navigator-p22-review-20260716` 为 `decide_completed`，三 reviewer 均 0 Must；接受刷新/失败时 stale 列表与详情、选中高亮、搜索绕过折叠和文档漂移 finding，以 error state 保留旧数组、静默手刷、行为 helper/SSR 断言和 spec 同步关闭。fresh Studio UI 24/24、`npm run build`、`git diff --check` 通过。按用户要求不对修复重复发起 reviewer，唯一下一步为 `P2.Z`。
 
-- [ ] P2.Z 浏览器验收与阶段校准
+- [x] ~~P2.Z 浏览器验收与阶段校准~~
   - Slice：`P2.Z`
   - 手工验证：在 `1280 x 720`、`1024 x 640` 检查品牌栏、统一搜索/刷新、日期折叠、5 条展开/收回、运行/调用混排、类型标签、选中路由、settings/manual；无裁切、横向 overflow 或 console error。
   - 浏览器不可附着策略：保留自动化证据并让用户刷新 `4317` 提供视觉确认；不伪造浏览器证据。
   - 自动化：`npm test`、`npm run studio-desktop:package:dev`、Cargo check/test、`npm audit --json`、`git diff --check`。
   - 审查：沿用 P2.2 已完成的 Cursor + Claude 4.8 + GLM 5.2 审查与关闭记录，不重复发起相同范围 reviewer。
   - 日志：按 `my-changelog` 聚合精简品牌栏、分组预览和统一活动事实；旧两个 UI 计划标记 merged/completed。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:53 CST`。in-app browser 在 `1280 x 720` 与 `1024 x 640` 实际点击验证日期折叠、展开其余/收起到 5 条、搜索绕过折叠、run/call 路由及 settings/manual 覆盖恢复；两个尺寸无横向 overflow，console warn/error 为 0。`npm test` 559/559、Desktop dev package `ok: true` 且 0 issues/warnings、Cargo check、Cargo test 1/1、audit 0、`git diff --check` 通过；changelog 与两个旧 UI 计划已同步。唯一下一步为 `P3.1`。
 
 ### P3. 总回归、发布门禁与 clean release commit
 
@@ -264,4 +266,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P2.Z`，完成双 viewport 浏览器验收、全量自动化与阶段日志。
+- 当前下一步：`P3.1`，聚合发布前代码、文档、版本源与 clean gate 证据。
