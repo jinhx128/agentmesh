@@ -2,54 +2,53 @@
 
 ## 目标
 
-强化运行导航中的日期分组层级，并限制大分组的默认长度。用户进入 Studio 时能快速浏览多个日期，而不是被单个含十余条运行的分组占满侧栏；需要时可直接点击分组标题展开全部。
+强化运行导航中的日期分组层级，并在日期分组内部增加独立的 5 条预览控制。日期组头原有的“整组展开/隐藏”行为保持不变；大分组展开后默认显示前 5 条，在第 5 条下方提供显示全部的按钮。
 
 ## 已批准视觉
 
-- 分组 header 高度从 `30px` 提升到 `36px`。
-- 日期名称使用约 `15px`、`font-weight: 900`，与组内 `14px` 运行标题形成明确层级。
-- 日期前的展开箭头独立为 `16px`、较粗字重，与标题保持约 `6px` 间距，不再继承小号 dimmed 文本尺寸。
-- 计数 Badge 继续显示分组总数，尺寸从 `xs` 提升到 `sm`。
-- header 保持整行点击区域和现有 hover/focus 反馈，不增加第二个展开按钮。
+- 日期组头高度保持放大后的 `36px`。
+- 日期名称使用约 `15px`、`font-weight: 900`。
+- 日期前的整组展开箭头增大到 `20px`、较粗字重，与标题保持约 `6px` 间距。
+- 计数 Badge 使用 `sm`，继续显示分组总数。
+- 组内预览控制使用紧凑、整行的 subtle button，与运行条目区分，不增加第二个图标。
 
-## 预览与展开行为
+## 两层展开行为
 
-常量 `RUN_GROUP_PREVIEW_LIMIT` 固定为 `5`：
+两套状态必须独立：
 
-- 空查询下，超过 5 条的日期分组默认只渲染最新 5 条，箭头向右。
-- 点击整个分组 header 后渲染该组全部运行，箭头向下，`aria-expanded="true"`。
-- 再次点击收回前 5 条，`aria-expanded="false"`。
-- 5 条及以内始终完整显示，不提供无意义的展开/收起操作，也不把静态 header 暴露为按钮。
-- 搜索 query 非空时显示全部匹配运行，不应用 5 条截断，保证筛选结果不会被隐藏。
+1. 日期组头沿用原有 `collapsedGroups`。所有日期 header 都可点击；向下箭头表示整组已展开，向右箭头表示整组隐藏。折叠时该组的运行与组内预览按钮全部隐藏。
+2. 组内列表使用独立 `expandedItemGroups`。展开的日期组若超过 `RUN_GROUP_PREVIEW_LIMIT = 5`，默认只渲染前 5 条，并在第 5 条下面显示 `展开其余 N 条`。
 
-分组内顺序继续沿用 App Server 提供的运行顺序；本改动不重新排序、不改变当前选择或数据请求。
+点击 `展开其余 N 条` 后显示该组全部运行，按钮移动到全部运行的下方并变成 `收起到 5 条`；再次点击回到前 5 条。日期组头的折叠/展开不重置组内状态，保证用户重新打开日期分组时保持刚才的选择。
+
+5 条及以内不显示组内预览按钮。搜索 query 非空时显示全部匹配运行，并隐藏组内预览按钮，避免筛选结果被截断。
 
 ## 组件边界
 
-- `RunNavigator.tsx` 将现有 `collapsedGroups` 改为 `expandedGroups`，状态仍以日期字符串为 key。
-- 增加纯函数 `visibleRunGroupRuns(runs, expanded, query)`，集中表达 5 条预览、全部展开和搜索例外，便于真实数据单测。
-- `NavGroupToggle` 收敛为支持可点击/静态两种语义的 group header；只有 `count > 5` 且 query 为空时可点击。
-- `styles.css` 使用 `.studio-nav-group-header`、`.studio-nav-group-icon`、`.studio-nav-group-label` 和现有 Badge selector 建立视觉层级。
-- Call navigator、运行条目、搜索输入、刷新、自动刷新、AppShell 和 API 不变。
+- `RunNavigator.tsx` 恢复 `collapsedGroups` 管理整组可见性，新增 `expandedItemGroups` 管理前 5 条/全部。
+- 纯函数 `visibleRunGroupRuns(runs, showAll, query)` 集中表达 5 条预览、显示全部和搜索例外。
+- `NavGroupToggle` 保持所有日期分组都是 button，保留 `aria-expanded` 与 `data-nav-group`。
+- 新增 `NavGroupMoreButton`，只负责 `展开其余 N 条` / `收起到 5 条` 的组内切换。
+- `styles.css` 使用 `.studio-nav-group-header`、`.studio-nav-group-icon`、`.studio-nav-group-label` 与 `.studio-nav-group-more`。
+- Call navigator、运行排序/选择、数据请求、AppShell、updater 均不变。
 
 ## 可访问性
 
-- 可展开 header 使用原生 button/Mantine button 语义，保留 `data-nav-group`，并提供正确的 `aria-expanded`。
-- 5 条及以内的静态 header 不进入 Tab 顺序，不伪装成可点击控件。
-- 箭头只表达视觉状态，使用 `aria-hidden="true"`；日期名称和总数仍由 header 文本与 Badge 提供。
-- focus-visible 必须清晰；不依赖颜色单独表达展开状态。
+- 日期 header 的 `aria-expanded` 只表达整组是否隐藏，不表达组内是否显示全部。
+- 组内预览按钮使用真实 button，文案包含隐藏数量；展开后明确显示 `收起到 5 条`。
+- 箭头使用 `aria-hidden="true"`，不依赖颜色单独表达状态。
+- 两类按钮都保留清晰的 hover 和 focus-visible。
 
 ## 验证
 
-- 纯函数先 RED 后 GREEN：7 条默认返回 5 条，expanded 返回 7 条，非空 query 返回全部匹配条目，5 条输入保持 5 条。
-- 静态 render contract 断言 `RUN_GROUP_PREVIEW_LIMIT = 5`、`expandedGroups`、两种 header 语义、`aria-expanded`、16px icon、15px label、36px header 和 `sm` Badge。
-- 聚焦 Run navigator 测试通过后，运行完整 `npm test`、Desktop dev package 和 `git diff --check`。
-- 在现有 `4317` 页面确认大分组默认只显示 5 条、点击后显示全部/再次收回，搜索不截断匹配项；检查 console error 为 0。
-- 本改动与已完成但尚未提交的精简品牌栏合并为同一 UI slice，验证后再恢复 `0.1.12` 发布流程。
+- 纯函数先 RED 后 GREEN：7 条默认返回 5 条，showAll 返回 7 条，非空 query 返回全部，5 条输入保持 5 条。
+- 源码/SSR contract 锁定 `collapsedGroups`、`expandedItemGroups`、日期 header 全部可点击、`aria-expanded`、底部按钮两种文案、20px icon、15px label、36px header 与 sm Badge。
+- 聚焦测试后运行完整 `npm test`、Desktop dev package 与 `git diff --check`。
+- `4317` 页面验证：日期 header 仍可隐藏/显示整组；26 条分组默认 5 条；第 5 条下方展开全部；全部列表底部可收回 5 条；搜索不截断匹配项；console error 0。
+- 与精简品牌栏合并为同一 UI slice，验证后恢复 `0.1.12` 发布。
 
 ## 非目标
 
-- 不增加用户可配置的预览数量。
-- 不把分组展开状态写入 localStorage、配置文件或 URL。
-- 不新增虚拟列表、分页 API 或动画依赖。
-- 不修改 Call navigator 的数据结构或分组方式。
+- 不增加可配置预览数量或持久化。
+- 不新增分页 API、虚拟列表或动画依赖。
+- 不修改 Call navigator。
