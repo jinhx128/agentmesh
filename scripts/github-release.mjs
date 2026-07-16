@@ -168,6 +168,7 @@ function verifyRelease({ compareLocal }) {
   assertCommand("gh", ["--version"], "GitHub CLI is required to verify releases.");
   assertTagExists();
   const release = readRelease();
+  const latestReleaseTag = readLatestReleaseTag();
   const remoteAssets = new Map(release.assets.map((asset) => [asset.name, asset]));
   const expectedDigests = compareLocal ? readExpectedDigests() : new Map();
   const failures = [];
@@ -180,6 +181,9 @@ function verifyRelease({ compareLocal }) {
   }
   if (release.isPrerelease) {
     failures.push(`${tag} is marked as prerelease`);
+  }
+  if (latestReleaseTag !== tag) {
+    failures.push(`GitHub latest release is ${latestReleaseTag}, expected ${tag}`);
   }
   for (const asset of assets) {
     const remote = remoteAssets.get(asset);
@@ -220,6 +224,14 @@ function readRelease() {
     { cwd: root, encoding: "utf-8" },
   );
   return JSON.parse(output);
+}
+
+function readLatestReleaseTag() {
+  return execFileSync(
+    "gh",
+    ["api", `repos/${repo}/releases/latest`, "--jq", ".tag_name"],
+    { cwd: root, encoding: "utf-8" },
+  ).trim();
 }
 
 function releaseExists() {

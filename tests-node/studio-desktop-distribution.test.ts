@@ -194,7 +194,8 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
   assert.notEqual(updaterConfig.plugins?.updater?.pubkey, "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY");
   assert.match(libRs, /tauri_plugin_shell::init/);
   assert.match(libRs, /\.sidecar\("agentmesh-studio-sidecar"\)/);
-  assert.match(libRs, /sidecar_launch_args\(\)/);
+  assert.match(libRs, /sidecar_launch_config_from_args\(std::env::args\(\)\)/);
+  assert.match(libRs, /command\.current_dir\(current_dir\)/);
   assert.match(libRs, /"--workspace"/);
   assert.match(libRs, /strip_prefix\("--workspace="\)/);
   assert.doesNotMatch(libRs, /\.args\(\["--launch-json"\]\)/);

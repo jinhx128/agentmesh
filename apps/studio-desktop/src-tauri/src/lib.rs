@@ -37,11 +37,17 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
             format!("failed to generate AgentMesh launch token: {error}"),
         )
     })?;
-    let sidecar_args = sidecar_launch_args();
+    let sidecar_config = sidecar_launch_config_from_args(std::env::args());
 
     tauri::async_runtime::spawn(async move {
         let command = match app_handle.shell().sidecar("agentmesh-studio-sidecar") {
-            Ok(command) => command.args(sidecar_args),
+            Ok(command) => {
+                let command = command.args(sidecar_config.args);
+                match sidecar_config.current_dir {
+                    Some(current_dir) => command.current_dir(current_dir),
+                    None => command,
+                }
+            }
             Err(error) => {
                 eprintln!("failed to create AgentMesh sidecar command: {error}");
                 return;
@@ -94,23 +100,36 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-fn sidecar_launch_args() -> Vec<String> {
+struct SidecarLaunchConfig {
+    args: Vec<String>,
+    current_dir: Option<String>,
+}
+
+fn sidecar_launch_config_from_args(
+    args: impl IntoIterator<Item = String>,
+) -> SidecarLaunchConfig {
     let mut sidecar_args = vec!["--launch-json".to_string()];
-    let mut process_args = std::env::args().skip(1);
+    let mut current_dir = None;
+    let mut process_args = args.into_iter().skip(1);
     while let Some(arg) = process_args.next() {
         if arg == "--workspace" {
             if let Some(value) = process_args.next() {
                 sidecar_args.push("--workspace".to_string());
-                sidecar_args.push(value);
+                sidecar_args.push(value.clone());
+                current_dir = Some(value);
             }
         } else if let Some(value) = arg.strip_prefix("--workspace=") {
             if !value.is_empty() {
                 sidecar_args.push("--workspace".to_string());
                 sidecar_args.push(value.to_string());
+                current_dir = Some(value.to_string());
             }
         }
     }
-    sidecar_args
+    SidecarLaunchConfig {
+        args: sidecar_args,
+        current_dir,
+    }
 }
 
 fn handle_stdout_chunk(
@@ -191,4 +210,29 @@ fn generate_launch_token() -> Result<String, getrandom::Error> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes)?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sidecar_launch_config_from_args;
+
+    #[test]
+    fn sidecar_uses_explicit_workspace_as_its_working_directory() {
+        let workspace = "/tmp/agentmesh-workspace";
+        let config = sidecar_launch_config_from_args([
+            "agentmesh-studio-desktop".to_string(),
+            "--workspace".to_string(),
+            workspace.to_string(),
+        ]);
+
+        assert_eq!(config.current_dir.as_deref(), Some(workspace));
+        assert_eq!(
+            config.args,
+            vec![
+                "--launch-json".to_string(),
+                "--workspace".to_string(),
+                workspace.to_string(),
+            ],
+        );
+    }
 }

@@ -88,6 +88,8 @@ tarball，避免把新构建产物误判成已发布产物。
 
 `v0.1.11` 是第一个 updater-enabled Release；它的 `latest.json` 必须指向同一 tag 下的
 `AgentMesh_0.1.11_aarch64.app.tar.gz`，且 metadata signature 必须与同名 `.sig` 完全一致。
+验证脚本还会查询 GitHub `releases/latest` API，要求 latest tag 与当前发布 tag 一致，
+避免 stable updater endpoint 指向旧 Release 或 prerelease。
 
 需要强制比较当前本地 `dist-release/` 时：
 

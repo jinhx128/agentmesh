@@ -658,11 +658,13 @@ git commit -m "发布：准备 AgentMesh 0.1.11"
 
 ### P2.2 完整验证并生成签名发布产物
 
+- [x] ~~P2.2 完整验证并生成签名发布产物。~~
+
 **Files:**
 - Generated/verify only: `dist-node/`, `dist-release/`, `apps/studio-desktop/src-tauri/target/`
 - External secrets: `~/.config/agentmesh/updater/agentmesh.key`、Keychain service `dev.agentmesh.studio.updater`
 
-- [ ] **Step 1: 全量自动化与 Desktop smoke**
+- [x] **Step 1: 全量自动化与 Desktop smoke**
 
 ```bash
 npm test
@@ -673,7 +675,7 @@ git diff --check
 
 Expected: 全部 PASS；记录实际测试数，不沿用旧的 547 数字。
 
-- [ ] **Step 2: 安全加载签名凭据并准备资产**
+- [x] **Step 2: 安全加载签名凭据并准备资产**
 
 ```bash
 test -f "$HOME/.config/agentmesh/updater/agentmesh.key"
@@ -687,7 +689,7 @@ unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
 禁止开启 `set -x` 或输出 env。Expected: `dist-release/` 生成 7 个版本化资产。
 
-- [ ] **Step 3: 校验 DMG、checksums、metadata/signature**
+- [x] **Step 3: 校验 DMG、checksums、metadata/signature**
 
 ```bash
 hdiutil verify dist-release/AgentMesh_0.1.11_aarch64.dmg
@@ -705,15 +707,17 @@ if(!p.url.includes("/v0.1.11/AgentMesh_0.1.11_aarch64.app.tar.gz")) throw new Er
 
 实际版本变化时替换版本。Expected: DMG valid、7 个 checksum OK、metadata 与 signature/immutable URL 一致。
 
-- [ ] **Step 4: 记录证据，不提交生成物**
+- [x] **Step 4: 记录证据，不提交生成物**
 
 把命令、测试数、资产名/大小、DMG/checksum/metadata 结论写入本计划；不写私钥或 password。`dist-node/`、`dist-release/`、Tauri `target/` 保持 ignored。
 
 审查方式：外审，进入 `P2.3` Release Check。任一关键验证失败即 `not_ready`，修复后重新执行 P2.2 全部步骤。
 
+进度记录：状态 `completed`；完成时间 `2026-07-16 11:04 CST`。发布前最终自动化为 `npm test` 551/551、`npm audit --json` 0 vulnerabilities、`npm run studio-desktop:package:dev` 报 `ok: true`、随后 `cargo check` 通过。仓库外 updater key 存在且权限为 `600`，Keychain password 可读；凭据只注入 `release:assets` 子进程并由 EXIT trap 清理，未打印。`npm run release:assets` 成功生成 `agentmesh-0.1.11.tgz` 504,416 bytes、`AgentMesh_0.1.11_aarch64.dmg` 35,901,960 bytes、`AgentMesh_0.1.11_aarch64.app.tar.gz` 36,211,933 bytes、`.sig` 408 bytes、`latest.json` 698 bytes、Skill markdown 12,107 bytes 和 `SHA256SUMS` 638 bytes。首次精确资产集合检查识别到 `dist-release/` 的 5 个 `0.1.10` 旧生成物；发布脚本只枚举当前资产，但为避免混版已显式删除旧生成物。最终 `hdiutil verify` 为 VALID、6 个内容资产 checksum 全部 OK、目录恰好 7 项、metadata version 为 `0.1.11`、signature 与 `.sig` 完全一致且 URL 指向不可变 `v0.1.11` archive。生成物均 ignored，git worktree 无 tracked diff（计划证据除外）；下一步 `P2.3 Step 1`。
+
 ### P2.3 多模型 Release Check 与发布门禁
 
-- [ ] **Step 1: 生成审查上下文**
+- [x] **Step 1: 生成审查上下文**
 
 ```bash
 git diff bf3bf6b...HEAD -- . ':(exclude)docs/superpowers/plans/*.md' \
@@ -722,7 +726,7 @@ git diff bf3bf6b...HEAD -- . ':(exclude)docs/superpowers/plans/*.md' \
 
 创建 `/tmp/agentmesh-v0.1.11-verification.md`，只写 P2.2 命令/结果、资产清单、跳过项和残余风险。
 
-- [ ] **Step 2: 运行 AgentMesh Release Check**
+- [x] **Step 2: 运行 AgentMesh Release Check**
 
 ```bash
 agentmesh run --workflow w-67ef1b1f \
@@ -745,6 +749,8 @@ agentmesh run --workflow w-67ef1b1f \
 ready 后更新本计划/changelog 的审查事实，提交 review 修正与记录，再完整重跑 `npm test`、`cargo check`、`studio-desktop:package:dev`、`release:assets`。发布 commit 后禁止修改 tag 内资产来源。
 
 审查方式：AgentMesh 外审。外审失败策略：高风险发布门禁不得降级普通自审，状态为 `needs_decision`。
+
+进度记录：`P2.3 Step 1-2` 已完成，Release Check run 为 `workflow-20260716110729`，Cursor、GLM 5.2、Claude 4.8 三个 reviewer 均完成，状态为 `review_completed`。接受两项发布门禁修正：非 Desktop entrypoint 不再访问 npm registry；GitHub 发布验证要求 stable latest tag 等于当前 tag。拒绝“双更新卡冲突”“Converge 图标越界”和“CLI Desktop 更新必须走 Tauri”等与批准设计或运行边界不符的 finding；updater 公私钥配对已用独立 Rust `minisign-verify` 程序复刻 Tauri 验签路径并通过。真机补充发现 LaunchServices 启动的 sidecar 继承错误工作目录，已按 RED/GREEN 修复为显式 workspace `current_dir`；重新构建后 `open -n` 启动可加载 Runs 与 About，Tab 焦点环可见，App 退出后 sidecar 清理完成。修复后最终门禁为 `npm test` 552/552、Desktop dev package `ok: true`、`cargo check`、Rust tests、`npm audit` 0 vulnerabilities、`git diff --check` 全部通过。原生 updater 在 `v0.1.11` 尚未发布时按预期因远端缺少 stable `latest.json` 返回网络错误，发布后复验。下一步 `P2.3 Step 3`：提交修正、重建签名资产、刷新 release summary 并 attach 唯一 verdict。
 
 ### P2.4 推送 main、打 tag、发布 npm 与 GitHub 资产
 
@@ -911,4 +917,4 @@ defaults read /Applications/AgentMesh.app/Contents/Info CFBundleShortVersionStri
 
 ## 8. 当前下一步
 
-- 当前下一步：`P2.2 Step 1`，完成发布前自动化并安全生成签名 updater 与 DMG 资产。
+- 当前下一步：`P2.3 Step 1`，生成 release review 上下文并运行三模型 Release Check。

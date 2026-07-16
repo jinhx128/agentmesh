@@ -681,6 +681,36 @@ test("desktop detects and updates the public npm CLI without path input", async 
   }
 });
 
+test("non-desktop integrations do not query the public npm registry", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const binDir = path.join(workspace, "bin");
+  writeFakeAgentmesh(binDir, "0.1.11");
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = binDir;
+  let registryCheckCount = 0;
+  try {
+    const result = await readStudioIntegrations({
+      cwd: workspace,
+      entrypoint: "studio",
+      integrations: {
+        registryFetch: async () => {
+          registryCheckCount += 1;
+          return new Response(JSON.stringify({ version: "0.1.11" }), { status: 200 });
+        },
+      } as StudioIntegrationOptions,
+    });
+    assert.equal(registryCheckCount, 0);
+    assert.equal(result.command_line_tool.supported, false);
+    assert.equal(result.command_line_tool.installed_version, "0.1.11");
+    assert.equal(result.command_line_tool.latest_version, "unknown");
+    assert.equal(result.command_line_tool.status, "unknown");
+  } finally {
+    process.env.PATH = previousPath;
+  }
+});
+
 test("desktop offers the stable CLI update to a matching prerelease install", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

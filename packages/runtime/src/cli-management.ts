@@ -13,6 +13,7 @@ const AGENTMESH_CLI_LATEST_URL = "https://registry.npmjs.org/@jinhx128%2Fagentme
 export interface AgentMeshCliManagementOptions {
   workspace: string;
   registryFetch?: typeof fetch;
+  checkRegistry?: boolean;
   commandTimeoutMs?: number;
   installTimeoutMs?: number;
   discovery?: ProviderToolDiscoveryOptions;
@@ -48,7 +49,9 @@ export async function detectAgentMeshCli(
   const installedVersion = resolution.path
     ? probeVersion(resolution.path, options.commandTimeoutMs ?? 5_000, diagnostics)
     : "missing";
-  const latestVersion = await readLatestCliVersion(options.registryFetch, diagnostics);
+  const latestVersion = options.checkRegistry === false
+    ? "unknown"
+    : await readLatestCliVersion(options.registryFetch, diagnostics);
   const installed = Boolean(resolution.ok && resolution.path);
   return {
     package_name: AGENTMESH_CLI_PACKAGE,

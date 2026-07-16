@@ -140,6 +140,13 @@ test("release publish wrappers expose npm and GitHub one-command flows", () => {
     assert.match(githubScript, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.doesNotMatch(githubScript, /release:github:verify/);
+
+  const githubReleaseScript = readFileSync(path.join(root, "scripts", "github-release.mjs"), {
+    encoding: "utf-8",
+  });
+  assert.match(githubReleaseScript, /function readLatestReleaseTag\(\)/);
+  assert.match(githubReleaseScript, /`repos\/\$\{repo\}\/releases\/latest`/);
+  assert.match(githubReleaseScript, /latestReleaseTag !== tag/);
 });
 
 test("packages and apps are explicit workspace build units", () => {
