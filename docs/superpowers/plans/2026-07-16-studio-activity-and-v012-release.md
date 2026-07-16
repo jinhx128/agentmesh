@@ -139,7 +139,7 @@
 
 - [ ] P2 阶段完成门禁（P2.1、P2.2、P2.Z 完成后勾选）
 
-- [ ] P2.1 建立统一活动投影、分组和活动项
+- [x] ~~P2.1 建立统一活动投影、分组和活动项~~
   - Slice：`P2.1`
   - 依赖：P1.Z。
   - 文件：新增 `ActivityNavigator.tsx`；修改 API types、CSS、Studio UI test；本 slice 保留两个旧 navigator，保证 App 尚未接线时 build 仍 GREEN。
@@ -148,12 +148,13 @@
     - `StudioActivityItem` 为 `kind: "run" | "call"` 的 discriminated union。
     - `activityItems(...)` 负责标题 fallback、时间投影和稳定降序；运行三类时间全缺失时排序到有效时间之后并归入现有 `unknown` 日期组。
     - `visibleActivityGroupItems(items, expanded, query)` 实现 5 条预览。
-  - [ ] Step 1：写 RED：混合 fixture 按时间排序、缺失运行时间归入 `unknown`、合并日期计数、默认 5 条、搜索显示全部、标题 fallback、第二行只有类型和时间、局部错误保留另一类数据；搜索最小字段集覆盖 title、技术 ID、workspace label/path、workflow/purpose/agent/model/status。
-  - [ ] Step 2：运行 focused Studio tests，确认失败来自 `ActivityNavigator` 不存在和旧切换仍渲染。
-  - [ ] Step 3：实现统一投影与 DOM；复用当前 dirty `RunNavigator` 的 SVG chevron/calendar、两层状态、纯文本计数、无边框 more row 和柔和选中态，但暂不删除旧组件或修改 App import。
-  - [ ] Step 4：`npm run build`；focused Studio tests 0 failed；`git diff --check`。
+  - [x] Step 1：写 RED：混合 fixture 按时间排序、缺失运行时间归入 `unknown`、合并日期计数、默认 5 条、搜索显示全部、标题 fallback、第二行只有类型和时间、局部错误保留另一类数据；搜索最小字段集覆盖 title、技术 ID、workspace label/path、workflow/purpose/agent/model/status。
+  - [x] Step 2：运行 focused Studio tests，确认失败来自 `ActivityNavigator` 不存在和旧切换仍渲染。
+  - [x] Step 3：实现统一投影与 DOM；复用当前 dirty `RunNavigator` 的 SVG chevron/calendar、两层状态、纯文本计数、无边框 more row 和柔和选中态，但暂不删除旧组件或修改 App import。
+  - [x] Step 4：`npm run build`；focused Studio tests 0 failed；`git diff --check`。
   - 审查方式：外审。依据：跨运行/调用行为、加载状态和可访问交互。
   - 提交：`功能：建立 Studio 统一活动导航组件`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 19:14 CST`。新增独立 `ActivityNavigator`，实现 run/call 投影、时间降序与 `kind + key` 等时排序、`unknown`、标题/技术 ID fallback、最小搜索字段、合并日期计数、5 条预览、两层独立展开、局部错误保留和两行活动项；App 与旧 navigator 尚未接线/删除。TDD RED 来自组件缺失，GREEN 为 Studio UI 25/25；`npm run build` 与 `git diff --check` 通过。外审 run `studio-activity-navigator-p21-review-20260716` 为 `decide_completed`；1 Must / 4 Should 已通过等时排序、搜索自动展开、a11y、无时间占位与 DOM contract 修正关闭，无 needs decision。唯一下一步为 `P2.2 Step 1`。
 
 - [ ] P2.2 收敛 App 状态、刷新与详情路由
   - Slice：`P2.2`
@@ -262,4 +263,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P2.1 Step 1`，为统一活动投影、混排、日期分组、5 条预览与局部错误写失败测试。
+- 当前下一步：`P2.2 Step 1`，为 App 单一活动 query/refresh、选择稳定和 runs/calls 详情路由写失败测试。

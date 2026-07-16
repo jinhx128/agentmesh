@@ -402,6 +402,21 @@ button:not(:disabled),
   text-align: left;
 }
 
+.studio-activity-item-meta {
+  min-height: 20px;
+}
+
+.studio-activity-kind {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid #dce2e9;
+  border-radius: 999px;
+  background: #f3f5f7;
+  color: #667181;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .studio-nav-item .mantine-Button-inner,
 .studio-nav-group-toggle .mantine-Button-inner,
 .studio-nav-group-toggle .mantine-Button-label,

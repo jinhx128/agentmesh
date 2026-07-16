@@ -99,6 +99,16 @@ import {
   parseAutoRefreshSeconds,
 } from "../apps/studio-web/src/features/navigation/AutoRefreshSelect.js";
 import {
+  ACTIVITY_GROUP_PREVIEW_LIMIT,
+  ActivityNavigator,
+  activityItems,
+  filterActivityItems,
+  groupActivityItems,
+  visibleActivityGroupItems,
+  type ActivityCallsState,
+  type ActivityRunsState,
+} from "../apps/studio-web/src/features/navigation/ActivityNavigator.js";
+import {
   CallNavigator,
   type CallNavigatorState,
 } from "../apps/studio-web/src/features/calls/CallNavigator.js";
@@ -880,6 +890,163 @@ test("Run and call navigators render search, refresh, selection and empty states
   assert.match(renderCallNavigator({ status: "ready", calls: [] }, undefined, ""), /暂无调用。/);
   assert.equal(parseAutoRefreshSeconds("15"), 15);
   assert.equal(parseAutoRefreshSeconds("bad"), 0);
+});
+
+test("Unified activities sort runs and calls, group missing timestamps, and search stable fields", () => {
+  const run = {
+    ...studioRunSummariesFixture()[0],
+    run_id: "run-technical",
+    title: undefined,
+    workflow: "release-workflow",
+    status: "running",
+    updated_at: "2026-05-18T11:00:00.000Z",
+  };
+  const missingTimestampRun = {
+    ...studioRunSummariesFixture()[1],
+    run_id: "run-without-time",
+    title: "无时间运行",
+    workspace: {
+      ...studioRunSummariesFixture()[1].workspace,
+      label: "other-workspace",
+      path: "/workspace/other",
+    },
+    created_at: undefined,
+    updated_at: undefined,
+    latest_event_timestamp: undefined,
+  };
+  const call = {
+    ...studioCallSummaryFixture(),
+    id: "call-technical",
+    title: "审查发布结果",
+    purpose: "review-purpose",
+    agent_id: "review-agent",
+    model: "review-model",
+    status: "success" as const,
+    created_at: "2026-05-18T12:00:00.000Z",
+    workspace: {
+      ...studioCallSummaryFixture().workspace,
+      label: "call-workspace",
+      path: "/workspace/call",
+    },
+  };
+
+  const items = activityItems([run, missingTimestampRun], [call]);
+  assert.deepEqual(items.map((item) => item.kind), ["call", "run", "run"]);
+  assert.deepEqual(items.map((item) => item.title), ["审查发布结果", "run-technical", "无时间运行"]);
+
+  const equalTimestampItems = activityItems(
+    [
+      { ...run, run_id: "run-z", updated_at: call.created_at },
+      { ...run, run_id: "run-a", updated_at: call.created_at },
+    ],
+    [
+      { ...call, id: "call-z" },
+      { ...call, id: "call-a" },
+    ],
+  );
+  const equalTimestampKeys = equalTimestampItems.map((item) => `${item.kind}:${item.key}`);
+  assert.deepEqual(equalTimestampKeys, [...equalTimestampKeys].sort());
+
+  const groups = groupActivityItems(items);
+  assert.equal(groups[0].items.length, 2);
+  assert.equal(groups.at(-1)?.date, "unknown");
+  assert.deepEqual(groups.at(-1)?.items.map((item) => item.title), ["无时间运行"]);
+
+  for (const [query, expectedKind] of [
+    ["审查发布", "call"],
+    ["call-technical", "call"],
+    ["review-purpose", "call"],
+    ["review-agent", "call"],
+    ["review-model", "call"],
+    ["call-workspace", "call"],
+    ["success", "call"],
+    ["run-technical", "run"],
+    ["release-workflow", "run"],
+    ["/workspace/project", "run"],
+  ] as const) {
+    assert.deepEqual(filterActivityItems(items, query).map((item) => item.kind), [expectedKind]);
+  }
+});
+
+test("Unified activity groups preview five items and keep partial data visible on errors", () => {
+  const call = {
+    ...studioCallSummaryFixture(),
+    title: "可用调用记录",
+    purpose: "internal-summary-must-not-render",
+    created_at: "2026-05-18T12:00:00.000Z",
+  };
+  const calls = Array.from({ length: 7 }, (_, index) => ({
+    ...call,
+    id: `activity-call-${index + 1}`,
+  }));
+  const items = activityItems([], calls);
+
+  assert.equal(ACTIVITY_GROUP_PREVIEW_LIMIT, 5);
+  assert.equal(visibleActivityGroupItems(items, false, "").length, 5);
+  assert.equal(visibleActivityGroupItems(items, true, "").length, 7);
+  assert.equal(visibleActivityGroupItems(items, false, "activity").length, 7);
+
+  const previewMarkup = renderActivityNavigator(
+    { status: "ready", runs: [] },
+    { status: "ready", calls },
+  );
+  assert.match(previewMarkup, /data-nav-group=/);
+  assert.match(previewMarkup, /aria-expanded="true"/);
+  assert.match(previewMarkup, /aria-expanded="false"/);
+  assert.match(previewMarkup, /展开其余 2 条/);
+  for (let index = 1; index <= 5; index += 1) {
+    assert.match(previewMarkup, new RegExp(`activity-call-${index}`));
+  }
+  assert.doesNotMatch(previewMarkup, /activity-call-6|activity-call-7/);
+  const searchMarkup = renderActivityNavigator(
+    { status: "ready", runs: [] },
+    { status: "ready", calls },
+    "activity-call",
+  );
+  assert.match(searchMarkup, /activity-call-6/);
+  assert.match(searchMarkup, /activity-call-7/);
+  assert.doesNotMatch(searchMarkup, /展开其余/);
+
+  const markup = renderActivityNavigator(
+    { status: "error", message: "run endpoint failed" },
+    { status: "ready", calls: [call] },
+  );
+  assert.match(markup, /运行加载失败/);
+  assert.match(markup, /run endpoint failed/);
+  assert.match(markup, /可用调用记录/);
+  assert.match(markup, /\[调用\]/);
+  assert.match(markup, new RegExp(formatLocalTime(call.created_at)));
+  assert.doesNotMatch(markup, /internal-summary-must-not-render/);
+
+  const symmetricMarkup = renderActivityNavigator(
+    { status: "ready", runs: [studioRunSummariesFixture()[0]] },
+    { status: "error", message: "call endpoint failed" },
+  );
+  assert.match(symmetricMarkup, /调用加载失败/);
+  assert.match(symmetricMarkup, /编排发布流程/);
+
+  const missingTimeMarkup = renderActivityNavigator(
+    {
+      status: "ready",
+      runs: [{
+        ...studioRunSummariesFixture()[0],
+        title: "无时间运行",
+        created_at: undefined,
+        updated_at: undefined,
+        latest_event_timestamp: undefined,
+      }],
+    },
+    { status: "ready", calls: [] },
+  );
+  assert.match(missingTimeMarkup, /无时间运行/);
+  assert.match(missingTimeMarkup, /时间未知/);
+  assert.doesNotMatch(missingTimeMarkup, /<time/);
+
+  const activitySource = readFileSync(
+    path.resolve("apps/studio-web/src/features/navigation/ActivityNavigator.tsx"),
+    "utf-8",
+  );
+  assert.match(activitySource, /query\.trim\(\)\.length === 0\s*&& collapsedGroups\.has\(group\.date\)/);
 });
 
 test("Run overview, artifacts, events and review release render Mantine panels", () => {
@@ -2293,6 +2460,27 @@ function renderCallNavigator(
     onQueryChange: () => {},
     onAutoRefreshSecondsChange: () => {},
     onRefresh: () => {},
+    onSelectCall: () => {},
+  }));
+}
+
+function renderActivityNavigator(
+  runsState: ActivityRunsState,
+  callsState: ActivityCallsState,
+  query = "",
+): string {
+  return renderStudioElement(React.createElement(ActivityNavigator, {
+    runsState,
+    callsState,
+    selectedKind: undefined,
+    selectedRunKey: undefined,
+    selectedCallKey: undefined,
+    query,
+    autoRefreshSeconds: 0,
+    onQueryChange: () => {},
+    onAutoRefreshSecondsChange: () => {},
+    onRefresh: () => {},
+    onSelectRun: () => {},
     onSelectCall: () => {},
   }));
 }
