@@ -105,7 +105,7 @@ async function presetRun(
   }
   const task = taskInput.task;
   if (!task) {
-    console.error(`usage: agentmesh run ${preset.presetId} --task <text>`);
+    console.error(`usage: agentmesh run ${preset.presetId} --task <text> [--title <title>]`);
     return 2;
   }
   const configLoadStartedAt = Date.now();
@@ -141,6 +141,7 @@ async function presetRun(
       decide: null,
       stageAssignments: preset.stageAssignments,
       task,
+      title: optionValue(args, "--title"),
       runId,
       userGate,
       workflow: workflow.workflowId,
@@ -231,7 +232,7 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
   }
   if (missing.length > 0 || !task) {
     console.error(
-      `usage: agentmesh flow run ${missing.join(" ")} --task <text>`,
+      `usage: agentmesh flow run ${missing.join(" ")} --task <text> [--title <title>]`,
     );
     return 2;
   }
@@ -262,6 +263,7 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
       decide: firstOrNull(decide),
       stageAssignments: stageAssignments(stages, { plan, execute, verify, review, decide }),
       task,
+      title: optionValue(args, "--title"),
       runId,
       userGate,
       workflow: workflow?.workflowId ?? workflowId,
@@ -600,6 +602,7 @@ export function flowStatusCommand(args: string[]): number {
       ? status.stage_nodes.map((node: { id: string }) => node.id)
       : status.stages;
     console.log(`Run: ${status.run_id}`);
+    console.log(`Title: ${status.title ?? "-"}`);
     console.log(`Status: ${status.status}`);
     console.log(`Stages: ${stageTargets.join(", ")}`);
     console.log(`Completed: ${status.completed_stages.join(", ") || "(none)"}`);

@@ -66,6 +66,7 @@ export function positionalArgs(args: string[]): string[] {
     "--decide",
     "--task",
     "--task-file",
+    "--title",
     "--statement",
     "--source",
     "--owner",

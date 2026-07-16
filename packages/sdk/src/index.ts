@@ -103,6 +103,7 @@ interface CallArtifactRef {
 interface DirectCallRecord {
   schema_version: number;
   id: string;
+  title?: string;
   agent_id: string | null;
   adapter: string;
   model: string | null;
@@ -250,6 +251,7 @@ export const AGENTMESH_CALLS_RELATIVE_DIR = path.join(".agentmesh", "calls");
 export interface AgentMeshRunSummary {
   run_id: string;
   run_dir: string;
+  title?: string;
   status: string;
   stages: string[];
   stage_nodes?: AgentMeshStageNodeSummary[];
@@ -1169,6 +1171,7 @@ function runSummary(runDir: string, eventTail: number): AgentMeshRunSummary {
   return {
     run_id: stringValue(status.run_id) ?? path.basename(runDir),
     run_dir: runDir,
+    ...(stringValue(status.title) ? { title: stringValue(status.title) } : {}),
     ...(stringValue(status.created_at) ? { created_at: stringValue(status.created_at) } : {}),
     ...(stringValue(status.updated_at) ? { updated_at: stringValue(status.updated_at) } : {}),
     status: stringValue(status.status) ?? "unknown",

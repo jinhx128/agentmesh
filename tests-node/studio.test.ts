@@ -807,7 +807,7 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   writeRun(
     workspace,
     "server-run",
-    { status: "running" },
+    { status: "running", title: "浏览运行记录" },
     [
       {
         schema_version: 1,
@@ -824,9 +824,10 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   assert.doesNotMatch(html, /AgentMesh Studio/);
 
   const runs = await fetchJson(`${url}/api/runs?scope=current`) as {
-    runs: Array<{ run_id: string }>;
+    runs: Array<{ run_id: string; title?: string }>;
   };
   assert.deepEqual(runs.runs.map((run) => run.run_id), ["server-run"]);
+  assert.equal(runs.runs[0].title, "浏览运行记录");
 
   const detail = await fetchJson(`${url}/api/runs/server-run?event_offset=0&event_limit=1`) as {
     summary: { status: string };
@@ -1070,6 +1071,7 @@ test("Studio server exposes read-only direct call index and details", async () =
     total: number;
     calls: Array<{
       id: string;
+      title?: string;
       status: string;
       adoption_status: string;
       read_only?: boolean;
@@ -1086,6 +1088,7 @@ test("Studio server exposes read-only direct call index and details", async () =
     index.calls.map((call) => call.id),
     [adopted.record.id, stale.record.id, newer.record.id, dangling.record.id],
   );
+  assert.equal(index.calls[0].title, adopted.record.title);
   assert.deepEqual(index.groups.map((group) => group.date), [
     "2026-05-17",
     "2026-05-16",

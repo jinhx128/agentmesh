@@ -83,6 +83,9 @@ test("top-level help exits successfully", () => {
   assert.match(help.stderr, /cli detect \[--json\]/);
   assert.match(help.stderr, /mcp list \[--json\]/);
   assert.match(help.stderr, /mcp add <server-id> --command <command>/);
+  assert.match(help.stderr, /call --agent <agent-id>.*\[--title <title>\]/);
+  assert.match(help.stderr, /run .*\[--title <title>\]/);
+  assert.match(help.stderr, /flow run .*\[--title <title>\]/);
 
   const helpCommand = runCli(workspace, ["help"]);
   assert.equal(helpCommand.status, 0, helpCommand.stderr);
@@ -1103,6 +1106,8 @@ test("flow run, prompt, attach, status, and events use TS packet files", () => {
     "current",
     "--task",
     "ship typed packets",
+    "--title",
+    "发布类型化数据包",
     "--run-id",
     "typed-flow",
   ]);
@@ -1127,7 +1132,12 @@ test("flow run, prompt, attach, status, and events use TS packet files", () => {
   assert.equal(status.status, 0, status.stderr);
   const payload = JSON.parse(status.stdout);
   assert.equal(payload.run_id, "typed-flow");
+  assert.equal(payload.title, "发布类型化数据包");
   assert.deepEqual(payload.completed_stages, ["plan"]);
+
+  const humanStatus = runCli(workspace, ["flow", "status", "typed-flow"]);
+  assert.equal(humanStatus.status, 0, humanStatus.stderr);
+  assert.match(humanStatus.stdout, /Title: 发布类型化数据包/);
 
   const events = runCli(workspace, ["flow", "events", "typed-flow", "--json"]);
   assert.equal(events.status, 0, events.stderr);

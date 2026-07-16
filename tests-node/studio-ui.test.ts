@@ -2455,6 +2455,7 @@ function studioRunSummariesFixture(): StudioRunSummary[] {
   return [
     {
       run_id: "run-1",
+      title: "编排发布流程",
       workspace: {
         id: "ws-project",
         label: "project",
@@ -2693,6 +2694,7 @@ function studioCallSummaryFixture(): StudioCallSummary {
   return {
     schema_version: 1,
     id: "call-1",
+    title: "审查发布结果",
     workspace: {
       id: "ws-project",
       label: "project",

@@ -79,6 +79,13 @@ function macTmpPath(filePath: string): string {
   return filePath.replace(/^\/private\/var\//, "/var/");
 }
 
+test("canonical AgentMesh skill asks entry agents to provide concise Chinese titles", () => {
+  const skill = agentmeshSkillMarkdown();
+  assert.match(skill, /用户未提供标题/);
+  assert.match(skill, /4.?24.*中文/);
+  assert.match(skill, /--title/);
+});
+
 function writeCommandConfig(configPath: string, commandPath: string): void {
   writeFileSync(
     configPath,

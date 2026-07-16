@@ -220,9 +220,19 @@ test("read SDK list views skip unsupported future packet runs", () => {
   );
   writeRun(workspace, "current-run", "2026-05-16T00:00:04.000Z", [
     { schema_version: 1, timestamp: "2026-05-16T00:00:04.000Z", event: "run.created" },
+  ], { title: "读取当前运行" });
+  writeRun(workspace, "legacy-run", "2026-05-16T00:00:03.000Z", [
+    { schema_version: 1, timestamp: "2026-05-16T00:00:03.000Z", event: "run.created" },
   ]);
 
-  assert.deepEqual(listRuns({ cwd: workspace }).runs.map((run) => run.run_id), ["current-run"]);
+  const listedRuns = listRuns({ cwd: workspace }).runs;
+  const currentRun = listedRuns[0];
+  assert.equal(currentRun.run_id, "current-run");
+  assert.equal(currentRun.title, "读取当前运行");
+  assert.equal(getRun("current-run", { cwd: workspace }).summary.title, "读取当前运行");
+  const legacyRun = listedRuns.find((run) => run.run_id === "legacy-run");
+  assert.equal(Object.hasOwn(legacyRun ?? {}, "title"), false);
+  assert.equal(Object.hasOwn(getRun("legacy-run", { cwd: workspace }).summary, "title"), false);
   const workflow = listWorkflows({ cwd: workspace }).find(
     (item) => item.workflowId === "sdk-workflow",
   );

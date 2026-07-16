@@ -34,6 +34,17 @@ Default flow:
 8. Summarize results from stable CLI output, especially
    `agentmesh flow status --json`, before reading raw packet artifacts.
 
+## Activity Titles
+
+Commands that create a run or recorded call accept `--title <title>`.
+
+- If the user provides a title, pass it through with `--title`.
+- 用户未提供标题时，基于任务或提示生成 4–24 个字符的中文摘要，并通过 `--title` 传入。
+- Do not block execution when a title cannot be generated. The runtime keeps a
+  deterministic workspace/summary/time fallback for compatibility.
+- Treat the title as display metadata only. Never replace run ids, call ids,
+  packet paths, or relationship keys with it.
+
 ## Setup Commands
 
 Use these commands when the user asks to set up a project or register local

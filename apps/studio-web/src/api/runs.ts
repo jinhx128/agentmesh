@@ -23,6 +23,7 @@ export interface StudioRunDiagnostic {
 
 export interface StudioRunSummary {
   run_id: string;
+  title?: string;
   workspace: StudioWorkspaceRef;
   status: string;
   workflow?: string;

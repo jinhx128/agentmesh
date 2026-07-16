@@ -245,6 +245,8 @@ test("bare run resolves preset namespace and writes preset provenance", () => {
     "review-duo",
     "--task",
     "Review the current change.",
+    "--title",
+    "审查当前改动",
     "--run-id",
     "preset-run",
   ]);
@@ -253,6 +255,7 @@ test("bare run resolves preset namespace and writes preset provenance", () => {
   const status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "preset-run", "status.json"), "utf-8"),
   );
+  assert.equal(status.title, "审查当前改动");
   assert.equal(status.preset, "review-duo");
   assert.equal(status.preset_source.source, "user");
   assert.equal(status.workflow, "w-9d94d0db");
@@ -301,6 +304,10 @@ test("preset run default id uses preset timestamp prefix", () => {
   const match = /^Run: (preset-\d{14})$/m.exec(run.stdout);
   assert.ok(match, run.stdout);
   assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", match[1])), true);
+  const status = JSON.parse(
+    readFileSync(path.join(workspace, ".agentmesh", "runs", match[1], "status.json"), "utf-8"),
+  );
+  assert.equal(status.title, `${path.basename(workspace)}-Review with generated preset id.`);
 });
 
 test("preset assignments must store agent ids instead of names", () => {

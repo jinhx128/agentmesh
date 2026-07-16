@@ -1106,6 +1106,8 @@ test("README and landing page describe final workflow semantics", () => {
     "[fallback]",
     "[failure_policy]",
     "agentmesh run <preset-id> --task",
+    "--title <title>",
+    '--title "编排并验证小修复"',
   ]) {
     assert.match(readme, new RegExp(requiredTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }

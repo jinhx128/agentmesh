@@ -133,12 +133,15 @@ test("agentmesh call records successful direct call evidence in the workspace", 
     "caller",
     "--prompt",
     "hello call history",
+    "--title",
+    "审查调用历史",
   ]);
 
   assert.equal(result.status, 0, result.stderr);
   const callDir = onlyCallDir(workspace);
   const call = readCallRecord(callDir);
   assert.equal(call.status, "success");
+  assert.equal(call.title, "审查调用历史");
   assert.equal(call.agent_id, "caller");
   assert.equal(call.adapter, "command");
   assert.equal(call.model, null);
@@ -195,6 +198,7 @@ test("agentmesh call default id uses call timestamp prefix", () => {
   assert.equal(result.status, 0, result.stderr);
   const call = readCallRecord(onlyCallDir(workspace));
   assert.match(call.id, /^call-\d{14}$/);
+  assert.equal(call.title, `${path.basename(workspace)}-hello generated call id`);
 });
 
 test("agentmesh call records prompt-file evidence while adapters receive file content", () => {

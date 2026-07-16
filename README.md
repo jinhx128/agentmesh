@@ -413,8 +413,10 @@ AgentMesh 的运行语义：
 Preset 入口示例：
 
 ```bash
-agentmesh run <preset-id> --task "实现一个可验证的小修复"
+agentmesh run <preset-id> --task "实现一个可验证的小修复" --title "验证并修复运行链路"
 ```
+
+`run`、`flow run` 和被记录的 `call` 都支持可选的 `--title <title>`。用户未指定时，主控 Agent 应根据任务生成 4–24 字的中文标题并传入；若最终仍未传入，Runtime 会使用 `工作区名-摘要`，没有摘要时使用 `工作区名-HH:mm:ss`。标题只用于展示，不改变 run/call 技术 ID、目录或关联键。
 
 v0.1.12 包含这些内置 workflow：
 
@@ -437,6 +439,7 @@ agentmesh run \
   --verify <verifier-agent-id> \
   --review <reviewer-agent-id> \
   --decide <decider-agent-id> \
+  --title "编排并验证小修复" \
   --task "实现一个小修复并给出验证结果"
 ```
 

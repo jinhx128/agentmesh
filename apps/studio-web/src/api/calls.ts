@@ -33,6 +33,7 @@ export interface StudioCallDiagnostic {
 export interface StudioCallSummary {
   schema_version: number;
   id: string;
+  title?: string;
   workspace: StudioWorkspaceRef;
   agent_id: string | null;
   adapter: string;

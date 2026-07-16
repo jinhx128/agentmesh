@@ -20,7 +20,7 @@ import { recordCliWorkspaceActivity } from "../workspace-activity.js";
 export async function call(args: string[], configPath?: string): Promise<number> {
   const agentName = optionValue(args, "--agent");
   if (!agentName) {
-    console.error("usage: agentmesh call --agent <agent-id> [--no-record]");
+    console.error("usage: agentmesh call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--title <title>] [--no-record]");
     return 2;
   }
   if (agentName === "current") {
@@ -51,6 +51,7 @@ export async function call(args: string[], configPath?: string): Promise<number>
         agentId: agent.id,
         adapter: agent.adapter,
         model: agent.model ?? null,
+        title: optionValue(args, "--title"),
         purpose: optionValue(args, "--purpose") ?? "general",
         promptSource: promptFile ? "file" : prompt === undefined ? "unknown" : "inline",
         promptContent: promptFile

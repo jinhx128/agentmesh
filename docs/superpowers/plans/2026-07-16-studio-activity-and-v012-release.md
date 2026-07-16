@@ -113,17 +113,18 @@
   - 提交：`功能：为运行与调用持久化展示标题`。
   - 进度记录：状态 `completed`；完成时间 `2026-07-16 18:15 CST`。确定性标题 helper、run/call optional title 持久化、旧记录兼容与状态重写保留 contract 已实现；fresh focused verification 为 55/55、`git diff --check` 通过。外审 run `studio-display-title-runtime-review-20260716` 为 `decide_completed`，三 reviewer 均为 0 Must；接受 `# Request`、组合限长、root/CRLF/general fallback、call completion/adoption 保留标题等 finding，schema v1 升版与字素簇扩展依据兼容策略和既定范围拒绝，无 needs decision。唯一下一步为 `P1.2 Step 1`。
 
-- [ ] P1.2 打通 CLI、SDK/API 和 Agent 自动标题规范
+- [x] ~~P1.2 打通 CLI、SDK/API 和 Agent 自动标题规范~~
   - Slice：`P1.2`
   - 依赖：P1.1。
   - 文件：CLI flags/help/flow/call、SDK、前端 API types、canonical AgentMesh skill、README、release notes 和测试。
   - Interfaces：`AgentMeshRunSummary.title?: string`、前端 `StudioRunSummary.title?: string`、`StudioCallSummary.title?: string`；App Server 调用链依靠 call record spread 和 run summary spread 透传，API 级测试负责锁定。
-  - [ ] Step 1：写 RED：CLI help 包含 `[--title <title>]`；bare preset `run`、workflow `run/flow run`、`call` 三类入口的显式标题进入记录；未传仍创建默认标题；SDK/list APIs 返回标题；skill 明确“用户未给标题时生成 4–24 字中文摘要并传 `--title`”。
-  - [ ] Step 2：运行 `npm run build:node && node --test dist-node/tests-node/cli-surface.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/call-history.test.js dist-node/tests-node/studio.test.js dist-node/tests-node/readiness.test.js`，确认正确 RED。
-  - [ ] Step 3：把 `--title` 加入 positional option set 和 call、bare run、flow run help/usage；`presetRun` 与 `flowRun` 两个 `createFlowRun` 调用点分别读取并传递 `optionValue(args, "--title")`，call 同样传递；SDK `runSummary()` 枚举读取 `status.title`；文档与 skill 使用相同规则。
-  - [ ] Step 4：重跑 Step 2，预期 0 failed；`npm run build` 与 `git diff --check` 通过。
+  - [x] Step 1：写 RED：CLI help 包含 `[--title <title>]`；bare preset `run`、workflow `run/flow run`、`call` 三类入口的显式标题进入记录；未传仍创建默认标题；SDK/list APIs 返回标题；skill 明确“用户未给标题时生成 4–24 字中文摘要并传 `--title`”。
+  - [x] Step 2：运行 `npm run build:node && node --test dist-node/tests-node/cli-surface.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/call-history.test.js dist-node/tests-node/studio.test.js dist-node/tests-node/readiness.test.js`，确认正确 RED。
+  - [x] Step 3：把 `--title` 加入 positional option set 和 call、bare run、flow run help/usage；`presetRun` 与 `flowRun` 两个 `createFlowRun` 调用点分别读取并传递 `optionValue(args, "--title")`，call 同样传递；SDK `runSummary()` 枚举读取 `status.title`；文档与 skill 使用相同规则。
+  - [x] Step 4：重跑 Step 2，预期 0 failed；`npm run build` 与 `git diff --check` 通过。
   - 审查方式：外审。依据：CLI 公共表面、SDK 和多宿主 skill 同时变化。
   - 提交：`功能：支持 Agent 自动生成中文活动标题`。
+  - 进度记录：状态 `completed`；完成时间 `2026-07-16 18:34 CST`。`--title` 已贯通 call、bare preset run、workflow run、SDK/App Server/Studio API types 与 canonical Skill；human `flow status` 同步显示标题，旧 run 无字段不回填。TDD RED 命中缺失 SDK/Studio types、human status 与 workflow README 示例；fresh focused verification 为 197/197，Studio frontend production build 与 `git diff --check` 通过。外审 run `studio-display-title-cli-sdk-review-20260716` 为 `decide_completed`，Cursor Composer 2.5、OpenCode GLM 5.2、Claude Opus 4.8 均 exit 0、0 Must；接受默认 fallback、旧 SDK、help、README 与 human status finding，UI 消费明确迁移到 P2，无 needs decision。唯一下一步为 `P1.Z`。
 
 - [ ] P1.Z 标题阶段收尾校准
   - Slice：`P1.Z`
@@ -259,4 +260,4 @@
 - 完成 slice 后使用 `- [x] ~~P<n>.<m> ...~~`，下一行写状态、时间、命令结果、审查 finding 处理、changelog、commit 和唯一下一步。
 - 外审发现先事实核对；接受项修复并回归，拒绝项记录依据，未解决 Must/Should 阻断阶段门禁。
 - 旧计划只作为历史上下文，不再维护第二个“当前下一步”。
-- 当前下一步：`P1.2 Step 1`，为 CLI、SDK/API 与 canonical skill 标题链路写失败测试。
+- 当前下一步：`P1.Z`，执行标题阶段全量测试、audit、真实临时 run/call 抽查、三模型阶段门禁与 changelog。
