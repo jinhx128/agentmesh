@@ -6,20 +6,20 @@
 
 ## 摘要
 
-`agentmesh cli detect --json` 确认五个注册 adapter 均由 PATH 发现。Claude Code、Cursor Agent 和 OpenCode 都完成了本次调用的结构化 start、立即显式 resume 与精确回复闭环；Codex CLI 和 Antigravity CLI 未完成。
+`agentmesh cli detect --json` 确认五个注册 adapter 均由 PATH 发现。Claude Code 和 OpenCode 完成了本次调用的结构化 start、立即显式 resume 与精确回复闭环。Cursor Agent 虽接受 `--resume`，但伪 ID 也被同样接受，当前探针不能证明会话连续性；Codex CLI 和 Antigravity CLI 未完成闭环。
 
 | Provider | start / resume 实测 | 耗时（本次） | enablement |
 | --- | --- | ---: | --- |
-| codex-cli | JSONL 有 `thread_id`，但 start 和实际/伪 ID resume 都 exit 1，未得到精确回复 | start 16 s；两次 resume 合计 14 s | fresh-only |
+| codex-cli | 公开 JSONL 曾观察到 `thread_id`，但 start 和实际/伪 ID resume 都 exit 1，未得到精确回复 | start 16 s；两次 resume 合计 14 s | fresh-only |
 | claude-code-cli | start 与实际 ID resume 均 exit 0，并返回精确回复 | start 约 4 s；完整三调用 9 s | experimental |
-| cursor-agent | start 与实际 ID resume 均 exit 0，并返回精确回复 | start 约 21 s；resume/fake 同次调用约 24 s | experimental |
+| cursor-agent | start exit 0 并返回 `session_id`；实际 ID 和伪 ID 的 `--resume` 都 exit 0、返回精确回复，不能证明会话连续性 | start 约 21 s；resume/fake 同次调用约 24 s | fresh-only |
 | antigravity-cli | start 和伪 ID conversation 调用均 exit 1，无结构化输出 | start 10 s；fake 6 s | fresh-only |
 | opencode-cli | start 与实际 ID resume 均 exit 0，并返回精确回复 | start 6 s；resume 6 s；fake 1 s | experimental |
 
 ## codex-cli
 
 - `cli_version`: `codex-cli 0.144.1`
-- `structured_start`: `true`
+- `structured_start`: `false`
 - `session_id_field`: `thread_id`
 - `explicit_resume`: `false`
 - `resume_command_shape`: `codex exec resume --json --ignore-user-config --skip-git-repo-check SESSION_ID 'Reply with exactly SESSION_RESUME_OK'`
@@ -27,7 +27,7 @@
 - `retention_observation`: `unknown`
 - `enablement`: `fresh-only`
 
-公开帮助确认 `codex exec --json` 和 `codex exec resume [SESSION_ID] --json`。本次 JSONL 的公开 `thread_id` 可被提取，但请求未成功完成，因此不能把参数存在或初始化 event 视为可用 session reuse 证据。
+公开帮助确认 `codex exec --json` 和 `codex exec resume [SESSION_ID] --json`。虽然本次失败调用的公开 JSONL 中观察到并可提取 `thread_id`，但 start 未成功完成；因此 `structured_start` 为 `false`，不能把该初始化 event 或参数存在视为可用 session reuse 证据。
 
 ## claude-code-cli
 
@@ -47,13 +47,13 @@
 - `cli_version`: `2026.07.09-a3815c0`
 - `structured_start`: `true`
 - `session_id_field`: `session_id`
-- `explicit_resume`: `true`
+- `explicit_resume`: `false`
 - `resume_command_shape`: `cursor-agent --print --output-format stream-json --mode ask --trust --resume SESSION_ID 'Reply with exactly SESSION_RESUME_OK'`
 - `failure_classification`: `unrecognized-id-accepted`（伪 UUID exit 0、返回精确回复，且返回的 `session_id` 与伪 UUID 相同）。
-- `retention_observation`: `immediate`（同一 probe 序列中立即恢复成功；未测更长窗口）。
-- `enablement`: `experimental`
+- `retention_observation`: `unknown`
+- `enablement`: `fresh-only`
 
-start 和从同一次 stream JSON `session_id` 发起的实际 ID resume 都 exit 0 并返回预期精确回复。伪 ID 的接受行为意味着 adapter 必须把 CLI 成功退出与 provider 端“已存在会话”校验区分开。
+start exit 0 并从同一次 stream JSON 得到 `session_id`；以实际 ID 调用 `--resume` 也 exit 0 并返回预期精确回复。然而伪 ID 得到相同的 exit 0、精确回复和相同 ID 回显，因此本次 probe 不能区分真实恢复、按指定 ID 新建或其他等价行为。不能证明显式 resume 的会话连续性，故保持 fresh-only。
 
 ## antigravity-cli
 
@@ -83,4 +83,4 @@ start 和从同一次 stream JSON `session_id` 发起的实际 ID resume 都 exi
 
 ## 结论与适用边界
 
-当前证据支持将 Claude Code、Cursor Agent、OpenCode 的显式会话恢复作为实验性能力接入；三者只验证了立即恢复。Codex 与 Antigravity 保持 fresh-only。特别是 Cursor 的伪 ID 被接受，后续 adapter 不应把 exit 0 本身解释为远端会话存在或恢复成功。
+当前证据支持将 Claude Code 与 OpenCode 的显式会话恢复作为实验性能力接入；两者只验证了立即恢复。Codex、Cursor 与 Antigravity 保持 fresh-only。Cursor 的伪 ID 被接受且被原样回显，故后续 adapter 不应把 exit 0、精确回复或 ID 回显本身解释为远端会话存在或恢复成功。
