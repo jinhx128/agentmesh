@@ -361,11 +361,11 @@ function isRepairLockStale(lockPath: string, expectedIdentity: FileIdentity): bo
   if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), expectedIdentity)) {
     return false;
   }
-  if (Date.now() - stat.mtimeMs >= REPAIR_LOCK_STALE_MILLISECONDS) {
-    return true;
-  }
   const owner = readRepairLockOwner(lockPath);
-  return owner !== undefined && !isProcessAlive(owner);
+  if (owner !== undefined) {
+    return !isProcessAlive(owner);
+  }
+  return Date.now() - stat.mtimeMs >= REPAIR_LOCK_STALE_MILLISECONDS;
 }
 
 function readRepairLockOwner(lockPath: string): number | undefined {

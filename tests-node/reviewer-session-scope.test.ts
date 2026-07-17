@@ -57,6 +57,24 @@ function resolveInSeparateProcess(repository: string, keyPath: string): Promise<
   });
 }
 
+function releaseRepairLockAfterProbe(lockPath: string, probePath: string): Promise<void> {
+  const program = [
+    "const { existsSync, rmSync, writeFileSync } = require('node:fs');",
+    `setTimeout(() => { writeFileSync(${JSON.stringify(probePath)}, existsSync(${JSON.stringify(lockPath)}) ? 'present' : 'missing'); rmSync(${JSON.stringify(lockPath)}, { force: true }); }, 100);`,
+  ].join("\n");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--eval", program], { stdio: "ignore" });
+    child.once("error", () => reject(new Error("repair lock probe could not start")));
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error("repair lock probe did not succeed"));
+      }
+    });
+  });
+}
+
 test("native host identity takes precedence without exposing native or propagated input", () => {
   const repository = makeRepository();
   const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
@@ -148,17 +166,20 @@ test("a valid scope key ignores a lingering repair lock", () => {
   }
 });
 
-test("an invalid scope key recovers after a dead or expired repair lock", () => {
+test("an invalid scope key recovers after a dead owner or legacy stale repair lock", () => {
   const repository = makeRepository();
   const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
   const keyPath = scopeKeyPath(keyParent);
   const lockPath = `${keyPath}.lock`;
   try {
-    for (const owner of [{ pid: 99999999, expired: false }, { pid: process.pid, expired: true }]) {
+    for (const lock of [
+      { content: JSON.stringify({ pid: 99999999, created_at_ms: 0 }), expired: false },
+      { content: "legacy-repair-lock", expired: true },
+    ]) {
       mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
       writeFileSync(keyPath, Buffer.alloc(0), { mode: 0o600 });
-      writeFileSync(lockPath, JSON.stringify({ pid: owner.pid, created_at_ms: 0 }), { mode: 0o600 });
-      if (owner.expired) {
+      writeFileSync(lockPath, lock.content, { mode: 0o600 });
+      if (lock.expired) {
         utimesSync(lockPath, new Date(0), new Date(0));
       }
 
@@ -173,6 +194,34 @@ test("an invalid scope key recovers after a dead or expired repair lock", () => 
       assert.equal(existsSync(lockPath), false);
       rmSync(keyPath);
     }
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+    rmSync(keyParent, { recursive: true, force: true });
+  }
+});
+
+test("a live repair lock is not reclaimed solely because its mtime is old", async () => {
+  const repository = makeRepository();
+  const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
+  const keyPath = scopeKeyPath(keyParent);
+  const lockPath = `${keyPath}.lock`;
+  const probePath = path.join(keyParent, "repair-lock-probe");
+  try {
+    mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
+    writeFileSync(keyPath, Buffer.alloc(0), { mode: 0o600 });
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, created_at_ms: 0 }), { mode: 0o600 });
+    utimesSync(lockPath, new Date(0), new Date(0));
+    const probe = releaseRepairLockAfterProbe(lockPath, probePath);
+
+    const resolved = resolveHostScope(
+      { hostKind: "codex", nativeConversationId: "live-lock-owner-native-id" },
+      repository,
+      { hmacKeyPath: keyPath },
+    );
+    await probe;
+
+    assert.match(resolved.conversation_scope_ref ?? "", /^cs-[a-f0-9]{16}$/);
+    assert.equal(readFileSync(probePath, "utf-8"), "present");
   } finally {
     rmSync(repository, { recursive: true, force: true });
     rmSync(keyParent, { recursive: true, force: true });
