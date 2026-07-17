@@ -82,6 +82,10 @@ import {
   runDetailTabAfterRunSelection,
 } from "../apps/studio-web/src/app/App.js";
 import {
+  createActivityLoadGeneration,
+  settleLatestActivityLoad,
+} from "../apps/studio-web/src/app/activity-load-generation.js";
+import {
   formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
@@ -301,7 +305,7 @@ test("App uses one activity navigator without losing run and call detail routing
   assert.match(appSource, /const \[activityQuery, setActivityQuery\]/);
   assert.doesNotMatch(appSource, /navigatorView|setNavigatorView|runQuery|callQuery|SegmentedControl/);
   assert.match(appSource, /function loadActivitiesWithClient/);
-  assert.match(appSource, /loadRunsWithClient\(client, options\);\s*loadCallsWithClient\(client, options\);/);
+  assert.match(appSource, /loadRunsWithClient\(client, options, generation\);\s*loadCallsWithClient\(client, options, generation\);/);
   assert.match(appSource, /selectedKind=\{workspaceView === "runs" \? "run" : workspaceView === "calls" \? "call" : undefined\}/);
   assert.match(appSource, /onSelectRun=\{\(runKey\) => \{[\s\S]*setSelectedRunKey\(runKey\);[\s\S]*setWorkspaceView\("runs"\)/);
   assert.match(appSource, /onSelectCall=\{\(callKey\) => \{[\s\S]*setSelectedCallKey\(callKey\);[\s\S]*setWorkspaceView\("calls"\)/);
@@ -315,6 +319,9 @@ test("App uses one activity navigator without losing run and call detail routing
   assert.match(appSource, /preferences\.auto_check_updates[\s\S]*checkDesktopUpdater\(\)/);
   assert.match(appSource, /desktopAutoUpdate:\s*isDesktopPreferencesAvailable\(\)/);
   assert.doesNotMatch(appSource, /localStorage|sessionStorage|indexedDB/);
+  assert.match(appSource, /activityLoadGenerationRef/);
+  assert.match(appSource, /settleLatestActivityLoad/);
+  assert.match(appSource, /activityLoadGenerationRef\.current\.invalidate\(\)[\s\S]*deleteStudio(?:Run|Call)/);
   assert.match(app, /aria-label="搜索活动"/);
   assert.match(app, /title="刷新活动"/);
   assert.doesNotMatch(app, /navigator-data-switch|studio-data-switch/);
@@ -1116,6 +1123,25 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.deepEqual(activityStatusPresentation("timeout"), { label: "超时", tone: "orange" });
   assert.deepEqual(activityStatusPresentation("stale"), { label: "已失联", tone: "yellow" });
   assert.deepEqual(activityStatusPresentation("future_state"), { label: "未知状态", tone: "gray" });
+  assert.deepEqual(activityStatusPresentation("review_running"), { label: "运行中", tone: "cyan" });
+  assert.deepEqual(activityStatusPresentation("decide_completed"), { label: "成功", tone: "green" });
+  assert.deepEqual(activityStatusPresentation("execute_2_failed"), { label: "失败", tone: "red" });
+  assert.deepEqual(activityStatusPresentation("verify_timed_out"), { label: "超时", tone: "orange" });
+
+  const packetStatusMarkup = renderActivityNavigator(
+    {
+      status: "ready",
+      runs: [{
+        ...studioRunSummariesFixture()[0],
+        title: "真实阶段状态运行",
+        status: "execute_2_failed",
+      }],
+    },
+    { status: "ready", calls: [] },
+  );
+  assert.match(packetStatusMarkup, /真实阶段状态运行/);
+  assert.match(packetStatusMarkup, /title="execute_2_failed"/);
+  assert.match(packetStatusMarkup, />失败</);
 
   const deleteItem = activityItems([], [call])[0];
   assert.ok(deleteItem);
@@ -2442,6 +2468,43 @@ test("Selection helpers preserve current ids when still present", () => {
     activitySelectionAfterDelete(activities, selected, preserved.kind, preserved.key),
     { kind: preserved.kind, key: preserved.key },
   );
+  assert.equal(
+    activitySelectionAfterDelete([selected], selected, selected.kind, selected.key),
+    undefined,
+  );
+});
+
+test("Activity load generations ignore stale responses that finish after deletion reload", async () => {
+  const generations = createActivityLoadGeneration();
+  const oldResponse = deferredValue<string>();
+  const reloadResponse = deferredValue<string>();
+  const committed: string[] = [];
+  const oldGeneration = generations.begin();
+  const oldLoad = settleLatestActivityLoad(
+    generations,
+    oldGeneration,
+    oldResponse.promise,
+    (value: string) => committed.push(value),
+    () => committed.push("old-error"),
+  );
+
+  generations.invalidate();
+  const reloadGeneration = generations.begin();
+  const reload = settleLatestActivityLoad(
+    generations,
+    reloadGeneration,
+    reloadResponse.promise,
+    (value: string) => committed.push(value),
+    () => committed.push("reload-error"),
+  );
+  reloadResponse.resolve("after-delete");
+  await reload;
+  oldResponse.resolve("stale-before-delete");
+  await oldLoad;
+
+  assert.deepEqual(committed, ["after-delete"]);
+  assert.equal(generations.isCurrent(oldGeneration), false);
+  assert.equal(generations.isCurrent(reloadGeneration), true);
 });
 
 test("Agent model option cache preloads every Studio tool once", async () => {
@@ -2606,6 +2669,20 @@ function renderActivityNavigator(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function deferredValue<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function renderRunOverview(

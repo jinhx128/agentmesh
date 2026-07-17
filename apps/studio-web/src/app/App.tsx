@@ -14,6 +14,10 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "./copy.js";
 import {
+  createActivityLoadGeneration,
+  settleLatestActivityLoad,
+} from "./activity-load-generation.js";
+import {
   bootstrapStudio,
   type StudioBootstrapPayload,
 } from "../api/bootstrap.js";
@@ -217,49 +221,67 @@ export function App(): ReactElement {
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
   const previousSelectedRunKeyRef = useRef<string | undefined>(undefined);
   const desktopStartupCheckStartedRef = useRef(false);
+  const activityLoadGenerationRef = useRef(createActivityLoadGeneration());
 
-  function loadRunsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
+  function loadRunsWithClient(
+    client: StudioApiClient,
+    options: NavigatorLoadOptions = {},
+    generation = activityLoadGenerationRef.current.begin(),
+  ): void {
     if (options.showLoading !== false) {
       setRunsState({ status: "loading" });
     }
-    void loadStudioRuns(client)
-      .then(({ runs }) => {
+    void settleLatestActivityLoad(
+      activityLoadGenerationRef.current,
+      generation,
+      loadStudioRuns(client),
+      ({ runs }) => {
         setRunsState({ status: "ready", runs });
         setSelectedRunKey((current) => nextSelectedRunKey(runs, current));
-      })
-      .catch((error: unknown) => {
+      },
+      (error: unknown) => {
         setRunsState((current) => ({
           status: "error",
           message: normalizeStudioApiError(error).message,
           runs: activityRuns(current),
         }));
-      });
+      },
+    );
   }
 
-  function loadCallsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
+  function loadCallsWithClient(
+    client: StudioApiClient,
+    options: NavigatorLoadOptions = {},
+    generation = activityLoadGenerationRef.current.begin(),
+  ): void {
     if (options.showLoading !== false) {
       setCallsState({ status: "loading" });
     }
-    void loadStudioCalls(client)
-      .then(({ calls }) => {
+    void settleLatestActivityLoad(
+      activityLoadGenerationRef.current,
+      generation,
+      loadStudioCalls(client),
+      ({ calls }) => {
         setCallsState({ status: "ready", calls });
         setSelectedCallKey((current) => nextSelectedCallKey(calls, current));
-      })
-      .catch((error: unknown) => {
+      },
+      (error: unknown) => {
         setCallsState((current) => ({
           status: "error",
           message: normalizeStudioApiError(error).message,
           calls: activityCalls(current),
         }));
-      });
+      },
+    );
   }
 
   function loadActivitiesWithClient(
     client: StudioApiClient,
     options: NavigatorLoadOptions = {},
   ): void {
-    loadRunsWithClient(client, options);
-    loadCallsWithClient(client, options);
+    const generation = activityLoadGenerationRef.current.begin();
+    loadRunsWithClient(client, options, generation);
+    loadCallsWithClient(client, options, generation);
   }
 
   function loadAgentLifecycleWithClient(
@@ -360,6 +382,7 @@ export function App(): ReactElement {
     if (!apiClient) {
       throw new Error("AgentMesh API 尚未就绪，请稍后重试。");
     }
+    activityLoadGenerationRef.current.invalidate();
     const response = item.kind === "run"
       ? await deleteStudioRun(apiClient, item.run.run_id, item.run.workspace.id)
       : await deleteStudioCall(apiClient, item.call.id, item.call.workspace.id);

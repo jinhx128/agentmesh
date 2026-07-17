@@ -9,6 +9,7 @@ import {
   realpathSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -45,6 +46,7 @@ import {
   studioMutationCommand,
 } from "../packages/app-server/src/mutations.js";
 import { createStudioServer } from "../packages/app-server/src/server.js";
+import { deleteStudioActivity } from "../packages/app-server/src/activity-deletion.js";
 import { studioPresetLifecycleCommand } from "../packages/app-server/src/preset-lifecycle.js";
 import { studioWorkflowLifecycleCommand } from "../packages/app-server/src/workflow-lifecycle.js";
 import { currentPacketStatus } from "./helpers/current-packet-status.js";
@@ -1083,6 +1085,57 @@ test("Studio deletion rejects a symlinked AgentMesh management root", async () =
   const response = await fetch(`${url}/api/runs/outside-run`, { method: "DELETE" });
   assert.equal(response.status, 400, await response.text());
   assert.equal(existsSync(externalRun), true);
+});
+
+test("Studio deletion rejects a symlinked .agentmesh ancestor without deleting external data", async () => {
+  const workspace = makeWorkspace();
+  const externalRoot = makeWorkspace();
+  test.after(() => {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
+  });
+  const externalRun = writeRun(externalRoot, "outside-ancestor-run", {}, []);
+  symlinkSync(path.join(externalRoot, ".agentmesh"), path.join(workspace, ".agentmesh"));
+
+  const { server, url } = await listen(createStudioServer({ cwd: workspace }));
+  test.after(() => server.close());
+  const response = await fetch(`${url}/api/runs/outside-ancestor-run`, { method: "DELETE" });
+  assert.equal(response.status, 400, await response.text());
+  assert.equal(existsSync(externalRun), true);
+  assert.equal(readFileSync(path.join(externalRun, "request.md"), "utf-8"), "# Request\n\noutside-ancestor-run\n");
+});
+
+test("Studio deletion fails closed when .agentmesh is replaced after validation", () => {
+  const workspace = makeWorkspace();
+  const externalRoot = makeWorkspace();
+  test.after(() => {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
+  });
+  const managedRun = writeRun(workspace, "root-swap-run", {}, []);
+  const externalRun = writeRun(externalRoot, "root-swap-run", {}, []);
+  const agentmesh = path.join(workspace, ".agentmesh");
+  const originalAgentmesh = path.join(workspace, ".agentmesh-original");
+  let hookCalled = false;
+
+  const options = {
+    cwd: workspace,
+    beforeIsolation: () => {
+      hookCalled = true;
+      renameSync(agentmesh, originalAgentmesh);
+      symlinkSync(path.join(externalRoot, ".agentmesh"), agentmesh);
+    },
+  } as Parameters<typeof deleteStudioActivity>[2] & { beforeIsolation: () => void };
+
+  assert.throws(
+    () => deleteStudioActivity("run", "root-swap-run", options),
+    /changed during deletion|unsafe .* ancestor|could not be isolated/,
+  );
+  assert.equal(hookCalled, true);
+  assert.equal(existsSync(path.join(originalAgentmesh, "runs", "root-swap-run")), true);
+  assert.equal(existsSync(managedRun), true, "the replacement path resolves to the preserved external run");
+  assert.equal(existsSync(externalRun), true);
+  assert.equal(readFileSync(path.join(externalRun, "request.md"), "utf-8"), "# Request\n\nroot-swap-run\n");
 });
 
 test("Studio server exposes read-only direct call index and details", async () => {

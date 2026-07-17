@@ -168,7 +168,11 @@ export function activityExpandedGroupsAfterHeaderToggle(
 }
 
 export function activityStatusPresentation(status: string | undefined): ActivityStatusPresentation {
-  switch (status?.trim().toLocaleLowerCase()) {
+  const normalized = status?.trim().toLocaleLowerCase() ?? "";
+  const stageSuffix = /(?:^|_)(timed_out|running|created|pending|success|completed|failed|error|aborted|cancelled|timeout|stale)$/.exec(
+    normalized,
+  )?.[1];
+  switch (stageSuffix ?? normalized) {
     case "running": return { label: "运行中", tone: "cyan" };
     case "created":
     case "pending": return { label: "等待中", tone: "blue" };
@@ -178,7 +182,8 @@ export function activityStatusPresentation(status: string | undefined): Activity
     case "error": return { label: "失败", tone: "red" };
     case "aborted":
     case "cancelled": return { label: "已中止", tone: "gray" };
-    case "timeout": return { label: "超时", tone: "orange" };
+    case "timeout":
+    case "timed_out": return { label: "超时", tone: "orange" };
     case "stale": return { label: "已失联", tone: "yellow" };
     default: return { label: "未知状态", tone: "gray" };
   }
