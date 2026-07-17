@@ -3,6 +3,7 @@ import { existsSync, realpathSync, readFileSync, rmSync, writeFileSync } from "n
 import path from "node:path";
 import test from "node:test";
 
+import { BUILTIN_WORKFLOW_IDS } from "@agentmesh/core";
 import { createFlowRun } from "../packages/runtime/src/flow/index.js";
 import { setStageState } from "../packages/runtime/src/flow/state.js";
 import { loadStatus, saveStatus } from "../packages/runtime/src/packet/io.js";
@@ -124,6 +125,159 @@ test("workflow run writes workspace compatibility metadata", () => {
   assert.equal(diagnostics.decision, "read_write");
   assert.equal(diagnostics.current_runtime_version, "0.1.13");
   assert.equal(diagnostics.current_entrypoint, "cli");
+});
+
+test("workflow run freezes reviewer session policy and safe propagated host scope metadata", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const scopeToken = "amscope_v1:11111111-1111-4111-8111-111111111111";
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "freeze reviewer session policy",
+    "--review-session-mode",
+    "independent",
+    "--host-kind",
+    "codex",
+    "--conversation-scope",
+    scopeToken,
+    "--run-id",
+    "reviewer-session-policy",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+
+  const runDir = path.join(workspace, ".agentmesh", "runs", "reviewer-session-policy");
+  const statusText = readFileSync(path.join(runDir, "status.json"), "utf-8");
+  const eventsText = readFileSync(path.join(runDir, "events.jsonl"), "utf-8");
+  const status = JSON.parse(statusText);
+  assert.deepEqual(status.resolved_reviewer_session_policy, {
+    requested_mode: "independent",
+    effective_mode: "independent",
+    source: "cli",
+  });
+  assert.deepEqual(status.host_scope_input, {
+    host_kind: "codex",
+    scope_source: "propagated",
+    propagated_scope_token_present: true,
+  });
+  assert.doesNotMatch(`${statusText}\n${eventsText}\n${run.stdout}\n${run.stderr}`, new RegExp(scopeToken));
+});
+
+test("flow creation never persists a native conversation identifier", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const nativeConversationId = "native-conversation-7b2633a8-6c7f-4d6d-a31f-907f0514c807";
+
+  const runDir = await createFlowRun({
+    plan: null,
+    execute: null,
+    review: [],
+    decide: null,
+    stageAssignments: {
+      plan: ["current"],
+      execute: ["current"],
+      review: ["current"],
+      decide: ["current"],
+    },
+    task: "create safe host scope metadata",
+    runId: "native-host-scope",
+    reviewerSessionPolicy: {
+      requested_mode: "interactive_continuous",
+      effective_mode: "interactive_continuous",
+      source: "cli",
+    },
+    hostScopeInput: {
+      hostKind: "codex",
+      nativeConversationId,
+      propagatedScopeToken: "amscope_v1:11111111-1111-4111-8111-111111111111",
+    },
+  }, workspace);
+
+  const statusText = readFileSync(path.join(runDir, "status.json"), "utf-8");
+  const eventsText = readFileSync(path.join(runDir, "events.jsonl"), "utf-8");
+  const status = JSON.parse(statusText);
+  assert.deepEqual(status.host_scope_input, {
+    host_kind: "codex",
+    scope_source: "native",
+    propagated_scope_token_present: true,
+  });
+  assert.doesNotMatch(`${statusText}\n${eventsText}`, new RegExp(nativeConversationId));
+  assert.doesNotMatch(`${statusText}\n${eventsText}`, /amscope_v1:11111111-1111-4111-8111-111111111111/);
+});
+
+test("workflow auto policy remains compatible without reviewer session flags", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--workflow",
+    "w-4963ede2",
+    "--plan",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "freeze auto policy",
+    "--run-id",
+    "reviewer-session-auto",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+
+  const status = JSON.parse(readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "reviewer-session-auto", "status.json"),
+    "utf-8",
+  ));
+  assert.deepEqual(status.resolved_reviewer_session_policy, {
+    requested_mode: "auto",
+    effective_mode: "interactive_continuous",
+    source: "workflow",
+  });
+  assert.equal(status.host_scope_input, undefined);
+});
+
+test("independent workflow policy cannot be weakened by a continuous CLI request", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--workflow",
+    BUILTIN_WORKFLOW_IDS.RELEASE_CHECK,
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "keep release review independent",
+    "--review-session-mode",
+    "interactive_continuous",
+    "--run-id",
+    "release-check-independent",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+
+  const status = JSON.parse(readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "release-check-independent", "status.json"),
+    "utf-8",
+  ));
+  assert.deepEqual(status.resolved_reviewer_session_policy, {
+    requested_mode: "interactive_continuous",
+    effective_mode: "independent",
+    source: "workflow",
+  });
 });
 
 test("workflow run records current workspace for Studio visibility", () => {

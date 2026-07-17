@@ -86,6 +86,9 @@ test("top-level help exits successfully", () => {
   assert.match(help.stderr, /call --agent <agent-id>.*\[--title <title>\]/);
   assert.match(help.stderr, /run .*\[--title <title>\]/);
   assert.match(help.stderr, /flow run .*\[--title <title>\]/);
+  assert.match(help.stderr, /--review-session-mode <auto\|interactive_continuous\|independent>/);
+  assert.match(help.stderr, /--host-kind <host-kind>/);
+  assert.match(help.stderr, /--conversation-scope <amscope_v1:uuid>/);
 
   const helpCommand = runCli(workspace, ["help"]);
   assert.equal(helpCommand.status, 0, helpCommand.stderr);
@@ -116,6 +119,48 @@ test("top-level help exits successfully", () => {
   assert.equal(agentsAddHelpAfterOption.status, 0, agentsAddHelpAfterOption.stderr);
   assert.match(agentsAddHelpAfterOption.stderr, /usage: agentmesh agents add --adapter <adapter>/);
   assert.doesNotMatch(agentsAddHelpAfterOption.stderr, /unknown help topic/);
+});
+
+test("workflow run rejects invalid reviewer session inputs without echoing sensitive values", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const rawScope = "amscope_v1:11111111-1111-4111-8111-111111111111";
+  const sharedArgs = [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "validate reviewer session input",
+  ];
+  const invalidInputs = [
+    ["--review-session-mode", "continuous"],
+    ["--host-kind", "provider-private-host"],
+    ["--conversation-scope", "amscope_v1:not-a-uuid"],
+  ];
+
+  for (const input of invalidInputs) {
+    const result = runCli(workspace, [...sharedArgs, ...input]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /provider-private-host|amscope_v1:not-a-uuid/);
+  }
+  const rawScopeResult = runCli(workspace, [
+    ...sharedArgs,
+    "--host-kind",
+    "codex",
+    "--conversation-scope",
+    rawScope,
+    "--review-session-mode",
+    "invalid",
+  ]);
+  assert.equal(rawScopeResult.status, 2, rawScopeResult.stderr);
+  assert.doesNotMatch(`${rawScopeResult.stdout}\n${rawScopeResult.stderr}`, new RegExp(rawScope));
 });
 
 test("skill install rejects the removed Copilot target", () => {

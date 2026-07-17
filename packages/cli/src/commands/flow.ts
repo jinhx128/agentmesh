@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { BUILTIN_WORKFLOW_IDS } from "@agentmesh/core";
+import {
+  BUILTIN_WORKFLOW_IDS,
+  ReviewSessionModeSchema,
+  type ReviewSessionMode,
+} from "@agentmesh/core";
 import { loadAgents, normalizeAgents, resolveAgent } from "@agentmesh/runtime/src/adapters.js";
 import {
   configProvenanceForRun,
@@ -9,6 +13,10 @@ import {
   loadConfigWithSources,
   type DefaultStageAgentsConfig,
 } from "@agentmesh/runtime/src/config.js";
+import type {
+  HostScopeInput,
+  ResolvedReviewerSessionPolicy,
+} from "@agentmesh/runtime/src/flow/types.js";
 import { reserveTimestampedId } from "@agentmesh/runtime/src/generated-id.js";
 import {
   attachStageArtifact,
@@ -55,6 +63,18 @@ import {
 } from "../flags.js";
 import { recordCliWorkspaceActivity } from "../workspace-activity.js";
 
+const HOST_KINDS = [
+  "codex",
+  "cursor",
+  "claude-code",
+  "antigravity",
+  "opencode",
+  "studio-desktop",
+  "headless-cli",
+  "unknown",
+] as const;
+const PROPAGATED_SCOPE_TOKEN_PATTERN = /^amscope_v1:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function workflowRun(args: string[], configPath?: string): Promise<number> {
   if (optionValue(args, "--workflow") || optionValue(args, "--workflow-file")) {
     return flowRun(args, configPath);
@@ -98,6 +118,11 @@ async function presetRun(
   }
   const cwd = process.cwd();
   const workflow = getWorkflow(preset.workflowId, workflowSearchDirs(cwd, configPath));
+  const reviewerSession = resolveReviewerSessionRunInput(args, workflow.reviewSessionMode);
+  if (typeof reviewerSession === "string") {
+    console.error(reviewerSession);
+    return 2;
+  }
   const taskInput = resolveTaskInput(args);
   if (taskInput.error) {
     console.error(taskInput.error);
@@ -166,6 +191,8 @@ async function presetRun(
       mcpServers: resolvedConfig?.config.mcp_servers,
       contextPolicy: resolvedConfig?.config.context_policy,
       reviewReleasePolicy,
+      reviewerSessionPolicy: reviewerSession.policy,
+      hostScopeInput: reviewerSession.hostScopeInput,
       executionPolicy,
       configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
       runtimeTiming,
@@ -195,7 +222,15 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
     ? getWorkflow(workflowId, workflowSearchDirs(cwd, configPath))
     : workflowFile
       ? loadWorkflowFile(workflowFile, cwd)
-    : undefined;
+      : undefined;
+  const reviewerSession = resolveReviewerSessionRunInput(
+    args,
+    workflow?.reviewSessionMode ?? "auto",
+  );
+  if (typeof reviewerSession === "string") {
+    console.error(reviewerSession);
+    return 2;
+  }
   const stages = workflow?.stages ?? ["plan", "execute", "review", "decide"];
   const configLoadStartedAt = Date.now();
   const resolvedConfig = loadOptionalConfigWithSources(configPath);
@@ -284,6 +319,8 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
       mcpServers: resolvedConfig?.config.mcp_servers,
       contextPolicy: resolvedConfig?.config.context_policy,
       reviewReleasePolicy,
+      reviewerSessionPolicy: reviewerSession.policy,
+      hostScopeInput: reviewerSession.hostScopeInput,
       executionPolicy,
       configProvenance: configProvenanceForRun(resolvedConfig, new Date().toISOString()),
       runtimeTiming,
@@ -296,6 +333,53 @@ export async function flowRun(args: string[], configPath?: string): Promise<numb
   console.log(`Run: ${runId}`);
   console.log(`Packet: ${runDir}`);
   return 0;
+}
+
+function resolveReviewerSessionRunInput(
+  args: string[],
+  workflowMode: ReviewSessionMode,
+): {
+  policy: ResolvedReviewerSessionPolicy;
+  hostScopeInput?: HostScopeInput;
+} | string {
+  const requestedModeValue = optionValue(args, "--review-session-mode");
+  const requestedMode = requestedModeValue === undefined
+    ? workflowMode
+    : ReviewSessionModeSchema.safeParse(requestedModeValue);
+  if (typeof requestedMode !== "string" && !requestedMode.success) {
+    return "--review-session-mode must be auto, interactive_continuous, or independent";
+  }
+  const mode = typeof requestedMode === "string" ? requestedMode : requestedMode.data;
+  const hostKind = optionValue(args, "--host-kind");
+  if (hostKind !== undefined && !HOST_KINDS.includes(hostKind as (typeof HOST_KINDS)[number])) {
+    return `--host-kind must be one of ${HOST_KINDS.join(", ")}`;
+  }
+  const propagatedScopeToken = optionValue(args, "--conversation-scope");
+  if (propagatedScopeToken !== undefined && !PROPAGATED_SCOPE_TOKEN_PATTERN.test(propagatedScopeToken)) {
+    return "--conversation-scope must use the form amscope_v1:<RFC4122 UUID>";
+  }
+  const effectiveMode = workflowMode === "independent" || mode === "independent"
+    ? "independent"
+    : "interactive_continuous";
+  const source = workflowMode === "independent"
+    ? "workflow"
+    : requestedModeValue === undefined
+      ? "workflow"
+      : "cli";
+  const hostScopeInput = hostKind === undefined && propagatedScopeToken === undefined
+    ? undefined
+    : {
+      ...(hostKind === undefined ? {} : { hostKind }),
+      ...(propagatedScopeToken === undefined ? {} : { propagatedScopeToken }),
+    };
+  return {
+    policy: {
+      requested_mode: mode,
+      effective_mode: effectiveMode,
+      source,
+    },
+    ...(hostScopeInput ? { hostScopeInput } : {}),
+  };
 }
 
 function workflowCompatibilityForRun(workflow: Workflow): {

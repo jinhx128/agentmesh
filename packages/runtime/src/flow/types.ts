@@ -1,5 +1,6 @@
 import type { McpResourceSpec } from "../mcp/resource.js";
 import type {
+  ReviewSessionMode,
   StageFailurePolicy,
   StageType,
 } from "@agentmesh/core";
@@ -19,6 +20,18 @@ export interface RuntimeTimingInput {
   mcp_cache_hits?: number;
   mcp_cache_misses?: number;
   total_ms?: number;
+}
+
+export interface HostScopeInput {
+  hostKind?: string;
+  nativeConversationId?: string;
+  propagatedScopeToken?: string;
+}
+
+export interface ResolvedReviewerSessionPolicy {
+  requested_mode: ReviewSessionMode;
+  effective_mode: "interactive_continuous" | "independent";
+  source: "workflow" | "profile" | "cli" | "fallback";
 }
 
 export interface FlowRunInput {
@@ -54,6 +67,8 @@ export interface FlowRunInput {
   mcpServers?: Record<string, Record<string, unknown>>;
   contextPolicy?: ContextPolicyConfig;
   reviewReleasePolicy?: ResolvedReviewReleasePolicy;
+  reviewerSessionPolicy?: ResolvedReviewerSessionPolicy;
+  hostScopeInput?: HostScopeInput;
   executionPolicy?: ResolvedExecutionPolicy;
   configProvenance?: ConfigProvenance;
   runtimeTiming?: RuntimeTimingInput;

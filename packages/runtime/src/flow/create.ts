@@ -40,6 +40,7 @@ import type {
   FailurePolicyConfig,
   FallbackRoutingConfig,
   FlowRunInput,
+  HostScopeInput,
   WorkflowCompatibilityInput,
 } from "./types.js";
 import { resolveDisplayTitle } from "../display-title.js";
@@ -123,6 +124,12 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
     ...(input.reviewReleasePolicy
       ? { resolved_review_release_policy: input.reviewReleasePolicy }
       : {}),
+    ...(input.reviewerSessionPolicy
+      ? { resolved_reviewer_session_policy: input.reviewerSessionPolicy }
+      : {}),
+    ...(input.hostScopeInput
+      ? { host_scope_input: safeHostScopeInput(input.hostScopeInput) }
+      : {}),
     ...(input.executionPolicy
       ? { resolved_execution_policy: input.executionPolicy }
       : {}),
@@ -164,6 +171,31 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   });
   recordSuccessfulWorkspaceMutation(cwd);
   return runDir;
+}
+
+function safeHostScopeInput(input: HostScopeInput): {
+  host_kind: string;
+  scope_source: "native" | "propagated" | "missing";
+  propagated_scope_token_present?: true;
+} {
+  if (input.nativeConversationId) {
+    return {
+      host_kind: input.hostKind ?? "unknown",
+      scope_source: "native",
+      ...(input.propagatedScopeToken ? { propagated_scope_token_present: true } : {}),
+    };
+  }
+  if (input.propagatedScopeToken) {
+    return {
+      host_kind: input.hostKind ?? "unknown",
+      scope_source: "propagated",
+      propagated_scope_token_present: true,
+    };
+  }
+  return {
+    host_kind: input.hostKind ?? "unknown",
+    scope_source: "missing",
+  };
 }
 
 function elapsedMs(startedAt: number): number {
