@@ -248,79 +248,59 @@ function sessionCommand(
 }
 
 function parseClaudeStructuredSessionResult(records: Record<string, unknown>[]): AdapterStructuredResult {
-  let sessionId: string | undefined;
-  let resultText: string | undefined;
-  for (const record of records) {
-    const type = record.type;
-    if (type === "system") {
-      if (record.subtype !== "init") {
-        return invalidStructuredOutput("provider produced an unrecognized structured session event");
-      }
-      const observed = structuredSessionId(record, "session_id");
-      if (observed === null || observed === undefined || !sameStructuredSessionId(sessionId, observed)) {
-        return invalidStructuredOutput("provider produced an invalid structured session ID");
-      }
-      sessionId = observed;
-      continue;
-    }
-    if (type === "assistant") {
-      if (!isRecord(record.message)) {
-        return invalidStructuredOutput("provider produced an unrecognized structured session event");
-      }
-      const observed = structuredSessionId(record, "session_id");
-      if (observed === null || observed === undefined || !sameStructuredSessionId(sessionId, observed)) {
-        return invalidStructuredOutput("provider produced an invalid structured session ID");
-      }
-      sessionId ??= observed;
-      continue;
-    }
-    if (type === "result") {
-      if (record.subtype !== "success" || record.is_error === true || typeof record.result !== "string") {
-        return invalidStructuredOutput("provider produced an unrecognized structured session event");
-      }
-      const observed = structuredSessionId(record, "session_id");
-      if (observed === null || observed === undefined || !sameStructuredSessionId(sessionId, observed)) {
-        return invalidStructuredOutput("provider produced an invalid structured session ID");
-      }
-      sessionId ??= observed;
-      if (resultText !== undefined) {
-        return invalidStructuredOutput("provider produced conflicting structured session results");
-      }
-      resultText = record.result;
-      continue;
-    }
-    return invalidStructuredOutput("provider produced an unrecognized structured session event");
+  if (records.length !== 3) {
+    return invalidStructuredOutput("provider produced an incomplete structured session lifecycle");
   }
-  return sessionId && resultText !== undefined
-    ? { providerSessionId: sessionId, outputText: resultText }
-    : invalidStructuredOutput("provider produced no structured session result");
+  const [init, assistant, result] = records;
+  if (
+    init.type !== "system"
+    || init.subtype !== "init"
+    || assistant.type !== "assistant"
+    || !isRecord(assistant.message)
+    || result.type !== "result"
+    || result.subtype !== "success"
+    || result.is_error !== false
+    || typeof result.result !== "string"
+  ) {
+    return invalidStructuredOutput("provider produced an unrecognized structured session lifecycle");
+  }
+  const sessionId = structuredSessionId(init, "session_id");
+  const assistantSessionId = structuredSessionId(assistant, "session_id");
+  const resultSessionId = structuredSessionId(result, "session_id");
+  if (
+    !sessionId
+    || assistantSessionId !== sessionId
+    || resultSessionId !== sessionId
+  ) {
+    return invalidStructuredOutput("provider produced an invalid structured session ID");
+  }
+  return { providerSessionId: sessionId, outputText: result.result };
 }
 
 function parseOpenCodeStructuredSessionResult(records: Record<string, unknown>[]): AdapterStructuredResult {
-  let sessionId: string | undefined;
-  const text: string[] = [];
-  for (const record of records) {
-    const type = record.type;
-    if (type !== "step_start" && type !== "text" && type !== "step_finish") {
-      return invalidStructuredOutput("provider produced an unrecognized structured session event");
-    }
-    const observed = structuredSessionId(record, "sessionID");
-    if (observed === null || observed === undefined || !sameStructuredSessionId(sessionId, observed)) {
-      return invalidStructuredOutput("provider produced an invalid structured session ID");
-    }
-    sessionId ??= observed;
-    if (type === "text") {
-      if (!isRecord(record.part) || record.part.type !== "text" || typeof record.part.text !== "string") {
-        return invalidStructuredOutput("provider produced an unrecognized structured session event");
-      }
-      text.push(record.part.text);
-    } else if (!isRecord(record.part)) {
-      return invalidStructuredOutput("provider produced an unrecognized structured session event");
-    }
+  if (records.length !== 3) {
+    return invalidStructuredOutput("provider produced an incomplete structured session lifecycle");
   }
-  return sessionId && text.length > 0
-    ? { providerSessionId: sessionId, outputText: text.join("") }
-    : invalidStructuredOutput("provider produced no structured session result");
+  const [start, text, finish] = records;
+  if (
+    start.type !== "step_start"
+    || !isRecord(start.part)
+    || text.type !== "text"
+    || !isRecord(text.part)
+    || text.part.type !== "text"
+    || typeof text.part.text !== "string"
+    || finish.type !== "step_finish"
+    || !isRecord(finish.part)
+  ) {
+    return invalidStructuredOutput("provider produced an unrecognized structured session lifecycle");
+  }
+  const sessionId = structuredSessionId(start, "sessionID");
+  const textSessionId = structuredSessionId(text, "sessionID");
+  const finishSessionId = structuredSessionId(finish, "sessionID");
+  if (!sessionId || textSessionId !== sessionId || finishSessionId !== sessionId) {
+    return invalidStructuredOutput("provider produced an invalid structured session ID");
+  }
+  return { providerSessionId: sessionId, outputText: text.part.text };
 }
 
 function structuredProviderFailure(
@@ -384,10 +364,6 @@ function structuredSessionId(
   }
   const value = record[field];
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function sameStructuredSessionId(current: string | undefined, observed: string | undefined): boolean {
-  return observed === undefined || current === undefined || current === observed;
 }
 
 function invalidStructuredOutput(message: string): AdapterStructuredResult {

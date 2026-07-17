@@ -435,6 +435,80 @@ test("verified provider parsers accept only their documented structured session 
   );
 });
 
+test("Claude structured parser requires the fixture lifecycle, order, cardinality, and success marker", () => {
+  const session = "session-test-123";
+  const init = JSON.stringify({ type: "system", subtype: "init", session_id: session });
+  const assistant = JSON.stringify({
+    type: "assistant",
+    session_id: session,
+    message: { content: [{ type: "text", text: "Structured Claude response" }] },
+  });
+  const success = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    session_id: session,
+    result: "Structured Claude response",
+  });
+  const standaloneResult = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    session_id: session,
+    result: "standalone result",
+  });
+  const resultWithoutSuccessMarker = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    session_id: session,
+    result: "missing success marker",
+  });
+
+  for (const output of [
+    standaloneResult,
+    [init, success].join("\n"),
+    [init, assistant].join("\n"),
+    [assistant, init, success].join("\n"),
+    [init, assistant, assistant, success].join("\n"),
+    [init, assistant, resultWithoutSuccessMarker].join("\n"),
+    [init, assistant, JSON.stringify({ ...JSON.parse(success), is_error: true })].join("\n"),
+    [init, assistant, success, success].join("\n"),
+  ]) {
+    assert.equal(
+      parseAdapterStructuredSessionResult("claude-code-cli", { exitCode: 0, stdout: output })
+        .failure?.classification,
+      "invalid_output",
+    );
+  }
+});
+
+test("OpenCode structured parser requires the fixture lifecycle, order, and cardinality", () => {
+  const session = "session-test-123";
+  const start = JSON.stringify({ type: "step_start", sessionID: session, part: {} });
+  const text = JSON.stringify({
+    type: "text",
+    sessionID: session,
+    part: { type: "text", text: "Structured OpenCode response" },
+  });
+  const finish = JSON.stringify({ type: "step_finish", sessionID: session, part: {} });
+
+  for (const output of [
+    text,
+    [start, finish].join("\n"),
+    [start, text].join("\n"),
+    [text, start, finish].join("\n"),
+    [start, text, text, finish].join("\n"),
+    [start, start, text, finish].join("\n"),
+    [start, text, finish, finish].join("\n"),
+  ]) {
+    assert.equal(
+      parseAdapterStructuredSessionResult("opencode-cli", { exitCode: 0, stdout: output })
+        .failure?.classification,
+      "invalid_output",
+    );
+  }
+});
+
 test("verified provider parsers map public failures without returning provider diagnostics", () => {
   const notFoundCases = [
     ["claude-code-cli", "No conversation found with session ID: session-test-123"],
