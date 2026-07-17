@@ -27,6 +27,13 @@ const REGISTRY_KEY_PATTERN = /^rk-[a-f0-9]{32}$/;
 const SESSION_REF_PATTERN = /^rs-[a-f0-9]{16}$/;
 const INVOCATION_FINGERPRINT_PATTERN = /^if-[a-f0-9]{32}$/;
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const TEMPORARY_ARTIFACT_STALE_MS = 30_000;
+const MUTATION_LOCK_LEGACY_STALE_MS = 30_000;
+const MUTATION_LOCK_WAIT_MS = 5;
+const MUTATION_LOCK_ATTEMPTS = 40;
+const RECOVERY_EPOCH_FLOOR = 2 ** 40;
+const MAX_PERSISTED_EPOCH = Number.MAX_SAFE_INTEGER - 1;
+const lockWaitArray = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
 
 export interface ReviewerSessionEntry {
   schema_version: 1;
@@ -69,6 +76,20 @@ export interface SessionRegistryKeyInput {
 export interface ReviewerSessionRegistryOptions {
   registryPath?: string;
   now?: Date | string;
+}
+
+export interface ReviewerSessionRegistryTestHooks {
+  directoryFsync?: (descriptor: number, directory: string) => void;
+  beforeDirectoryOperation?: (operation: string, directory: string) => void;
+}
+
+let reviewerSessionRegistryTestHooks: ReviewerSessionRegistryTestHooks | undefined;
+
+/** Internal deterministic fault injection for the focused registry tests. */
+export function setReviewerSessionRegistryTestHooks(
+  hooks: ReviewerSessionRegistryTestHooks | undefined,
+): void {
+  reviewerSessionRegistryTestHooks = hooks;
 }
 
 export interface UpsertReviewerSessionInput {
@@ -124,8 +145,14 @@ interface FileIdentity {
   inode: number | bigint;
 }
 
+interface SafeRegistryDirectory {
+  safe: true;
+  registryPath: string;
+  identity: FileIdentity;
+}
+
 type RegistryDirectoryResult =
-  | { safe: true; registryPath: string }
+  | SafeRegistryDirectory
   | { safe: false; reason: "unsafe_directory"; diagnostic: string };
 
 type InspectedEntry =
@@ -137,15 +164,33 @@ type InspectedEntry =
 type InspectedEpoch =
   | { kind: "missing" }
   | { kind: "unsafe" }
-  | { kind: "invalid"; identity: FileIdentity }
+  | { kind: "corrupt"; identity: FileIdentity }
+  | { kind: "future"; epoch: number; identity: FileIdentity }
   | { kind: "valid"; epoch: number; identity: FileIdentity };
+
+interface TemporaryArtifact {
+  filePath: string;
+  key: string;
+  ownerPid: number;
+}
+
+interface MutationLock {
+  descriptor: number;
+  identity: FileIdentity;
+}
+
+class RegistryDirectoryChangedError extends Error {
+  constructor() {
+    super("reviewer session registry directory changed during operation");
+  }
+}
 
 const reviewerSessionEntrySchema = z.object({
   schema_version: z.literal(REVIEWER_SESSION_SCHEMA_VERSION),
   key: z.string().regex(REGISTRY_KEY_PATTERN),
   session_ref: z.string().regex(SESSION_REF_PATTERN),
   provider_session_id: z.string().min(1),
-  epoch: z.number().int().nonnegative(),
+  epoch: z.number().int().nonnegative().max(MAX_PERSISTED_EPOCH),
   created_at: z.string().refine(isValidInstant),
   last_used_at: z.string().refine(isValidInstant),
   expires_at: z.string().refine(isValidInstant),
@@ -157,8 +202,14 @@ const reviewerSessionEntrySchema = z.object({
 const reviewerSessionEpochSchema = z.object({
   schema_version: z.literal(REVIEWER_SESSION_SCHEMA_VERSION),
   key: z.string().regex(REGISTRY_KEY_PATTERN),
-  epoch: z.number().int().nonnegative(),
+  epoch: z.number().int().nonnegative().max(MAX_PERSISTED_EPOCH),
 }).strict();
+
+const reviewerSessionFutureEpochSchema = z.object({
+  schema_version: z.number().int().min(REVIEWER_SESSION_SCHEMA_VERSION + 1),
+  key: z.string().regex(REGISTRY_KEY_PATTERN),
+  epoch: z.number().int().nonnegative().max(MAX_PERSISTED_EPOCH),
+}).passthrough();
 
 export function reviewerSessionRegistryPath(): string {
   return path.join(os.homedir(), ".config", "agentmesh", "reviewer-sessions");
@@ -200,7 +251,7 @@ export function readReviewerSession(
   if (!directory.safe) {
     return unavailable(directory.reason, directory.diagnostic);
   }
-  const inspected = inspectEntry(directory.registryPath, key);
+  const inspected = inspectEntry(directory, key);
   if (inspected.kind === "missing") {
     return unavailable("missing", "reviewer session is unavailable");
   }
@@ -210,12 +261,15 @@ export function readReviewerSession(
   if (inspected.kind === "invalid") {
     return unavailable("invalid_entry", "reviewer session entry is invalid");
   }
-  const epoch = inspectEpoch(directory.registryPath, key);
+  const epoch = inspectEpoch(directory, key);
   if (epoch.kind === "unsafe") {
     return unavailable("unsafe_entry", "reviewer session entry is unsafe");
   }
   if (epoch.kind !== "valid" || epoch.epoch !== inspected.entry.epoch) {
     return unavailable("invalid_entry", "reviewer session entry is invalid");
+  }
+  if (!canAdvanceEpoch(epoch.epoch)) {
+    return unavailable("invalid_entry", "reviewer session epoch is exhausted");
   }
   const lifecycle = evaluateReviewerSessionLifecycle(inspected.entry, options);
   if (lifecycle !== "reusable") {
@@ -234,9 +288,9 @@ export function upsertReviewerSession(
   if (!directory.safe) {
     return { status: "unavailable", reason: directory.reason, diagnostic: directory.diagnostic };
   }
-  return withMutationLock(directory.registryPath, input.key, () => {
-    const current = inspectEntry(directory.registryPath, input.key);
-    const currentEpoch = inspectEpoch(directory.registryPath, input.key);
+  return withMutationLock(directory, input.key, () => {
+    const current = inspectEntry(directory, input.key);
+    const currentEpoch = inspectEpoch(directory, input.key);
     if (current.kind === "unsafe") {
       return { status: "unavailable", reason: "unsafe_entry", diagnostic: "reviewer session entry is unsafe" };
     }
@@ -246,27 +300,33 @@ export function upsertReviewerSession(
     if (current.kind === "invalid") {
       return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session entry is invalid" };
     }
-    if (currentEpoch.kind === "invalid") {
+    if (currentEpoch.kind === "corrupt" || currentEpoch.kind === "future") {
       return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session entry is invalid" };
     }
     if (current.kind === "missing") {
       if (input.expectedEpoch !== undefined) {
         return epochConflict();
       }
-      const epoch = currentEpoch.kind === "valid" ? currentEpoch.epoch + 1 : 1;
+      if (currentEpoch.kind === "valid" && !canAdvanceEpoch(currentEpoch.epoch)) {
+        return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session epoch is exhausted" };
+      }
+      const epoch = currentEpoch.kind === "valid" ? nextEpoch(currentEpoch.epoch) : 1;
       const entry = freshEntry(input, epoch, options.now);
-      atomicWriteEpoch(directory.registryPath, input.key, epoch, currentEpoch.kind === "valid" ? currentEpoch.identity : undefined);
-      atomicWriteEntry(directory.registryPath, entry, undefined);
+      atomicWriteEpoch(directory, input.key, epoch, currentEpoch.kind === "valid" ? currentEpoch.identity : undefined);
+      atomicWriteEntry(directory, entry, undefined);
       return { status: "written", entry };
     }
     if (currentEpoch.kind === "valid" && currentEpoch.epoch > current.entry.epoch) {
       if (input.expectedEpoch !== undefined) {
         return epochConflict();
       }
-      const epoch = currentEpoch.epoch + 1;
+      if (!canAdvanceEpoch(currentEpoch.epoch)) {
+        return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session epoch is exhausted" };
+      }
+      const epoch = nextEpoch(currentEpoch.epoch);
       const entry = freshEntry(input, epoch, options.now);
-      atomicWriteEpoch(directory.registryPath, input.key, epoch, currentEpoch.identity);
-      atomicWriteEntry(directory.registryPath, entry, current.identity);
+      atomicWriteEpoch(directory, input.key, epoch, currentEpoch.identity);
+      atomicWriteEntry(directory, entry, current.identity);
       return { status: "written", entry };
     }
     if (currentEpoch.kind !== "valid" || currentEpoch.epoch !== current.entry.epoch) {
@@ -296,18 +356,21 @@ export function upsertReviewerSession(
         diagnostic: "reviewer session update requires a successful resume",
       };
     }
+    if (!canAdvanceEpoch(current.entry.epoch)) {
+      return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session epoch is exhausted" };
+    }
     const entry: ReviewerSessionEntry = {
       ...current.entry,
       provider_session_id: input.providerSessionId,
-      epoch: current.entry.epoch + 1,
+      epoch: nextEpoch(current.entry.epoch),
       last_used_at: instant(options.now),
       successful_resumes: current.entry.successful_resumes + 1,
       ...(input.estimatedContextTokens !== undefined
         ? { estimated_context_tokens: input.estimatedContextTokens }
         : {}),
     };
-    atomicWriteEpoch(directory.registryPath, input.key, entry.epoch, currentEpoch.identity);
-    atomicWriteEntry(directory.registryPath, entry, current.identity);
+    atomicWriteEpoch(directory, input.key, entry.epoch, currentEpoch.identity);
+    atomicWriteEntry(directory, entry, current.identity);
     return { status: "written", entry };
   });
 }
@@ -325,14 +388,14 @@ export function closeReviewerSession(
   if (!directory.safe) {
     return { status: "unavailable", reason: directory.reason, diagnostic: directory.diagnostic };
   }
-  return withMutationLock(directory.registryPath, key, () => {
-    const current = inspectEntry(directory.registryPath, key);
-    const currentEpoch = inspectEpoch(directory.registryPath, key);
+  return withMutationLock(directory, key, () => {
+    const current = inspectEntry(directory, key);
+    const currentEpoch = inspectEpoch(directory, key);
     if (current.kind === "missing") {
       if (currentEpoch.kind === "unsafe") {
         return { status: "unavailable", reason: "unsafe_entry", diagnostic: "reviewer session entry is unsafe" };
       }
-      if (currentEpoch.kind === "invalid") {
+      if (currentEpoch.kind === "corrupt" || currentEpoch.kind === "future") {
         return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session entry is invalid" };
       }
       if (options.expectedEpoch === undefined) {
@@ -358,8 +421,7 @@ export function closeReviewerSession(
       ) {
         return epochConflict();
       }
-      unlinkSync(entryPath(directory.registryPath, key));
-      syncDirectory(directory.registryPath);
+      unlinkEntry(directory, key, current.identity);
       return { status: "closed", epoch: currentEpoch.epoch };
     }
     if (currentEpoch.kind !== "valid" || currentEpoch.epoch !== current.entry.epoch) {
@@ -368,10 +430,12 @@ export function closeReviewerSession(
     if (options.expectedEpoch !== undefined && options.expectedEpoch !== current.entry.epoch) {
       return epochConflict();
     }
-    const epoch = current.entry.epoch + 1;
-    atomicWriteEpoch(directory.registryPath, key, epoch, currentEpoch.identity);
-    unlinkSync(entryPath(directory.registryPath, key));
-    syncDirectory(directory.registryPath);
+    if (!canAdvanceEpoch(current.entry.epoch)) {
+      return { status: "unavailable", reason: "invalid_entry", diagnostic: "reviewer session epoch is exhausted" };
+    }
+    const epoch = nextEpoch(current.entry.epoch);
+    atomicWriteEpoch(directory, key, epoch, currentEpoch.identity);
+    unlinkEntry(directory, key, current.identity);
     return { status: "closed", epoch };
   });
 }
@@ -384,57 +448,30 @@ export function purgeReviewerSessions(
     return { status: "unavailable", reason: directory.reason, diagnostic: directory.diagnostic };
   }
   let removed = 0;
-  for (const name of readdirSync(directory.registryPath)) {
-    const candidatePath = path.join(directory.registryPath, name);
-    if (isTemporaryArtifact(name)) {
-      if (removeSafeRegularFile(candidatePath)) {
-        removed += 1;
-      }
+  const names = readRegistryDirectory(directory);
+  const keys = new Set<string>();
+  const temporaryArtifacts: TemporaryArtifact[] = [];
+  for (const name of names) {
+    const entryMatch = /^(rk-[a-f0-9]{32})\.json$/.exec(name);
+    const epochMatch = /^(rk-[a-f0-9]{32})\.epoch\.json$/.exec(name);
+    if (entryMatch || epochMatch) {
+      keys.add((entryMatch ?? epochMatch)![1]);
       continue;
     }
-    const match = /^(rk-[a-f0-9]{32})\.json$/.exec(name);
-    if (!match) {
-      continue;
+    const temporary = parseTemporaryArtifact(directory, name);
+    if (temporary) {
+      temporaryArtifacts.push(temporary);
     }
-    const key = match[1];
-    const inspection = inspectEntry(directory.registryPath, key);
-    const inspectedEpoch = inspectEpoch(directory.registryPath, key);
-    if (inspection.kind === "unsafe" || inspection.kind === "missing") {
-      continue;
+  }
+  for (const temporary of temporaryArtifacts) {
+    if (purgeTemporaryArtifact(directory, temporary)) {
+      removed += 1;
     }
-    if (inspectedEpoch.kind === "unsafe" || inspectedEpoch.kind === "invalid") {
-      continue;
-    }
-    if (
-      inspection.kind === "invalid"
-      || inspectedEpoch.kind !== "valid"
-      || inspectedEpoch.epoch !== inspection.entry.epoch
-      || evaluateReviewerSessionLifecycle(inspection.entry, options) !== "reusable"
-    ) {
-      const result = withMutationLock(directory.registryPath, key, () => {
-        const current = inspectEntry(directory.registryPath, key);
-        const currentEpoch = inspectEpoch(directory.registryPath, key);
-        if (current.kind === "unsafe" || current.kind === "missing") {
-          return false;
-        }
-        if (currentEpoch.kind === "unsafe" || currentEpoch.kind === "invalid") {
-          return false;
-        }
-        if (
-          current.kind === "valid"
-          && currentEpoch.kind === "valid"
-          && currentEpoch.epoch === current.entry.epoch
-          && evaluateReviewerSessionLifecycle(current.entry, options) === "reusable"
-        ) {
-          return false;
-        }
-        unlinkSync(candidatePath);
-        syncDirectory(directory.registryPath);
-        return true;
-      });
-      if (typeof result === "boolean" && result) {
-        removed += 1;
-      }
+  }
+  for (const key of keys) {
+    const result = withMutationLock(directory, key, () => purgeReviewerSessionKey(directory, key, options));
+    if (typeof result === "boolean" && result) {
+      removed += 1;
     }
   }
   return { status: "purged", removed };
@@ -567,7 +604,7 @@ function ensureRegistryDirectory(registryPath: string): RegistryDirectoryResult 
       if (!stat.isDirectory() || !hasSafeModeAndOwner(stat, 0o700)) {
         return unsafeDirectory();
       }
-      return { safe: true, registryPath };
+      return { safe: true, registryPath, identity: fileIdentity(stat) };
     } catch (error: unknown) {
       if (!isNotFound(error)) {
         return unsafeDirectory();
@@ -578,14 +615,15 @@ function ensureRegistryDirectory(registryPath: string): RegistryDirectoryResult 
     if (!stat.isDirectory() || !hasSafeModeAndOwner(stat, 0o700)) {
       return unsafeDirectory();
     }
-    return { safe: true, registryPath };
+    return { safe: true, registryPath, identity: fileIdentity(stat) };
   } catch {
     return unsafeDirectory();
   }
 }
 
-function inspectEntry(registryPath: string, key: string): InspectedEntry {
-  const filePath = entryPath(registryPath, key);
+function inspectEntry(directory: SafeRegistryDirectory, key: string): InspectedEntry {
+  beforeDirectoryOperation(directory, "entry-lstat");
+  const filePath = entryPath(directory.registryPath, key);
   let initial: ReturnType<typeof lstatSync>;
   try {
     initial = lstatSync(filePath);
@@ -598,7 +636,9 @@ function inspectEntry(registryPath: string, key: string): InspectedEntry {
   const identity = fileIdentity(initial);
   let descriptor: number | undefined;
   try {
+    beforeDirectoryOperation(directory, "entry-open");
     descriptor = openSync(filePath, constants.O_RDONLY | noFollowFlag());
+    assertRegistryDirectoryIdentity(directory);
     const opened = fstatSync(descriptor);
     if (!opened.isFile() || !sameFileIdentity(identity, fileIdentity(opened)) || !hasSafeModeAndOwner(opened, 0o600)) {
       return { kind: "unsafe" };
@@ -609,7 +649,10 @@ function inspectEntry(registryPath: string, key: string): InspectedEntry {
       return { kind: "invalid", identity };
     }
     return { kind: "valid", entry: parsed.data, identity };
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof RegistryDirectoryChangedError) {
+      throw error;
+    }
     return { kind: "invalid", identity };
   } finally {
     if (descriptor !== undefined) {
@@ -618,8 +661,9 @@ function inspectEntry(registryPath: string, key: string): InspectedEntry {
   }
 }
 
-function inspectEpoch(registryPath: string, key: string): InspectedEpoch {
-  const filePath = epochPath(registryPath, key);
+function inspectEpoch(directory: SafeRegistryDirectory, key: string): InspectedEpoch {
+  beforeDirectoryOperation(directory, "epoch-lstat");
+  const filePath = epochPath(directory.registryPath, key);
   let initial: ReturnType<typeof lstatSync>;
   try {
     initial = lstatSync(filePath);
@@ -632,19 +676,27 @@ function inspectEpoch(registryPath: string, key: string): InspectedEpoch {
   const identity = fileIdentity(initial);
   let descriptor: number | undefined;
   try {
+    beforeDirectoryOperation(directory, "epoch-open");
     descriptor = openSync(filePath, constants.O_RDONLY | noFollowFlag());
+    assertRegistryDirectoryIdentity(directory);
     const opened = fstatSync(descriptor);
     if (!opened.isFile() || !sameFileIdentity(identity, fileIdentity(opened)) || !hasSafeModeAndOwner(opened, 0o600)) {
       return { kind: "unsafe" };
     }
     const payload: unknown = JSON.parse(readFileSync(descriptor, "utf-8"));
     const parsed = reviewerSessionEpochSchema.safeParse(payload);
-    if (!parsed.success || parsed.data.key !== key) {
-      return { kind: "invalid", identity };
+    if (parsed.success && parsed.data.key === key) {
+      return { kind: "valid", epoch: parsed.data.epoch, identity };
     }
-    return { kind: "valid", epoch: parsed.data.epoch, identity };
-  } catch {
-    return { kind: "invalid", identity };
+    const future = reviewerSessionFutureEpochSchema.safeParse(payload);
+    return future.success && future.data.key === key
+      ? { kind: "future", epoch: future.data.epoch, identity }
+      : { kind: "corrupt", identity };
+  } catch (error: unknown) {
+    if (error instanceof RegistryDirectoryChangedError) {
+      throw error;
+    }
+    return { kind: "corrupt", identity };
   } finally {
     if (descriptor !== undefined) {
       bestEffortClose(descriptor);
@@ -653,107 +705,373 @@ function inspectEpoch(registryPath: string, key: string): InspectedEpoch {
 }
 
 function atomicWriteEpoch(
-  registryPath: string,
+  directory: SafeRegistryDirectory,
   key: string,
   epoch: number,
   expectedIdentity: FileIdentity | undefined,
 ): void {
   atomicWriteJson(
-    registryPath,
-    epochPath(registryPath, key),
+    directory,
+    epochPath(directory.registryPath, key),
     { schema_version: REVIEWER_SESSION_SCHEMA_VERSION, key, epoch },
     expectedIdentity,
   );
 }
 
 function atomicWriteEntry(
-  registryPath: string,
+  directory: SafeRegistryDirectory,
   entry: ReviewerSessionEntry,
   expectedIdentity: FileIdentity | undefined,
 ): void {
-  atomicWriteJson(registryPath, entryPath(registryPath, entry.key), entry, expectedIdentity);
+  atomicWriteJson(directory, entryPath(directory.registryPath, entry.key), entry, expectedIdentity);
 }
 
 function atomicWriteJson(
-  registryPath: string,
+  directory: SafeRegistryDirectory,
   filePath: string,
   payload: unknown,
   expectedIdentity: FileIdentity | undefined,
 ): void {
   const temporaryPath = path.join(
-    registryPath,
+    directory.registryPath,
     `.${path.basename(filePath)}.${process.pid}.${randomBytes(12).toString("hex")}.tmp`,
   );
   let descriptor: number | undefined;
   try {
+    beforeDirectoryOperation(directory, "temporary-open");
     descriptor = openSync(
       temporaryPath,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(),
       0o600,
     );
+    assertRegistryDirectoryIdentity(directory);
     writeFully(descriptor, Buffer.from(`${JSON.stringify(payload, null, 2)}\n`));
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = undefined;
+    beforeDirectoryOperation(directory, "atomic-rename");
     assertTargetIdentity(filePath, expectedIdentity);
     renameSync(temporaryPath, filePath);
-    syncDirectory(registryPath);
+    assertRegistryDirectoryIdentity(directory);
+    syncDirectory(directory);
   } finally {
     if (descriptor !== undefined) {
       bestEffortClose(descriptor);
     }
-    bestEffortUnlink(temporaryPath);
+    bestEffortUnlinkInDirectory(directory, temporaryPath);
   }
 }
 
 function withMutationLock<T>(
-  registryPath: string,
+  directory: SafeRegistryDirectory,
   key: string,
   operation: () => T,
 ): T | { status: "busy"; diagnostic: string } {
-  const lockPath = path.join(registryPath, `.${key}.mutation`);
-  let descriptor: number | undefined;
-  let identity: FileIdentity | undefined;
+  const lockPath = path.join(directory.registryPath, `.${key}.mutation`);
+  const lock = acquireMutationLock(directory, lockPath);
+  if (!lock) {
+    return { status: "busy", diagnostic: "reviewer session registry mutation is busy" };
+  }
   try {
+    return operation();
+  } finally {
+    bestEffortClose(lock.descriptor);
+    removeIfCurrent(directory, lockPath, lock.identity);
+  }
+}
+
+function acquireMutationLock(
+  directory: SafeRegistryDirectory,
+  lockPath: string,
+): MutationLock | undefined {
+  for (let attempt = 0; attempt < MUTATION_LOCK_ATTEMPTS; attempt += 1) {
+    let descriptor: number | undefined;
+    let identity: FileIdentity | undefined;
     try {
-      descriptor = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(), 0o600);
+      beforeDirectoryOperation(directory, "mutation-lock-open");
+      descriptor = openSync(
+        lockPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(),
+        0o600,
+      );
+      const stat = fstatSync(descriptor);
+      identity = fileIdentity(stat);
+      assertRegistryDirectoryIdentity(directory);
+      writeFully(descriptor, Buffer.from(JSON.stringify({
+        schema_version: 1,
+        pid: process.pid,
+        created_at_ms: Date.now(),
+        nonce: randomBytes(12).toString("hex"),
+      })));
+      fsyncSync(descriptor);
+      return { descriptor, identity };
     } catch (error: unknown) {
-      if (isAlreadyExists(error)) {
-        return { status: "busy", diagnostic: "reviewer session registry mutation is busy" };
+      if (descriptor !== undefined) {
+        bestEffortClose(descriptor);
       }
+      if (identity) {
+        removeIfCurrent(directory, lockPath, identity);
+      }
+      if (!isAlreadyExists(error)) {
+        throw error;
+      }
+      if (reclaimStaleMutationLock(directory, lockPath)) {
+        continue;
+      }
+      if (attempt + 1 < MUTATION_LOCK_ATTEMPTS) {
+        Atomics.wait(lockWaitArray, 0, 0, MUTATION_LOCK_WAIT_MS);
+      }
+    }
+  }
+  return undefined;
+}
+
+function reclaimStaleMutationLock(
+  directory: SafeRegistryDirectory,
+  lockPath: string,
+): boolean {
+  const candidate = inspectMutationLock(directory, lockPath);
+  if (!candidate || !mutationLockIsStale(candidate)) {
+    return false;
+  }
+  const revalidated = inspectMutationLock(directory, lockPath);
+  if (
+    !revalidated
+    || !sameFileIdentity(candidate.identity, revalidated.identity)
+    || !mutationLockIsStale(revalidated)
+  ) {
+    return false;
+  }
+  beforeDirectoryOperation(directory, "mutation-lock-reclaim");
+  try {
+    const stat = lstatSync(lockPath);
+    if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), candidate.identity)) {
+      return false;
+    }
+    unlinkSync(lockPath);
+    assertRegistryDirectoryIdentity(directory);
+    return true;
+  } catch (error: unknown) {
+    return isNotFound(error);
+  }
+}
+
+function inspectMutationLock(
+  directory: SafeRegistryDirectory,
+  lockPath: string,
+): { identity: FileIdentity; ownerPid?: number; mtimeMs: number } | undefined {
+  beforeDirectoryOperation(directory, "mutation-lock-inspect");
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(lockPath);
+  } catch {
+    return undefined;
+  }
+  if (!stat.isFile() || !hasSafeModeAndOwner(stat, 0o600)) {
+    return undefined;
+  }
+  const identity = fileIdentity(stat);
+  let descriptor: number | undefined;
+  try {
+    beforeDirectoryOperation(directory, "mutation-lock-read");
+    descriptor = openSync(lockPath, constants.O_RDONLY | noFollowFlag());
+    const opened = fstatSync(descriptor);
+    if (!opened.isFile() || !sameFileIdentity(identity, fileIdentity(opened))) {
+      return undefined;
+    }
+    const payload: unknown = JSON.parse(readFileSync(descriptor, "utf-8"));
+    const pid = typeof payload === "object" && payload !== null
+      ? (payload as { pid?: unknown }).pid
+      : undefined;
+    return {
+      identity,
+      ...(typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? { ownerPid: pid } : {}),
+      mtimeMs: stat.mtimeMs,
+    };
+  } catch (error: unknown) {
+    if (error instanceof RegistryDirectoryChangedError) {
       throw error;
     }
-    identity = fileIdentity(fstatSync(descriptor));
-    return operation();
+    return { identity, mtimeMs: stat.mtimeMs };
   } finally {
     if (descriptor !== undefined) {
       bestEffortClose(descriptor);
     }
-    if (identity) {
-      removeIfCurrent(lockPath, identity);
-    }
   }
 }
 
-function removeSafeRegularFile(filePath: string): boolean {
+function mutationLockIsStale(lock: { ownerPid?: number; mtimeMs: number }): boolean {
+  return lock.ownerPid !== undefined
+    ? !isProcessAlive(lock.ownerPid)
+    : Date.now() - lock.mtimeMs >= MUTATION_LOCK_LEGACY_STALE_MS;
+}
+
+function isProcessAlive(pid: number): boolean {
   try {
-    const stat = lstatSync(filePath);
-    if (!stat.isFile() || !hasSafeModeAndOwner(stat, 0o600)) {
-      return false;
-    }
-    unlinkSync(filePath);
-    syncDirectory(path.dirname(filePath));
+    process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (error: unknown) {
+    return !(typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ESRCH");
+  }
+}
+
+function readRegistryDirectory(directory: SafeRegistryDirectory): string[] {
+  beforeDirectoryOperation(directory, "registry-readdir");
+  const names = readdirSync(directory.registryPath);
+  assertRegistryDirectoryIdentity(directory);
+  return names;
+}
+
+function parseTemporaryArtifact(
+  directory: SafeRegistryDirectory,
+  name: string,
+): TemporaryArtifact | undefined {
+  const match = /^\.(rk-[a-f0-9]{32})\.(?:json|epoch\.json)\.([1-9][0-9]*)\.([a-f0-9]{24})\.tmp$/.exec(name);
+  if (!match) {
+    return undefined;
+  }
+  const ownerPid = Number(match[2]);
+  return Number.isSafeInteger(ownerPid)
+    ? { filePath: path.join(directory.registryPath, name), key: match[1], ownerPid }
+    : undefined;
+}
+
+function purgeTemporaryArtifact(
+  directory: SafeRegistryDirectory,
+  temporary: TemporaryArtifact,
+): boolean {
+  const initial = inspectStaleTemporaryArtifact(directory, temporary);
+  if (!initial) {
     return false;
   }
+  const result = withMutationLock(directory, temporary.key, () => {
+    const revalidated = inspectStaleTemporaryArtifact(directory, temporary);
+    if (!revalidated || !sameFileIdentity(initial, revalidated)) {
+      return false;
+    }
+    beforeDirectoryOperation(directory, "temporary-orphan-unlink");
+    const stat = lstatSync(temporary.filePath);
+    if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), initial)) {
+      return false;
+    }
+    unlinkSync(temporary.filePath);
+    assertRegistryDirectoryIdentity(directory);
+    syncDirectory(directory);
+    return true;
+  });
+  return typeof result === "boolean" && result;
 }
 
-function removeIfCurrent(filePath: string, expectedIdentity: FileIdentity): void {
+function inspectStaleTemporaryArtifact(
+  directory: SafeRegistryDirectory,
+  temporary: TemporaryArtifact,
+): FileIdentity | undefined {
+  beforeDirectoryOperation(directory, "temporary-orphan-inspect");
   try {
+    const stat = lstatSync(temporary.filePath);
+    if (
+      !stat.isFile()
+      || !hasSafeModeAndOwner(stat, 0o600)
+      || Date.now() - stat.mtimeMs < TEMPORARY_ARTIFACT_STALE_MS
+      || isProcessAlive(temporary.ownerPid)
+    ) {
+      return undefined;
+    }
+    return fileIdentity(stat);
+  } catch {
+    return undefined;
+  }
+}
+
+function purgeReviewerSessionKey(
+  directory: SafeRegistryDirectory,
+  key: string,
+  options: ReviewerSessionRegistryOptions,
+): boolean {
+  const entry = inspectEntry(directory, key);
+  const marker = inspectEpoch(directory, key);
+  if (entry.kind === "unsafe" || marker.kind === "unsafe") {
+    return false;
+  }
+  if (entry.kind === "missing" && (marker.kind === "missing" || marker.kind === "valid")) {
+    return false;
+  }
+  if (
+    entry.kind === "valid"
+    && marker.kind === "valid"
+    && marker.epoch === entry.entry.epoch
+    && canAdvanceEpoch(marker.epoch)
+    && evaluateReviewerSessionLifecycle(entry.entry, options) === "reusable"
+  ) {
+    return false;
+  }
+
+  const knownEpochs = [
+    ...(entry.kind === "valid" ? [entry.entry.epoch] : []),
+    ...(marker.kind === "valid" || marker.kind === "future" ? [marker.epoch] : []),
+  ];
+  const highestKnownEpoch = knownEpochs.length > 0 ? Math.max(...knownEpochs) : undefined;
+  const tombstoneEpoch = highestKnownEpoch === undefined
+    ? recoveryEpoch(options.now)
+    : canAdvanceEpoch(highestKnownEpoch)
+      ? nextEpoch(highestKnownEpoch)
+      : highestKnownEpoch;
+  atomicWriteEpoch(
+    directory,
+    key,
+    tombstoneEpoch,
+    marker.kind === "valid" || marker.kind === "future" || marker.kind === "corrupt"
+      ? marker.identity
+      : undefined,
+  );
+  if (entry.kind === "valid" || entry.kind === "invalid") {
+    unlinkEntry(directory, key, entry.identity);
+  }
+  return true;
+}
+
+function unlinkEntry(
+  directory: SafeRegistryDirectory,
+  key: string,
+  expectedIdentity: FileIdentity,
+): void {
+  const filePath = entryPath(directory.registryPath, key);
+  beforeDirectoryOperation(directory, "entry-unlink");
+  const stat = lstatSync(filePath);
+  if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), expectedIdentity)) {
+    throw new Error("reviewer session entry changed during mutation");
+  }
+  unlinkSync(filePath);
+  assertRegistryDirectoryIdentity(directory);
+  syncDirectory(directory);
+}
+
+function nextEpoch(epoch: number): number {
+  if (!canAdvanceEpoch(epoch)) {
+    throw new Error("reviewer session epoch cannot advance safely");
+  }
+  return epoch + 1;
+}
+
+function canAdvanceEpoch(epoch: number): boolean {
+  return Number.isSafeInteger(epoch) && epoch >= 0 && epoch < MAX_PERSISTED_EPOCH;
+}
+
+function recoveryEpoch(now: Date | string | undefined): number {
+  return Math.max(RECOVERY_EPOCH_FLOOR, instantMilliseconds(now));
+}
+
+function removeIfCurrent(
+  directory: SafeRegistryDirectory,
+  filePath: string,
+  expectedIdentity: FileIdentity,
+): void {
+  try {
+    beforeDirectoryOperation(directory, "identity-guarded-unlink");
     const stat = lstatSync(filePath);
     if (stat.isFile() && sameFileIdentity(fileIdentity(stat), expectedIdentity)) {
       unlinkSync(filePath);
+      assertRegistryDirectoryIdentity(directory);
     }
   } catch {
     // Cleanup cannot replace the primary mutation result.
@@ -827,18 +1145,55 @@ function writeFully(descriptor: number, data: Buffer): void {
   }
 }
 
-function syncDirectory(directory: string): void {
+function syncDirectory(directory: SafeRegistryDirectory): void {
   let descriptor: number | undefined;
   try {
-    descriptor = openSync(directory, constants.O_RDONLY);
-    fsyncSync(descriptor);
-  } catch {
-    // Some supported filesystems do not permit directory fsync.
+    beforeDirectoryOperation(directory, "directory-fsync-open");
+    descriptor = openSync(directory.registryPath, constants.O_RDONLY);
+    assertRegistryDirectoryIdentity(directory);
+    if (reviewerSessionRegistryTestHooks?.directoryFsync) {
+      reviewerSessionRegistryTestHooks.directoryFsync(descriptor, directory.registryPath);
+    } else {
+      fsyncSync(descriptor);
+    }
+    assertRegistryDirectoryIdentity(directory);
+  } catch (error: unknown) {
+    if (!isUnsupportedDirectorySyncError(error)) {
+      throw new Error("unable to synchronize reviewer session registry directory");
+    }
   } finally {
     if (descriptor !== undefined) {
       bestEffortClose(descriptor);
     }
   }
+}
+
+function beforeDirectoryOperation(directory: SafeRegistryDirectory, operation: string): void {
+  reviewerSessionRegistryTestHooks?.beforeDirectoryOperation?.(operation, directory.registryPath);
+  assertRegistryDirectoryIdentity(directory);
+}
+
+function assertRegistryDirectoryIdentity(directory: SafeRegistryDirectory): void {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(directory.registryPath);
+  } catch {
+    throw new RegistryDirectoryChangedError();
+  }
+  if (
+    !stat.isDirectory()
+    || !hasSafeModeAndOwner(stat, 0o700)
+    || !sameFileIdentity(fileIdentity(stat), directory.identity)
+  ) {
+    throw new RegistryDirectoryChangedError();
+  }
+}
+
+function isUnsupportedDirectorySyncError(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
+  return code === "EINVAL" || code === "ENOTSUP" || code === "ENOSYS" || code === "EISDIR";
 }
 
 function digest(domain: string, value: string, length: number): string {
@@ -883,10 +1238,6 @@ function entryPath(registryPath: string, key: string): string {
 
 function epochPath(registryPath: string, key: string): string {
   return path.join(registryPath, `${key}.epoch.json`);
-}
-
-function isTemporaryArtifact(name: string): boolean {
-  return /^\.rk-[a-f0-9]{32}\..+\.tmp$/.test(name);
 }
 
 function hasSafeModeAndOwner(stat: { mode: number; uid: number }, mode: number): boolean {
@@ -936,8 +1287,12 @@ function bestEffortClose(descriptor: number): void {
   }
 }
 
-function bestEffortUnlink(filePath: string): void {
+function bestEffortUnlinkInDirectory(
+  directory: SafeRegistryDirectory,
+  filePath: string,
+): void {
   try {
+    assertRegistryDirectoryIdentity(directory);
     unlinkSync(filePath);
   } catch {
     // Cleanup cannot replace the primary operation result.

@@ -8,9 +8,12 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
+  unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -26,6 +29,7 @@ import {
   reviewerSessionInvocationFingerprint,
   reviewerSessionRef,
   sessionRegistryKey,
+  setReviewerSessionRegistryTestHooks,
   shouldRotateForContext,
   upsertReviewerSession,
 } from "../packages/runtime/src/reviewer-sessions/registry.js";
@@ -76,6 +80,21 @@ function identity(overrides: Record<string, unknown> = {}) {
 
 function providerSessionId(): string {
   return `provider-${Buffer.alloc(24, 7).toString("hex")}`;
+}
+
+function mutationLockPath(registryPath: string, key: string): string {
+  return path.join(registryPath, `.${key}.mutation`);
+}
+
+function writeMutationLock(registryPath: string, key: string, pid: number): string {
+  const lockPath = mutationLockPath(registryPath, key);
+  writeFileSync(lockPath, JSON.stringify({
+    schema_version: 1,
+    pid,
+    created_at_ms: Date.now() - 60_000,
+    nonce: "a".repeat(24),
+  }), { mode: 0o600 });
+  return lockPath;
 }
 
 function raceMutation(
@@ -448,7 +467,7 @@ test("marker-first interruption is recoverable without reopening an old epoch", 
       providerSessionId: providerSessionId(),
     }, { registryPath, now: new Date(Date.parse(START) + 1_000) });
     assert.equal(recreated.status, "written");
-    assert.equal(recreated.entry.epoch, created.entry.epoch + 4);
+    assert.equal(recreated.entry.epoch, created.entry.epoch + 5);
     const stale = upsertReviewerSession({
       ...created.ids,
       providerSessionId: providerSessionId(),
@@ -462,6 +481,211 @@ test("marker-first interruption is recoverable without reopening an old epoch", 
   }
 });
 
+test("purge advances a tombstone before deleting an entry whose marker is missing", () => {
+  const registryPath = registryDirectory();
+  try {
+    const created = createSession(registryPath);
+    unlinkSync(path.join(registryPath, `${created.ids.key}.epoch.json`));
+
+    const purged = purgeReviewerSessions({ registryPath, now: START });
+    assert.equal(purged.status, "purged");
+    assert.equal(purged.removed, 1);
+    const recreated = upsertReviewerSession({
+      ...created.ids,
+      providerSessionId: providerSessionId(),
+    }, { registryPath, now: new Date(Date.parse(START) + 1_000) });
+    assert.equal(recreated.status, "written");
+    assert.equal(recreated.entry.epoch, created.entry.epoch + 2);
+    const ancient = upsertReviewerSession({
+      ...created.ids,
+      providerSessionId: providerSessionId(),
+      expectedEpoch: created.entry.epoch,
+      successfulResume: true,
+    }, { registryPath, now: new Date(Date.parse(START) + 2_000) });
+    assert.equal(ancient.status, "conflict");
+    assert.equal(ancient.reason, "epoch_mismatch");
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  }
+});
+
+test("purge recovers newer and corrupt epoch markers without ancient epoch collision", () => {
+  for (const markerKind of ["newer", "corrupt"] as const) {
+    const registryPath = registryDirectory();
+    try {
+      const created = createSession(registryPath);
+      const markerPath = path.join(registryPath, `${created.ids.key}.epoch.json`);
+      const entryPath = path.join(registryPath, `${created.ids.key}.json`);
+      if (markerKind === "newer") {
+        writeFileSync(markerPath, JSON.stringify({ schema_version: 2, key: created.ids.key, epoch: 41 }), { mode: 0o600 });
+      } else {
+        writeFileSync(markerPath, "corrupt-marker", { mode: 0o600 });
+        writeFileSync(entryPath, "corrupt-entry", { mode: 0o600 });
+      }
+
+      const purged = purgeReviewerSessions({ registryPath, now: START });
+      assert.equal(purged.status, "purged");
+      assert.equal(purged.removed >= 1, true);
+      const recreated = upsertReviewerSession({
+        ...created.ids,
+        providerSessionId: providerSessionId(),
+      }, { registryPath, now: new Date(Date.parse(START) + 1_000) });
+      assert.equal(recreated.status, "written");
+      assert.equal(recreated.entry.epoch > created.entry.epoch, true);
+      const ancient = upsertReviewerSession({
+        ...created.ids,
+        providerSessionId: providerSessionId(),
+        expectedEpoch: created.entry.epoch,
+        successfulResume: true,
+      }, { registryPath, now: new Date(Date.parse(START) + 2_000) });
+      assert.equal(ancient.status, "conflict");
+      assert.equal(ancient.reason, "epoch_mismatch");
+    } finally {
+      rmSync(path.dirname(registryPath), { recursive: true, force: true });
+    }
+  }
+});
+
+test("purge normalizes an unadvanceable future epoch into a terminal tombstone", () => {
+  const registryPath = registryDirectory();
+  try {
+    const created = createSession(registryPath);
+    const markerPath = path.join(registryPath, `${created.ids.key}.epoch.json`);
+    writeFileSync(markerPath, JSON.stringify({
+      schema_version: 2,
+      key: created.ids.key,
+      epoch: Number.MAX_SAFE_INTEGER - 1,
+    }), { mode: 0o600 });
+
+    const purged = purgeReviewerSessions({ registryPath, now: START });
+    assert.equal(purged.status, "purged");
+    assert.equal(purged.removed, 1);
+    assert.equal(existsSync(path.join(registryPath, `${created.ids.key}.json`)), false);
+    const exhausted = upsertReviewerSession({
+      ...created.ids,
+      providerSessionId: providerSessionId(),
+    }, { registryPath, now: new Date(Date.parse(START) + 1_000) });
+    assert.equal(exhausted.status, "unavailable");
+    assert.equal(exhausted.reason, "invalid_entry");
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  }
+});
+
+test("an unadvanceable valid entry is unavailable and purgeable", () => {
+  const registryPath = registryDirectory();
+  try {
+    const created = createSession(registryPath);
+    const entryPath = path.join(registryPath, `${created.ids.key}.json`);
+    const markerPath = path.join(registryPath, `${created.ids.key}.epoch.json`);
+    const entry = JSON.parse(readFileSync(entryPath, "utf-8"));
+    const terminalEpoch = Number.MAX_SAFE_INTEGER - 1;
+    writeFileSync(entryPath, JSON.stringify({ ...entry, epoch: terminalEpoch }), { mode: 0o600 });
+    writeFileSync(markerPath, JSON.stringify({ schema_version: 1, key: created.ids.key, epoch: terminalEpoch }), { mode: 0o600 });
+
+    const unavailable = readReviewerSession(created.ids.key, { registryPath, now: START });
+    assert.equal(unavailable.status, "unavailable");
+    assert.equal(unavailable.reason, "invalid_entry");
+    const purged = purgeReviewerSessions({ registryPath, now: START });
+    assert.equal(purged.status, "purged");
+    assert.equal(purged.removed, 1);
+    assert.equal(existsSync(entryPath), false);
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  }
+});
+
+test("mutation lock reclaims a dead owner but never steals from a live owner", () => {
+  const deadRegistry = registryDirectory();
+  const liveRegistry = registryDirectory();
+  try {
+    mkdirSync(deadRegistry, { recursive: true, mode: 0o700 });
+    const deadIds = identity({ worktreeId: "wt-deaddeaddeaddead" });
+    const deadLock = writeMutationLock(deadRegistry, deadIds.key, 99_999_999);
+    const recovered = upsertReviewerSession({
+      ...deadIds,
+      providerSessionId: providerSessionId(),
+    }, { registryPath: deadRegistry, now: START });
+    assert.equal(recovered.status, "written");
+    assert.equal(existsSync(deadLock), false);
+
+    mkdirSync(liveRegistry, { recursive: true, mode: 0o700 });
+    const liveIds = identity({ worktreeId: "wt-livelivelivelive" });
+    const liveLock = writeMutationLock(liveRegistry, liveIds.key, process.pid);
+    utimesSync(liveLock, new Date(0), new Date(0));
+    const busy = upsertReviewerSession({
+      ...liveIds,
+      providerSessionId: providerSessionId(),
+    }, { registryPath: liveRegistry, now: START });
+    assert.equal(busy.status, "busy");
+    assert.equal(existsSync(liveLock), true);
+  } finally {
+    rmSync(path.dirname(deadRegistry), { recursive: true, force: true });
+    rmSync(path.dirname(liveRegistry), { recursive: true, force: true });
+  }
+});
+
+test("directory fsync ignores only explicit unsupported errors and propagates durability failures", () => {
+  const unsupportedRegistry = registryDirectory();
+  const failingRegistry = registryDirectory();
+  try {
+    setReviewerSessionRegistryTestHooks({
+      directoryFsync: () => {
+        throw Object.assign(new Error("unsupported directory sync"), { code: "EINVAL" });
+      },
+    });
+    const unsupported = createSession(unsupportedRegistry);
+    assert.equal(unsupported.entry.epoch, 1);
+
+    setReviewerSessionRegistryTestHooks({
+      directoryFsync: () => {
+        throw Object.assign(new Error("durability failure"), { code: "EIO" });
+      },
+    });
+    assert.throws(
+      () => createSession(failingRegistry),
+      /unable to synchronize reviewer session registry directory/,
+    );
+  } finally {
+    setReviewerSessionRegistryTestHooks(undefined);
+    rmSync(path.dirname(unsupportedRegistry), { recursive: true, force: true });
+    rmSync(path.dirname(failingRegistry), { recursive: true, force: true });
+  }
+});
+
+test("directory replacement between validation and atomic rename aborts without redirection", () => {
+  const registryPath = registryDirectory();
+  const movedPath = `${registryPath}-moved`;
+  try {
+    const created = createSession(registryPath);
+    let replaced = false;
+    setReviewerSessionRegistryTestHooks({
+      beforeDirectoryOperation: (operation) => {
+        if (!replaced && operation === "atomic-rename") {
+          replaced = true;
+          renameSync(registryPath, movedPath);
+          mkdirSync(registryPath, { mode: 0o700 });
+        }
+      },
+    });
+    assert.throws(
+      () => upsertReviewerSession({
+        ...created.ids,
+        providerSessionId: providerSessionId(),
+        expectedEpoch: created.entry.epoch,
+        successfulResume: true,
+      }, { registryPath, now: new Date(Date.parse(START) + 1_000) }),
+      /reviewer session registry directory changed/,
+    );
+    assert.deepEqual(readdirSync(registryPath), []);
+    assert.equal(existsSync(path.join(movedPath, `${created.ids.key}.json`)), true);
+  } finally {
+    setReviewerSessionRegistryTestHooks(undefined);
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+    rmSync(movedPath, { recursive: true, force: true });
+  }
+});
+
 test("cross-process update and close competition has one CAS winner and no inconsistent entry", async () => {
   const registryPath = registryDirectory();
   try {
@@ -472,7 +696,7 @@ test("cross-process update and close competition has one CAS winner and no incon
       raceMutation("close", registryPath, created.ids, created.entry.epoch, startAt),
     ]);
     assert.equal(results.filter((status) => status === "written" || status === "closed").length, 1);
-    assert.equal(results.every((status) => ["written", "closed", "conflict", "busy"].includes(status)), true);
+    assert.equal(results.every((status) => ["written", "closed", "conflict"].includes(status)), true);
     const final = readReviewerSession(created.ids.key, {
       registryPath,
       now: new Date(Date.parse(START) + 1_001),
@@ -584,16 +808,50 @@ test("purge removes expired, corrupt, and temporary artifacts without following 
       now: new Date(Date.parse(START) + 12 * HOUR),
     });
     assert.equal(result.status, "purged");
-    assert.equal(result.removed, 3);
+    assert.equal(result.removed, 2);
     assert.equal(existsSync(path.join(registryPath, `${created.ids.key}.json`)), false);
     assert.equal(existsSync(path.join(registryPath, `${corruptKey}.json`)), false);
-    assert.equal(existsSync(path.join(registryPath, `.${created.ids.key}.orphan.tmp`)), false);
+    assert.equal(existsSync(path.join(registryPath, `.${created.ids.key}.orphan.tmp`)), true);
     assert.equal(readFileSync(path.join(registryPath, "unrelated.txt"), "utf-8"), "keep");
     assert.equal(lstatSync(path.join(registryPath, "rk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json")).isSymbolicLink(), true);
     assert.equal(readFileSync(outside, "utf-8"), "outside");
   } finally {
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
     rmSync(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
+test("purge removes only dead stale registry temps while preserving active and unrelated files", () => {
+  const registryPath = registryDirectory();
+  try {
+    const active = createSession(registryPath);
+    const activeTemp = path.join(
+      registryPath,
+      `.${active.ids.key}.json.${process.pid}.${"b".repeat(24)}.tmp`,
+    );
+    writeFileSync(activeTemp, "active", { mode: 0o600 });
+    utimesSync(activeTemp, new Date(0), new Date(0));
+    const liveLock = writeMutationLock(registryPath, active.ids.key, process.pid);
+
+    const orphanIds = identity({ worktreeId: "wt-orphanorphanorph" });
+    const orphanTemp = path.join(
+      registryPath,
+      `.${orphanIds.key}.epoch.json.99999999.${"c".repeat(24)}.tmp`,
+    );
+    writeFileSync(orphanTemp, "orphan", { mode: 0o600 });
+    utimesSync(orphanTemp, new Date(0), new Date(0));
+
+    const unrelated = path.join(registryPath, `.${orphanIds.key}.json.123.not-a-registry-nonce.tmp`);
+    writeFileSync(unrelated, "unrelated", { mode: 0o600 });
+
+    const purged = purgeReviewerSessions({ registryPath, now: new Date() });
+    assert.equal(purged.status, "purged");
+    assert.equal(existsSync(activeTemp), true);
+    assert.equal(existsSync(liveLock), true);
+    assert.equal(existsSync(unrelated), true);
+    assert.equal(existsSync(orphanTemp), false);
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
   }
 });
 
