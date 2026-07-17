@@ -62,7 +62,7 @@
 - 阶段目标：在不读取 provider 私有 store 的前提下，确认每个 CLI 是否能从非交互结构化输出取得 session ID 并显式 resume。
 - 阶段门禁：只有矩阵标记 `structured_start=true` 且 `explicit_resume=true` 的 adapter 才进入 P3 session 实现。
 
-### P0.1 / Task 1：建立五 CLI Session 能力矩阵
+### ~~P0.1 / Task 1：建立五 CLI Session 能力矩阵~~ ✅
 
 **Files:**
 - Create: `docs/diagnostics/reviewer-session-capability-matrix.md`
@@ -73,7 +73,7 @@
 - Consumes: 当前注册的 Codex、Claude Code、Cursor Agent、Antigravity、OpenCode CLI 与各自 `--help`。
 - Produces: 每个 adapter 的 `structured_start`、`session_id_field`、`explicit_resume`、`resume_command_shape`、`failure_classification`、`retention_observation`，供 P3.2 使用。
 
-- [ ] **Step 1：记录版本和帮助契约**
+- [x] **Step 1：记录版本和帮助契约**
 
   Run:
 
@@ -89,19 +89,19 @@
 
   Expected: 五个工具的安装状态、版本和 resume/continue 参数被记录；输出中不包含 auth token。
 
-- [ ] **Step 2：在临时 workspace 逐个执行最小结构化 start/resume smoke**
+- [x] **Step 2：在临时 workspace 逐个执行最小结构化 start/resume smoke**
 
   对每个 provider 使用其公开非交互 JSON/stream-JSON 选项发送固定提示 `Reply with exactly SESSION_PROBE_OK`，只在临时目录保存原始输出；从公开结构化字段提取 session ID 后执行一次显式 resume，第二轮提示为 `Reply with exactly SESSION_RESUME_OK`。完成后删除包含原始 ID 的临时输出。
 
   Expected: 矩阵只记录字段名、命令形状、成功/失败、CLI 版本和耗时，不记录原始 session ID。没有稳定结构化 ID 的 adapter 明确标为 fresh-only。
 
-- [ ] **Step 3：验证失败分类**
+- [x] **Step 3：验证失败分类**
 
   使用伪造/过期 ID 验证 `not_found/expired`；在不修改登录态的前提下记录 CLI 对 unsupported/incompatible 的退出码与结构化错误。不得主动注销账号或破坏权限来制造 auth 错误。
 
   Expected: 可安全复现的失败有退出码、stderr 形状和分类；不可安全复现项标为“由 fake CLI 合约测试覆盖”，而不是猜测真实行为。
 
-- [ ] **Step 4：写入能力矩阵**
+- [x] **Step 4：写入能力矩阵**
 
   文档每个 provider 使用此固定结构：
 
@@ -117,7 +117,7 @@
   - enablement: 写入 `experimental` 或 `fresh-only`
   ```
 
-- [ ] **Step 5：验证和提交**
+- [x] **Step 5：验证和提交**
 
   Run: `git diff --check && rg -n "token|cookie|session_id: [0-9a-f-]{20,}" docs/diagnostics/reviewer-session-capability-matrix.md`
 
@@ -128,6 +128,15 @@
   证据：CLI 版本、脱敏矩阵、smoke 成败、外审结论。进度记录：执行时补状态、完成时间、验证、审查、日志、commit 与下一步。收尾：勾选并删除线、同步当日日志、`git diff --check`、提交、更新当前下一步。
 
   Commit: `文档：记录 reviewer session 能力矩阵`
+
+**进度记录（2026-07-17 14:58）：**
+
+- 状态：完成。Claude Code `2.1.207` 与 OpenCode `1.17.18` 通过结构化 start、实际 ID resume、伪 ID 拒绝和精确回复闭环，标记 `experimental`；Codex `0.144.1`、Cursor `2026.07.09-a3815c0`、Antigravity `1.1.3` 证据不足，保持 `fresh-only`。
+- 安全：仅从本次公开结构化输出读取临时 ID，原始输出位于仓库外临时目录且已删除；仓库/报告敏感值扫描通过，未读取 provider 私有 store、凭据或登录态。
+- 验证：五个 provider 固定八字段完整，`git diff --check` 通过，runtime/schema 零 diff；初次 sandbox worker 的受限结果未采信，使用本机完整权限 fresh implementer 重跑。
+- 审查：AgentMesh Review Gate `workflow-20260717144910` 提出 Cursor 连续性过度陈述与 Codex start 歧义；提交 `a36dc02` 修正后，`workflow-20260717145619` 返回 `Spec compliance: Approved`、`Task quality: Approved`、`LGTM`，0 Must / 0 Should / 0 Nit，decision 已完成。
+- 提交：`7aa0577`（能力矩阵）、`a36dc02`（收敛 session 能力表述）。日志同步至 `changelog/2026-07-17.md`。
+- 下一步：P0.Z 按矩阵把 P3.2 收敛为仅 Claude Code 与 OpenCode enabled adapter，并完成 P0 阶段外审门禁。
 
 ### P0.Z / Task 2：P0 阶段收尾校准
 
@@ -685,4 +694,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P0.1` 建立五 CLI reviewer session 能力矩阵；完成并外审前不开始 schema 或 runtime 实现。
+- 当前下一步：`P0.Z` 按已外审能力矩阵校准 P3.2 enabled adapter 与 parser 字段，完成 P0 阶段门禁；P0.Z 完成前不开始 P1。
