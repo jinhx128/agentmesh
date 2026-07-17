@@ -228,6 +228,34 @@ test("scope, worktree, model, and invocation changes rotate the registry key whi
   assert.throws(() => sessionRegistryKey({ ...base, conversationScopeRef: undefined }), /conversation scope is required/);
 });
 
+test("safe summary reviewer id cannot equal opaque identities visible to the upsert", () => {
+  const registryPath = registryDirectory();
+  try {
+    const ids = identity();
+    const opaqueProviderIdentity = "OpaqueIdentity987654321";
+    for (const reviewerId of [
+      opaqueProviderIdentity,
+      ids.key,
+      ids.sessionRef,
+      ids.invocationFingerprint,
+    ]) {
+      assert.throws(
+        () => upsertReviewerSession({
+          ...ids,
+          providerSessionId: opaqueProviderIdentity,
+          summary: {
+            scopeRef: "cs-1111111111111111",
+            reviewerId,
+          },
+        }, { registryPath, now: START }),
+        /reviewer session summary is invalid/,
+      );
+    }
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  }
+});
+
 test("new registry state is user-only and provider identity is confined to the entry file", () => {
   const registryPath = registryDirectory();
   const providerId = providerSessionId();

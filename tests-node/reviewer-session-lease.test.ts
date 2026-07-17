@@ -20,6 +20,7 @@ import test from "node:test";
 import {
   inspectReviewerSessionLeaseProcessForTest,
   parseLinuxProcessStartIdentityForTest,
+  readReviewerSessionBootFingerprintForTest,
   setReviewerSessionLeaseTestHooks,
   withReviewerSessionLease,
 } from "../packages/runtime/src/reviewer-sessions/lease.js";
@@ -35,6 +36,8 @@ const KEY = "rk-0123456789abcdef0123456789abcdef";
 const OWNER = { pid: 4242, startIdentity: "linux-proc-start:111" };
 const SECOND_OWNER = { pid: 4343, startIdentity: "linux-proc-start:222" };
 const HEARTBEAT_MS = 10_000;
+const BOOT_A = "test-boot:aaaaaaaa";
+const BOOT_B = "test-boot:bbbbbbbb";
 
 function registryDirectory(): string {
   return path.join(mkdtempSync(path.join(os.tmpdir(), "agentmesh-session-lease-")), "reviewer-sessions");
@@ -62,6 +65,7 @@ function writeCandidate(
     createdMonotonicNs?: bigint;
     heartbeatMonotonicNs?: bigint;
     ticket?: number;
+    bootFingerprint?: string;
   } = {},
 ): string {
   mkdirSync(registryPath, { recursive: true, mode: 0o700 });
@@ -73,6 +77,7 @@ function writeCandidate(
     pid: input.pid ?? OWNER.pid,
     process_start_identity: input.startIdentity === undefined ? OWNER.startIdentity : input.startIdentity,
     owner_token: ownerToken,
+    boot_fingerprint: input.bootFingerprint ?? BOOT_A,
     lease_ticket: input.ticket ?? 1,
     created_monotonic_ns: String(input.createdMonotonicNs ?? 1_000_000_000n),
     heartbeat_monotonic_ns: String(input.heartbeatMonotonicNs ?? 1_000_000_000n),
@@ -84,6 +89,15 @@ function resetHooks(): void {
   setReviewerSessionLeaseTestHooks(undefined);
 }
 
+function setLeaseHooks(
+  hooks: NonNullable<Parameters<typeof setReviewerSessionLeaseTestHooks>[0]>,
+): void {
+  setReviewerSessionLeaseTestHooks({
+    bootFingerprint: () => BOOT_A,
+    ...hooks,
+  });
+}
+
 test("lease defaults are 5s wait and 10s heartbeat and lock order is documented", async () => {
   const registryPath = registryDirectory();
   test.after(() => {
@@ -91,7 +105,7 @@ test("lease defaults are 5s wait and 10s heartbeat and lock order is documented"
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
   const observed: { waitMs?: number; heartbeatMs?: number } = {};
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => OWNER,
     monotonicNow: () => 1_000_000_000n,
     inspectProcess: () => ({ status: "same" }),
@@ -114,7 +128,7 @@ test("unique candidates elect one owner and serialize contenders", async () => {
   });
   let tick = 1_000_000_000n;
   let owner = OWNER;
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => owner,
     monotonicNow: () => tick,
     inspectProcess: () => ({ status: "same" }),
@@ -154,7 +168,7 @@ test("candidate metadata is complete and 0600 before atomic publication", async 
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
   let unpublishedMetadata: Record<string, unknown> | undefined;
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => OWNER,
     monotonicNow: () => 12_345n,
     beforePublish: (temporaryPath, publishedPath) => {
@@ -173,6 +187,7 @@ test("candidate metadata is complete and 0600 before atomic publication", async 
   assert.equal(unpublishedMetadata?.created_monotonic_ns, "12345");
   assert.equal(unpublishedMetadata?.heartbeat_monotonic_ns, "12345");
   assert.equal(unpublishedMetadata?.lease_ticket, 1);
+  assert.equal(unpublishedMetadata?.boot_fingerprint, BOOT_A);
 });
 
 test("automatic and manual heartbeats publish monotonic owner pulses while active", async () => {
@@ -181,7 +196,7 @@ test("automatic and manual heartbeats publish monotonic owner pulses while activ
     resetHooks();
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
-  setReviewerSessionLeaseTestHooks({ currentOwner: () => OWNER });
+  setLeaseHooks({ currentOwner: () => OWNER });
   const result = await withReviewerSessionLease(KEY, async ({ heartbeat }) => {
     heartbeat();
     heartbeat();
@@ -207,7 +222,7 @@ test("three monotonic heartbeat misses plus proven death reclaims; live and unkn
     const registryPath = registryDirectory();
     try {
       writeCandidate(registryPath);
-      setReviewerSessionLeaseTestHooks({
+      setLeaseHooks({
         monotonicNow: () => 31_000_000_000n,
         currentOwner: () => SECOND_OWNER,
         inspectProcess: () => item.state,
@@ -236,7 +251,7 @@ test("wall-clock jumps never create heartbeat misses, including dead and reused 
       const registryPath = registryDirectory();
       try {
         writeCandidate(registryPath, { heartbeatMonotonicNs: 1_000_000_000n });
-        setReviewerSessionLeaseTestHooks({
+        setLeaseHooks({
           monotonicNow: () => 1_001_000_000n,
           currentOwner: () => SECOND_OWNER,
           inspectProcess: () => state,
@@ -257,6 +272,80 @@ test("wall-clock jumps never create heartbeat misses, including dead and reused 
   }
 });
 
+test("cross-boot candidates recover after three intervals without trusting incomparable old ticks", async () => {
+  for (const uptime of [29_999_999_999n, 30_000_000_000n]) {
+    const registryPath = registryDirectory();
+    try {
+      writeCandidate(registryPath, {
+        bootFingerprint: BOOT_A,
+        createdMonotonicNs: 9_000_000_000_000n,
+        heartbeatMonotonicNs: 9_000_000_000_000n,
+      });
+      let inspections = 0;
+      setLeaseHooks({
+        bootFingerprint: () => BOOT_B,
+        monotonicNow: () => uptime,
+        currentOwner: () => SECOND_OWNER,
+        inspectProcess: () => {
+          inspections += 1;
+          return { status: "same" };
+        },
+      });
+      const result = await withReviewerSessionLease(KEY, async () => "recovered", {
+        registryPath,
+        waitMs: 0,
+        heartbeatMs: HEARTBEAT_MS,
+      });
+      assert.equal(result.acquired, uptime === 30_000_000_000n);
+      assert.equal(inspections, 0, "a boot change proves the old process instance cannot still be live");
+    } finally {
+      resetHooks();
+      rmSync(path.dirname(registryPath), { recursive: true, force: true });
+    }
+  }
+});
+
+test("missing boot fingerprint fails closed before publishing a candidate", async () => {
+  const registryPath = registryDirectory();
+  test.after(() => {
+    resetHooks();
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  });
+  setLeaseHooks({
+    bootFingerprint: () => undefined,
+    currentOwner: () => OWNER,
+    monotonicNow: () => 1_000_000_000n,
+  });
+  const result = await withReviewerSessionLease(KEY, async () => "unsafe", { registryPath });
+
+  assert.deepEqual(result, { acquired: false, reason: "busy" });
+  assert.deepEqual(candidatePaths(registryPath), []);
+});
+
+test("boot fingerprint lookup cannot publish after the monotonic wait deadline", async () => {
+  const registryPath = registryDirectory();
+  test.after(() => {
+    resetHooks();
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  });
+  let tick = 1_000_000_000n;
+  setLeaseHooks({
+    monotonicNow: () => tick,
+    bootFingerprint: () => {
+      tick += 6_000_000n;
+      return BOOT_A;
+    },
+    currentOwner: () => OWNER,
+  });
+  const result = await withReviewerSessionLease(KEY, async () => "late", {
+    registryPath,
+    waitMs: 5,
+  });
+
+  assert.deepEqual(result, { acquired: false, reason: "busy" });
+  assert.deepEqual(candidatePaths(registryPath), []);
+});
+
 test("saved heartbeat is permanently inert after release and cannot touch a reused descriptor", async () => {
   const registryPath = registryDirectory();
   const unrelated = path.join(path.dirname(registryPath), "unrelated.txt");
@@ -266,7 +355,7 @@ test("saved heartbeat is permanently inert after release and cannot touch a reus
   });
   let savedHeartbeat: (() => void) | undefined;
   let tick = 1_000_000_000n;
-  setReviewerSessionLeaseTestHooks({ currentOwner: () => OWNER, monotonicNow: () => tick });
+  setLeaseHooks({ currentOwner: () => OWNER, monotonicNow: () => tick });
   await withReviewerSessionLease(KEY, async ({ heartbeat }) => {
     savedHeartbeat = heartbeat;
   }, { registryPath });
@@ -289,7 +378,7 @@ test("release deletes only its unique candidate when a successor appears", async
     resetHooks();
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => OWNER,
     monotonicNow: () => 1_000_000_000n,
     beforeRelease: () => {
@@ -311,7 +400,7 @@ test("a reclaimer cannot delete a new owner created after its stale-candidate ch
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
   let interleaved = false;
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => SECOND_OWNER,
     monotonicNow: () => 31_000_000_000n,
     inspectProcess: () => ({ status: "dead" }),
@@ -347,7 +436,7 @@ test("cleanup failure is swallowed but leaves concrete owner evidence", async ()
     resetHooks();
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => OWNER,
     monotonicNow: () => 1_000_000_000n,
     beforeRelease: () => chmodSync(registryPath, 0o500),
@@ -368,7 +457,7 @@ test("monotonic deadline is checked after expensive owner inspection", async () 
   });
   let tick = 31_000_000_000n;
   let observedBudget = 0;
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     currentOwner: () => SECOND_OWNER,
     monotonicNow: () => tick,
     inspectProcess: (_pid, _expected, remainingMs) => {
@@ -426,6 +515,36 @@ test("Linux parser handles parenthesized commands and Darwin uses absolute ps bu
   }
 });
 
+test("boot fingerprint uses trusted Linux proc or absolute Darwin sysctl and rejects malformed evidence", () => {
+  const linux = readReviewerSessionBootFingerprintForTest({
+    platform: "linux",
+    remainingMs: 10,
+    readLinuxBootId: () => "01234567-89ab-cdef-8123-456789abcdef\n",
+  });
+  assert.equal(linux, "linux-boot:01234567-89ab-cdef-8123-456789abcdef");
+
+  let executable = "";
+  let timeout = 0;
+  const darwin = readReviewerSessionBootFingerprintForTest({
+    platform: "darwin",
+    remainingMs: 8,
+    execFile: (file, args, timeoutMs) => {
+      executable = file;
+      timeout = timeoutMs;
+      assert.deepEqual(args, ["-n", "kern.boottime"]);
+      return "{ sec = 1780000000, usec = 123456 } Fri May 29 00:00:00 2026";
+    },
+  });
+  assert.equal(executable, "/usr/sbin/sysctl");
+  assert.ok(timeout > 0 && timeout <= 8);
+  assert.equal(darwin, "darwin-boot:1780000000.123456");
+  assert.equal(readReviewerSessionBootFingerprintForTest({
+    platform: "darwin",
+    remainingMs: 8,
+    execFile: () => "malformed",
+  }), undefined);
+});
+
 test("lease exposes epoch evidence and close prevents an old action from writing back", async () => {
   const registryPath = registryDirectory();
   test.after(() => {
@@ -448,7 +567,7 @@ test("lease exposes epoch evidence and close prevents an old action from writing
   };
   const created = upsertReviewerSession(input, { registryPath });
   assert.equal(created.status, "written");
-  setReviewerSessionLeaseTestHooks({ currentOwner: () => OWNER, monotonicNow: () => 1_000_000_000n });
+  setLeaseHooks({ currentOwner: () => OWNER, monotonicNow: () => 1_000_000_000n });
 
   const result = await withReviewerSessionLease(key, async ({ epoch }) => {
     assert.equal(epoch, created.entry.epoch);
@@ -468,7 +587,7 @@ test("busy caller can choose fresh isolated without registry mutation or provide
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
   let registryEvidenceReads = 0;
-  setReviewerSessionLeaseTestHooks({
+  setLeaseHooks({
     monotonicNow: () => 1_001_000_000n,
     currentOwner: () => SECOND_OWNER,
     inspectProcess: () => ({ status: "same" }),

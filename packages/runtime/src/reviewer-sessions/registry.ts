@@ -867,6 +867,8 @@ function validateUpsertInput(input: UpsertReviewerSessionInput): void {
       || (input.summary.reviewerId !== undefined && (
         !REVIEWER_ID_PATTERN.test(input.summary.reviewerId)
         || SENSITIVE_REVIEWER_ID_PATTERN.test(input.summary.reviewerId)
+        || [input.providerSessionId, input.key, input.sessionRef, input.invocationFingerprint]
+          .includes(input.summary.reviewerId)
       ))
     ) throw new Error("reviewer session summary is invalid");
   }

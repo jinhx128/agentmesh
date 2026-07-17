@@ -23,6 +23,7 @@ function seedSession(workspace: string, overrides: {
   scopeRef?: string;
   reviewerId?: string;
   now?: string;
+  providerSessionId?: string;
   summaryOverride?: Partial<{ scopeRef: string; hostKind: string; reviewerId: string; mode: string }>;
 } = {}) {
   const invocation = {
@@ -52,7 +53,7 @@ function seedSession(workspace: string, overrides: {
   const result = upsertReviewerSession({
     key,
     sessionRef: reviewerSessionRef(key),
-    providerSessionId: SECRET,
+    providerSessionId: overrides.providerSessionId ?? SECRET,
     invocationFingerprint: reviewerSessionInvocationFingerprint(invocation),
     summary: {
       scopeRef,
@@ -193,6 +194,15 @@ test("safe summary rejects open-ended host mode reviewer and CLI re-projects per
       /reviewer session summary is invalid/,
     );
   }
+  const opaqueProviderIdentity = "OpaqueIdentity987654321";
+  assert.throws(
+    () => seedSession(workspace, {
+      reviewerId: "opaque-reviewer",
+      providerSessionId: opaqueProviderIdentity,
+      summaryOverride: { reviewerId: opaqueProviderIdentity },
+    }),
+    /reviewer session summary is invalid/,
+  );
 
   const seeded = seedSession(workspace);
   const entryPath = path.join(registryPath(workspace), `${seeded.key}.json`);

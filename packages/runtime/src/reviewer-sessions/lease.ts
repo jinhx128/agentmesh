@@ -30,6 +30,7 @@ export const REVIEWER_SESSION_LOCK_ORDER = ["run-mutation", "entry-lease", "prov
 const REGISTRY_KEY_PATTERN = /^rk-[a-f0-9]{32}$/;
 const OWNER_TOKEN_PATTERN = /^[a-f0-9]{32}$/;
 const MONOTONIC_PATTERN = /^(?:0|[1-9][0-9]*)$/;
+const BOOT_FINGERPRINT_PATTERN = /^(?:linux-boot:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|darwin-boot:[0-9]+\.[0-9]{6}|test-boot:[a-f0-9]{8,64})$/;
 const RETRY_INTERVAL_MS = 10;
 const NANOSECONDS_PER_MILLISECOND = 1_000_000n;
 
@@ -52,6 +53,7 @@ type ProcessInspection =
 
 export interface ReviewerSessionLeaseTestHooks {
   monotonicNow?: () => bigint;
+  bootFingerprint?: () => string | undefined;
   currentOwner?: () => ProcessOwner | undefined;
   inspectProcess?: (pid: number, expectedStartIdentity: string | null, remainingMs: number) => ProcessInspection;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -77,6 +79,7 @@ interface LeaseCandidateMetadata {
   pid: number;
   process_start_identity: string | null;
   owner_token: string;
+  boot_fingerprint: string;
   lease_ticket: number;
   created_monotonic_ns: string;
   heartbeat_monotonic_ns: string;
@@ -86,6 +89,7 @@ interface LeaseHeartbeatMetadata {
   schema_version: 1;
   registry_key: string;
   owner_token: string;
+  boot_fingerprint: string;
   heartbeat_monotonic_ns: string;
 }
 
@@ -103,6 +107,7 @@ interface LeaseChoosingMetadata {
   pid: number;
   process_start_identity: string | null;
   owner_token: string;
+  boot_fingerprint: string;
   created_monotonic_ns: string;
 }
 
@@ -115,6 +120,7 @@ interface LeaseChoosingMarker {
 interface OwnedLease {
   candidatePath: string;
   ownerToken: string;
+  bootFingerprint: string;
   heartbeatPaths: Set<string>;
   active: boolean;
 }
@@ -140,10 +146,19 @@ export async function withReviewerSessionLease<T>(
   }
   const startedAt = monotonicNow();
   const deadline = startedAt + millisecondsToNanoseconds(waitMs);
+  const bootFingerprint = reviewerSessionLeaseTestHooks?.bootFingerprint
+    ? reviewerSessionLeaseTestHooks.bootFingerprint()
+    : readReviewerSessionBootFingerprintForTest({ remainingMs: remainingMilliseconds(deadline) });
+  if (!bootFingerprint || !BOOT_FINGERPRINT_PATTERN.test(bootFingerprint)) {
+    return busy();
+  }
+  if (monotonicNow() > deadline) {
+    return busy();
+  }
   const ownerToken = randomBytes(16).toString("hex");
   const candidatePath = leaseCandidatePath(registryPath, registryKey, ownerToken);
   const choosingPath = leaseChoosingPath(registryPath, registryKey, ownerToken);
-  if (!publishChoosing(registryPath, registryKey, ownerToken, owner, startedAt, choosingPath)) {
+  if (!publishChoosing(registryPath, registryKey, ownerToken, owner, bootFingerprint, startedAt, choosingPath)) {
     return busy();
   }
   const existing = scanLeaseCandidates(registryPath, registryKey);
@@ -151,17 +166,17 @@ export async function withReviewerSessionLease<T>(
   if (
     ticket === undefined
     || !Number.isSafeInteger(ticket)
-    || !publishCandidate(registryPath, registryKey, ownerToken, owner, startedAt, ticket, candidatePath)
+    || !publishCandidate(registryPath, registryKey, ownerToken, owner, bootFingerprint, startedAt, ticket, candidatePath)
   ) {
     bestEffortUnlink(choosingPath);
     return busy();
   }
   bestEffortUnlink(choosingPath);
-  const owned: OwnedLease = { candidatePath, ownerToken, heartbeatPaths: new Set(), active: true };
+  const owned: OwnedLease = { candidatePath, ownerToken, bootFingerprint, heartbeatPaths: new Set(), active: true };
 
   try {
     for (;;) {
-      const election = electCandidate(registryPath, registryKey, owned, heartbeatMs, deadline);
+      const election = electCandidate(registryPath, registryKey, owned, heartbeatMs, deadline, bootFingerprint);
       if (election === "won") {
         break;
       }
@@ -215,15 +230,26 @@ function electCandidate(
   owned: OwnedLease,
   heartbeatMs: number,
   deadline: bigint,
+  currentBootFingerprint: string,
 ): ElectionResult {
   const choosing = scanChoosingMarkers(registryPath, registryKey);
   if (!choosing) {
     return "blocked";
   }
   for (const marker of choosing) {
-    const elapsed = monotonicElapsed(monotonicNow(), marker.createdMonotonicNs);
+    const elapsed = heartbeatElapsed(
+      monotonicNow(),
+      marker.createdMonotonicNs,
+      marker.metadata.boot_fingerprint,
+      currentBootFingerprint,
+    );
     if (elapsed < millisecondsToNanoseconds(heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS)) {
       return "blocked";
+    }
+    if (marker.metadata.boot_fingerprint !== currentBootFingerprint) {
+      reviewerSessionLeaseTestHooks?.beforeCandidateDelete?.(marker.filePath);
+      bestEffortUnlink(marker.filePath);
+      return "retry";
     }
     if (monotonicNow() > deadline) return "deadline";
     const state = inspectOwnerProcess(
@@ -245,9 +271,19 @@ function electCandidate(
     if (candidate.metadata.owner_token === owned.ownerToken) {
       continue;
     }
-    const elapsed = monotonicElapsed(monotonicNow(), candidate.heartbeatMonotonicNs);
+    const elapsed = heartbeatElapsed(
+      monotonicNow(),
+      candidate.heartbeatMonotonicNs,
+      candidate.metadata.boot_fingerprint,
+      currentBootFingerprint,
+    );
     if (elapsed < millisecondsToNanoseconds(heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS)) {
       continue;
+    }
+    if (candidate.metadata.boot_fingerprint !== currentBootFingerprint) {
+      reviewerSessionLeaseTestHooks?.beforeCandidateDelete?.(candidate.filePath);
+      deleteUniqueCandidate(candidate);
+      return "retry";
     }
     if (monotonicNow() > deadline) {
       return "deadline";
@@ -288,6 +324,7 @@ function publishCandidate(
   registryKey: string,
   ownerToken: string,
   owner: ProcessOwner,
+  bootFingerprint: string,
   createdAt: bigint,
   ticket: number,
   candidatePath: string,
@@ -298,6 +335,7 @@ function publishCandidate(
     pid: owner.pid,
     process_start_identity: owner.startIdentity,
     owner_token: ownerToken,
+    boot_fingerprint: bootFingerprint,
     lease_ticket: ticket,
     created_monotonic_ns: createdAt.toString(),
     heartbeat_monotonic_ns: createdAt.toString(),
@@ -310,6 +348,7 @@ function publishChoosing(
   registryKey: string,
   ownerToken: string,
   owner: ProcessOwner,
+  bootFingerprint: string,
   createdAt: bigint,
   choosingPath: string,
 ): boolean {
@@ -319,6 +358,7 @@ function publishChoosing(
     pid: owner.pid,
     process_start_identity: owner.startIdentity,
     owner_token: ownerToken,
+    boot_fingerprint: bootFingerprint,
     created_monotonic_ns: createdAt.toString(),
   };
   return atomicNoReplaceJson(registryPath, choosingPath, metadata, false);
@@ -341,6 +381,7 @@ function publishHeartbeat(
     schema_version: 1,
     registry_key: registryKey,
     owner_token: owned.ownerToken,
+    boot_fingerprint: owned.bootFingerprint,
     heartbeat_monotonic_ns: tick.toString(),
   };
   if (!atomicNoReplaceJson(registryPath, heartbeatPath, metadata, false)) {
@@ -383,7 +424,7 @@ function scanLeaseCandidates(registryPath: string, registryKey: string): LeaseCa
     let heartbeatMonotonicNs = BigInt(metadata.heartbeat_monotonic_ns);
     const heartbeatPaths = heartbeatNames.get(match[1]) ?? [];
     for (const heartbeatPath of heartbeatPaths) {
-      const heartbeat = readHeartbeat(heartbeatPath, registryKey, match[1]);
+      const heartbeat = readHeartbeat(heartbeatPath, registryKey, match[1], metadata.boot_fingerprint);
       if (!heartbeat) return undefined;
       const tick = BigInt(heartbeat.heartbeat_monotonic_ns);
       if (tick > heartbeatMonotonicNs) heartbeatMonotonicNs = tick;
@@ -414,10 +455,11 @@ function scanChoosingMarkers(registryPath: string, registryKey: string): LeaseCh
     const filePath = path.join(registryPath, name);
     const value = readSafeJson(filePath);
     if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
-      "created_monotonic_ns", "owner_token", "pid", "process_start_identity", "registry_key", "schema_version",
+      "boot_fingerprint", "created_monotonic_ns", "owner_token", "pid", "process_start_identity", "registry_key", "schema_version",
     ].sort().join(",")) return undefined;
     if (
       value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== match[1]
+      || typeof value.boot_fingerprint !== "string" || !BOOT_FINGERPRINT_PATTERN.test(value.boot_fingerprint)
       || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0
       || !(value.process_start_identity === null || (typeof value.process_start_identity === "string" && value.process_start_identity.length > 0))
       || typeof value.created_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.created_monotonic_ns)
@@ -431,11 +473,12 @@ function scanChoosingMarkers(registryPath: string, registryKey: string): LeaseCh
 function readCandidate(filePath: string, registryKey: string, ownerToken: string): LeaseCandidateMetadata | undefined {
   const value = readSafeJson(filePath);
   if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
-    "created_monotonic_ns", "heartbeat_monotonic_ns", "lease_ticket", "owner_token", "pid",
+    "boot_fingerprint", "created_monotonic_ns", "heartbeat_monotonic_ns", "lease_ticket", "owner_token", "pid",
     "process_start_identity", "registry_key", "schema_version",
   ].sort().join(",")) return undefined;
   if (
     value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== ownerToken
+    || typeof value.boot_fingerprint !== "string" || !BOOT_FINGERPRINT_PATTERN.test(value.boot_fingerprint)
     || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0
     || typeof value.lease_ticket !== "number" || !Number.isSafeInteger(value.lease_ticket) || value.lease_ticket <= 0
     || !(value.process_start_identity === null || (typeof value.process_start_identity === "string" && value.process_start_identity.length > 0))
@@ -445,13 +488,19 @@ function readCandidate(filePath: string, registryKey: string, ownerToken: string
   return value as unknown as LeaseCandidateMetadata;
 }
 
-function readHeartbeat(filePath: string, registryKey: string, ownerToken: string): LeaseHeartbeatMetadata | undefined {
+function readHeartbeat(
+  filePath: string,
+  registryKey: string,
+  ownerToken: string,
+  bootFingerprint: string,
+): LeaseHeartbeatMetadata | undefined {
   const value = readSafeJson(filePath);
   if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
-    "heartbeat_monotonic_ns", "owner_token", "registry_key", "schema_version",
+    "boot_fingerprint", "heartbeat_monotonic_ns", "owner_token", "registry_key", "schema_version",
   ].sort().join(",")) return undefined;
   if (
     value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== ownerToken
+    || value.boot_fingerprint !== bootFingerprint
     || typeof value.heartbeat_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.heartbeat_monotonic_ns)
   ) return undefined;
   return value as unknown as LeaseHeartbeatMetadata;
@@ -590,6 +639,45 @@ export function parseLinuxProcessStartIdentityForTest(stat: string): string | un
   return startTicks && /^[0-9]+$/.test(startTicks) ? `linux-proc-start:${startTicks}` : undefined;
 }
 
+export function readReviewerSessionBootFingerprintForTest(options: {
+  platform?: NodeJS.Platform;
+  remainingMs: number;
+  readLinuxBootId?: () => string;
+  execFile?: (file: string, args: string[], timeoutMs: number) => string;
+}): string | undefined {
+  const platform = options.platform ?? process.platform;
+  if (platform === "linux") {
+    try {
+      const bootId = (options.readLinuxBootId?.()
+        ?? readFileSync("/proc/sys/kernel/random/boot_id", "utf-8")).trim().toLowerCase();
+      return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(bootId)
+        ? `linux-boot:${bootId}`
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (platform === "darwin") {
+    if (options.remainingMs <= 0) return undefined;
+    const timeoutMs = Math.max(1, Math.min(Math.ceil(options.remainingMs), 1_000));
+    try {
+      const output = options.execFile
+        ? options.execFile("/usr/sbin/sysctl", ["-n", "kern.boottime"], timeoutMs)
+        : execFileSync("/usr/sbin/sysctl", ["-n", "kern.boottime"], {
+          encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: timeoutMs,
+        });
+      const match = /\bsec\s*=\s*([0-9]+)\s*,\s*usec\s*=\s*([0-9]+)\b/.exec(output);
+      if (!match) return undefined;
+      const microseconds = Number(match[2]);
+      if (!Number.isSafeInteger(microseconds) || microseconds < 0 || microseconds > 999_999) return undefined;
+      return `darwin-boot:${match[1]}.${String(microseconds).padStart(6, "0")}`;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function linuxProcessStartIdentity(pid: number): string | null {
   try {
     return parseLinuxProcessStartIdentityForTest(readFileSync(`/proc/${pid}/stat`, "utf-8")) ?? null;
@@ -639,6 +727,17 @@ function monotonicNow(): bigint {
 
 function monotonicElapsed(now: bigint, heartbeat: bigint): bigint {
   return now > heartbeat ? now - heartbeat : 0n;
+}
+
+function heartbeatElapsed(
+  now: bigint,
+  heartbeat: bigint,
+  evidenceBootFingerprint: string,
+  currentBootFingerprint: string,
+): bigint {
+  return evidenceBootFingerprint === currentBootFingerprint
+    ? monotonicElapsed(now, heartbeat)
+    : now;
 }
 
 function remainingMilliseconds(deadline: bigint): number {
