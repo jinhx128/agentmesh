@@ -5,9 +5,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  prepareAdapterPluginSessionInvocation,
   prepareAdapterInvocation,
   type AdapterInvocationAgent,
 } from "../packages/runtime/src/adapters/invocation.js";
+import { defineAdapterPlugin } from "../packages/runtime/src/adapters/plugin.js";
 import {
   AgentCallError,
   runAgentCallAsync,
@@ -283,6 +285,46 @@ test("keeps legacy antigravity current invocations on the CLI-selected model", (
 
   assert.deepEqual(prepared.command, ["agent", "-p", "hello"]);
   assert.equal(prepared.stdin, undefined);
+});
+
+test("plugins without session hooks preserve their fresh-only invocation behavior", () => {
+  const plugin = defineAdapterPlugin({
+    id: "legacy-session-plugin",
+    aliases: [],
+    label: "Legacy Session Plugin",
+    description: "A plugin without session support.",
+    capabilities: { roles: [], stages: [] },
+    detect: () => ({ status: "available" }),
+    resolveModel: (input) => ({ status: "resolved", canonicalModel: input }),
+    probe: () => ({ ok: true, status: "ready" }),
+    buildInvocation: ({ agent, prompt }) => ({
+      adapterId: agent.adapter,
+      command: [agent.command, ...(agent.args ?? []), prompt ?? ""],
+      captureStdout: true,
+      nonInteractive: false,
+    }),
+    parseResult: () => ({ ok: true, status: "ok" }),
+  });
+  const agent = {
+    id: "legacy",
+    label: "Legacy",
+    adapter: "command",
+    command: "legacy-cli",
+    args: ["--print"],
+    env: [],
+    aliases: [],
+    capabilities: [],
+    model: "legacy-model",
+  };
+
+  const prepared = prepareAdapterPluginSessionInvocation(
+    plugin,
+    agent,
+    { prompt: "fresh prompt" },
+    { mode: "resume", providerSessionId: "session-test-123" },
+  );
+
+  assert.deepEqual(prepared.command, ["legacy-cli", "--print", "fresh prompt"]);
 });
 
 test("agent calls report config load and synchronous spawn timing", () => {

@@ -17,6 +17,8 @@ import {
   defineAdapterPlugin,
   type AdapterPlugin,
 } from "../packages/runtime/src/adapters/plugin.js";
+import { prepareAdapterPluginSessionInvocation } from "../packages/runtime/src/adapters/invocation.js";
+import { redactAdapterStructuredResult } from "../packages/runtime/src/adapters/session.js";
 import { listRuntimeAdapters } from "../packages/runtime/src/adapters/registry.js";
 
 function makeWorkspace(): string {
@@ -43,6 +45,33 @@ function writeFixtureCli(workspace: string): string {
       "  writeFileSync(outputFile, JSON.stringify(payload) + '\\n');",
       "}",
       "console.log('fixture ok');",
+      "",
+    ].join("\n"),
+  );
+  return cliPath;
+}
+
+function writeSessionFixtureCli(workspace: string): string {
+  const cliPath = path.join(workspace, "fixture-session-agent.mjs");
+  writeFileSync(
+    cliPath,
+    [
+      "const args = process.argv.slice(2);",
+      "const valueAfter = (flag) => {",
+      "  const index = args.indexOf(flag);",
+      "  return index === -1 ? undefined : args[index + 1];",
+      "};",
+      "const resume = valueAfter('--resume');",
+      "const failure = valueAfter('--failure');",
+      "if (failure) {",
+      "  console.log(JSON.stringify({ type: 'failure', failure }));",
+      "  process.exitCode = 1;",
+      "} else if (resume) {",
+      "  console.log(JSON.stringify({ type: 'result', session_id: resume, output: 'resumed' }));",
+      "} else {",
+      "  console.log(JSON.stringify({ type: 'session', session_id: 'session-test-123' }));",
+      "  console.log(JSON.stringify({ type: 'result', output: 'started' }));",
+      "}",
       "",
     ].join("\n"),
   );
@@ -100,6 +129,91 @@ function fixtureAdapter(): AdapterPlugin {
         status: exitCode === 0 ? "ok" : "failed",
         stdout,
         stderr,
+      };
+    },
+  });
+}
+
+function sessionFixtureAdapter(): AdapterPlugin {
+  return defineAdapterPlugin({
+    ...fixtureAdapter(),
+    id: "fixture-session-adapter",
+    aliases: ["fixture-session"],
+    capabilities: {
+      roles: ["planner"],
+      stages: ["plan"],
+      supports_non_interactive: true,
+      supports_resume: true,
+      supports_structured_session_id: true,
+    },
+    buildSessionInvocation({ agent, prompt, session }) {
+      return {
+        adapterId: agent.adapter,
+        command:
+          session.mode === "resume"
+            ? [process.execPath, agent.command, "--resume", session.providerSessionId]
+            : [process.execPath, agent.command, "--fresh", prompt ?? ""],
+        captureStdout: true,
+        nonInteractive: true,
+      };
+    },
+    parseStructuredSessionResult({ exitCode, stdout }) {
+      let records: Record<string, unknown>[];
+      try {
+        records = (stdout ?? "")
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as Record<string, unknown>);
+      } catch {
+        return {
+          outputText: "",
+          failure: {
+            classification: "invalid_output",
+            message: "fixture produced unstructured output",
+            retryable: false,
+          },
+        };
+      }
+      const session = records.find(
+        (record) => record.type === "session" && typeof record.session_id === "string",
+      );
+      const result = records.find(
+        (record) => record.type === "result" && typeof record.output === "string",
+      );
+      const failure = records.find(
+        (record) => record.type === "failure" && typeof record.failure === "string",
+      );
+      if (failure) {
+        const classification =
+          failure.failure === "not_found"
+            ? "session_not_found"
+            : failure.failure === "rate_limited"
+              ? "provider_busy"
+              : failure.failure === "auth_required"
+                ? "auth_required"
+                : "invalid_output";
+        return {
+          outputText: "",
+          failure: {
+            classification,
+            message: `fixture failure: ${failure.failure}`,
+            retryable: classification === "provider_busy",
+          },
+        };
+      }
+      if (exitCode !== 0 || !result) {
+        return {
+          outputText: "",
+          failure: {
+            classification: "invalid_output",
+            message: "fixture produced no structured result",
+            retryable: false,
+          },
+        };
+      }
+      return {
+        ...(session ? { providerSessionId: session.session_id as string } : {}),
+        outputText: result.output as string,
       };
     },
   });
@@ -193,4 +307,99 @@ test("adapter plugin helpers do not expose internal packet writers", () => {
     source,
     /\b(saveStatus|appendEvent|recordArtifact|writeArtifacts|writeFileAtomic|writeFileSync|appendFileSync)\b/,
   );
+});
+
+test("session-capable plugins build distinct fresh and resume commands", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const plugin = sessionFixtureAdapter();
+  const agent = buildAdapterPluginAgentConfig(plugin, {
+    agentId: "fixture-session",
+    command: writeSessionFixtureCli(workspace),
+    model: "fast",
+  });
+
+  const fresh = prepareAdapterPluginSessionInvocation(plugin, agent, { prompt: "begin" }, { mode: "fresh" });
+  const resumed = prepareAdapterPluginSessionInvocation(
+    plugin,
+    agent,
+    { prompt: "ignored" },
+    { mode: "resume", providerSessionId: "session-test-123" },
+  );
+
+  assert.deepEqual(fresh.command.slice(-2), ["--fresh", "begin"]);
+  assert.deepEqual(resumed.command.slice(-2), ["--resume", "session-test-123"]);
+});
+
+test("session-capable plugins parse only structured JSONL session IDs and redact returned diagnostics", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const plugin = sessionFixtureAdapter();
+  const agent = buildAdapterPluginAgentConfig(plugin, {
+    agentId: "fixture-session",
+    command: writeSessionFixtureCli(workspace),
+    model: "fast",
+  });
+  const invocation = prepareAdapterPluginSessionInvocation(plugin, agent, {}, { mode: "fresh" });
+  const result = spawnSync(invocation.command[0], invocation.command.slice(1), { encoding: "utf-8" });
+  const parsed = plugin.parseStructuredSessionResult?.({
+    exitCode: result.status ?? 1,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  });
+
+  assert.equal(parsed?.providerSessionId, "session-test-123");
+  assert.equal(parsed?.outputText, "started");
+  assert.equal(
+    sessionFixtureAdapter().parseStructuredSessionResult?.({
+      exitCode: 0,
+      stdout: "the previous session is session-test-123",
+    })?.failure?.classification,
+    "invalid_output",
+  );
+  assert.deepEqual(
+    redactAdapterStructuredResult({
+      providerSessionId: "session-test-123",
+      outputText: "diagnostic session-test-123",
+      failure: {
+        classification: "session_not_found",
+        message: "session-test-123 was not found",
+        retryable: false,
+        diagnostic: "provider diagnostic session-test-123",
+      },
+    }),
+    {
+      outputText: "diagnostic [REDACTED]",
+      failure: {
+        classification: "session_not_found",
+        message: "[REDACTED] was not found",
+        retryable: false,
+      },
+    },
+  );
+});
+
+test("session fixture maps documented failures without provider-specific public states", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const cliPath = writeSessionFixtureCli(workspace);
+  const plugin = sessionFixtureAdapter();
+  const expected = {
+    not_found: "session_not_found",
+    rate_limited: "provider_busy",
+    auth_required: "auth_required",
+    invalid_output: "invalid_output",
+  } as const;
+
+  for (const [failure, classification] of Object.entries(expected)) {
+    const result = spawnSync(process.execPath, [cliPath, "--failure", failure], { encoding: "utf-8" });
+    const parsed = plugin.parseStructuredSessionResult?.({
+      exitCode: result.status ?? 1,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    assert.equal(parsed?.failure?.classification, classification);
+    assert.equal(parsed?.failure?.retryable, classification === "provider_busy");
+    assert.doesNotMatch(JSON.stringify(parsed), /session-test-123/);
+  }
 });

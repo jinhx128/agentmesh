@@ -1,6 +1,7 @@
 export * from "./adapters.js";
 export * from "./agents/lifecycle.js";
 export * from "./adapters/plugin.js";
+export * from "./adapters/session.js";
 export * from "./config.js";
 export * from "./corrections/index.js";
 export * from "./calls/history.js";

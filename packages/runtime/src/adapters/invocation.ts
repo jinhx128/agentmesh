@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 
+import type {
+  AdapterPlugin,
+  AdapterPluginAgentConfig,
+  AdapterPluginInvocation,
+} from "./plugin.js";
 import { lookupRuntimeAdapter } from "./registry.js";
+import type { AdapterSessionDirective } from "./session.js";
 
 export interface AdapterInvocationAgent {
   id: string;
@@ -30,6 +36,23 @@ export interface PreparedAdapterInvocation {
   outputFile?: string;
   captureStdout: boolean;
   nonInteractive: boolean;
+}
+
+export function prepareAdapterPluginSessionInvocation(
+  plugin: AdapterPlugin,
+  agent: AdapterPluginAgentConfig,
+  options: AdapterInvocationOptions,
+  session: AdapterSessionDirective,
+): AdapterPluginInvocation {
+  if (
+    plugin.capabilities.supports_resume === true &&
+    plugin.capabilities.supports_structured_session_id === true &&
+    plugin.buildSessionInvocation &&
+    plugin.parseStructuredSessionResult
+  ) {
+    return plugin.buildSessionInvocation({ ...options, agent, session });
+  }
+  return plugin.buildInvocation({ ...options, agent });
 }
 
 export function prepareAdapterInvocation(

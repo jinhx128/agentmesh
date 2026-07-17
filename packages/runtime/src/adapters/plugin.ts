@@ -1,6 +1,7 @@
 import type { AdapterCapabilityMetadata } from "@agentmesh/core";
 import type { RuntimeAdapterMetadata } from "./registry.js";
 import { type ModelResolution } from "./models.js";
+import type { AdapterSessionDirective, AdapterStructuredResult } from "./session.js";
 
 export interface AdapterPluginAgentConfig {
   id: string;
@@ -82,6 +83,10 @@ export interface AdapterPluginInvocation {
   nonInteractive: boolean;
 }
 
+export interface AdapterPluginSessionInvocationRequest extends AdapterPluginInvocationRequest {
+  session: AdapterSessionDirective;
+}
+
 export interface AdapterPluginResultOutput {
   exitCode: number;
   stdout?: string;
@@ -105,6 +110,8 @@ export interface AdapterPlugin extends AdapterPluginManifest {
   probe(request: AdapterPluginProbeRequest): AdapterPluginProbeResult;
   buildInvocation(request: AdapterPluginInvocationRequest): AdapterPluginInvocation;
   parseResult(output: AdapterPluginResultOutput): AdapterPluginParsedResult;
+  buildSessionInvocation?(request: AdapterPluginSessionInvocationRequest): AdapterPluginInvocation;
+  parseStructuredSessionResult?(output: AdapterPluginResultOutput): AdapterStructuredResult;
 }
 
 export function defineAdapterPlugin(plugin: AdapterPlugin): AdapterPlugin {
@@ -188,5 +195,11 @@ function cloneCapabilities(capabilities: AdapterCapabilityMetadata): AdapterCapa
     ...(capabilities.supports_non_interactive === undefined
       ? {}
       : { supports_non_interactive: capabilities.supports_non_interactive }),
+    ...(capabilities.supports_resume === undefined
+      ? {}
+      : { supports_resume: capabilities.supports_resume }),
+    ...(capabilities.supports_structured_session_id === undefined
+      ? {}
+      : { supports_structured_session_id: capabilities.supports_structured_session_id }),
   };
 }

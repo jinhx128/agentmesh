@@ -98,6 +98,14 @@ export function isAiCliRuntimeAdapter(idOrAlias: string): boolean {
   return id !== "command" && RUNTIME_ADAPTERS.some((adapter) => adapter.id === id);
 }
 
+export function runtimeAdapterSupportsStructuredSessions(idOrAlias: string): boolean {
+  const adapter = lookupRuntimeAdapter(idOrAlias);
+  return (
+    adapter.capabilities.supports_resume === true &&
+    adapter.capabilities.supports_structured_session_id === true
+  );
+}
+
 function aiCliCapabilities(): AdapterCapabilityMetadata {
   return {
     roles: [...DEFAULT_ROLES],
@@ -117,6 +125,12 @@ function cloneAdapter(adapter: RuntimeAdapterMetadata): RuntimeAdapterMetadata {
       ...(adapter.capabilities.supports_non_interactive === undefined
         ? {}
         : { supports_non_interactive: adapter.capabilities.supports_non_interactive }),
+      ...(adapter.capabilities.supports_resume === undefined
+        ? {}
+        : { supports_resume: adapter.capabilities.supports_resume }),
+      ...(adapter.capabilities.supports_structured_session_id === undefined
+        ? {}
+        : { supports_structured_session_id: adapter.capabilities.supports_structured_session_id }),
     },
   };
 }
