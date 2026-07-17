@@ -360,7 +360,7 @@
 - 提交：`1db39d0`、`7ec298b`、`00a4107`、`7f923ab`；日志与完成记录单独提交。
 - 下一步：P2.2 实现 reviewer session registry、TTL/epoch/GC 与 context headroom；不开始 lease/CLI。
 
-### P2.2 / Task 7：实现 Reviewer Session Registry 与生命周期
+### ~~P2.2 / Task 7：实现 Reviewer Session Registry 与生命周期~~ ✅
 
 **Files:**
 - Create: `packages/runtime/src/reviewer-sessions/registry.ts`
@@ -371,8 +371,8 @@
 - Consumes: P2.1 `ResolvedHostScope`。
 - Produces: `sessionRegistryKey`、`read/upsert/close/purgeReviewerSession`。
 
-- [ ] 写失败测试：key normalization、env 只含键名、0600/0700、unsafe permission 拒绝 reuse、原子写、epoch CAS、2h idle、12h/provider retention、resume count 8/9、GC/orphan。
-- [ ] 实现 entry：
+- [x] 写失败测试：key normalization、env 只含键名、0600/0700、unsafe permission 拒绝 reuse、原子写、epoch CAS、2h idle、12h/provider retention、resume count 8/9、GC/orphan。
+- [x] 实现 entry：
 
   ```ts
   export interface ReviewerSessionEntry {
@@ -391,7 +391,7 @@
   ```
 
   Registry 路径固定为 `~/.config/agentmesh/reviewer-sessions/`；原始 ID 只存在 entry 内。
-- [ ] 实现 context headroom API：
+- [x] 实现 context headroom API：
 
   ```ts
   export function shouldRotateForContext(input: {
@@ -403,9 +403,18 @@
   }): "keep" | "warn" | "rotate";
   ```
 
-- [ ] Run targeted tests and `git diff --check`; Expected: PASS。
+- [x] Run targeted tests and `git diff --check`; Expected: PASS。
 
 审查方式：外审；涉及敏感本机状态、TTL 和 CAS。失败不可降级。证据：权限/生命周期 tests、审查。Commit: `功能(runtime)：增加 reviewer session registry`
+
+**进度记录（2026-07-17 18:47）：**
+
+- 状态：完成。本机 registry 实现 key/fingerprint/ref、0700/0600 权限拒绝、严格 schema-v1 原子 JSON、epoch marker/CAS、close/purge、2h/12h/provider retention、8 次 resume、GC 与 context 60%/80% 门槛。
+- TDD/验证：focused 从 14 增至 24/24，覆盖 close/recreate ancient writer、跨进程 CAS、active/unrelated temp GC、corrupt/newer/missing marker、dead/live mutation lock、fatal fsync、directory replacement、terminal epoch、context 缺字段；全量 `npm test` 602/602，`git diff --check` 通过。
+- 审查：CLI reviewer 240s 超时无 finding；fresh 只读 reviewer 首轮 5 Must/2 Should、二轮 2 Must/1 Should，均修复。最终 Review Gate `workflow-20260717184600` 为 Spec/Quality Approved、LGTM、0 Must/0 Should/0 Nit，decision 已完成。
+- 安全边界：敏感 entry type 不从 runtime root 导出；provider ID 只在 entry/internal result；无 packet/log/summary 泄漏。Node 无 portable `*at` API 的父路径竞态按 directory identity 复核 fail-closed。
+- 提交：`bfa3ea8`、`5770a7f`、`360dade`；日志与完成记录单独提交。
+- 下一步：P2.3 实现 entry lease/heartbeat 与 sessions CLI；provider invocation resume 仍未接入。
 
 ### P2.3 / Task 8：实现 Entry Lease、Heartbeat 与 Sessions CLI
 
@@ -750,4 +759,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P2.2` 实现 Reviewer Session Registry 与生命周期；先完成权限、原子写、TTL/epoch/GC/context headroom，不开始 lease/CLI。
+- 当前下一步：`P2.3` 实现 Entry Lease、Heartbeat 与 Sessions CLI；只完成本机锁/管理面，不接 provider adapter/dispatch resume。
