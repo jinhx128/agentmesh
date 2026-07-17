@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"session-test-123"}
+{"type":"assistant","session_id":"session-test-123","message":{"content":[{"type":"text","text":"Structured Claude response"}]}}
+{"type":"result","subtype":"success","is_error":false,"session_id":"session-test-123","result":"Structured Claude response"}

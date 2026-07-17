@@ -6,7 +6,9 @@ import test from "node:test";
 
 import {
   prepareAdapterPluginSessionInvocation,
+  prepareAdapterSessionInvocation,
   prepareAdapterInvocation,
+  parseAdapterStructuredSessionResult,
   type AdapterInvocationAgent,
 } from "../packages/runtime/src/adapters/invocation.js";
 import { defineAdapterPlugin } from "../packages/runtime/src/adapters/plugin.js";
@@ -285,6 +287,211 @@ test("keeps legacy antigravity current invocations on the CLI-selected model", (
 
   assert.deepEqual(prepared.command, ["agent", "-p", "hello"]);
   assert.equal(prepared.stdin, undefined);
+});
+
+test("verified provider session builders preserve the observed fresh and resume argv", () => {
+  const claude = builtInAgent("claude-code-cli", { command: "claude", args: ["-p"] });
+  const opencode = builtInAgent("opencode-cli", { command: "opencode", args: ["run"] });
+
+  const claudeFresh = prepareAdapterSessionInvocation(
+    claude,
+    { prompt: "review this change" },
+    { mode: "fresh" },
+  );
+  const claudeResume = prepareAdapterSessionInvocation(
+    claude,
+    { prompt: "review the follow-up" },
+    { mode: "resume", providerSessionId: "session-test-123" },
+  );
+  assert.deepEqual(claudeFresh.command, [
+    "claude",
+    "-p",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--permission-mode",
+    "plan",
+    "--safe-mode",
+    "--no-chrome",
+    "review this change",
+  ]);
+  assert.deepEqual(claudeResume.command, [
+    "claude",
+    "-p",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--permission-mode",
+    "plan",
+    "--safe-mode",
+    "--no-chrome",
+    "--resume",
+    "session-test-123",
+    "review the follow-up",
+  ]);
+
+  const opencodeFresh = prepareAdapterSessionInvocation(
+    opencode,
+    { prompt: "review this change" },
+    { mode: "fresh" },
+  );
+  const opencodeResume = prepareAdapterSessionInvocation(
+    opencode,
+    { prompt: "review the follow-up" },
+    { mode: "resume", providerSessionId: "session-test-123" },
+  );
+  assert.deepEqual(opencodeFresh.command, [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--dir",
+    process.cwd(),
+    "review this change",
+  ]);
+  assert.deepEqual(opencodeResume.command, [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "--dir",
+    process.cwd(),
+    "--session",
+    "session-test-123",
+    "review the follow-up",
+  ]);
+
+  for (const prepared of [claudeFresh, claudeResume, opencodeFresh, opencodeResume]) {
+    assert.equal(prepared.captureStdout, true);
+    assert.equal(prepared.stdin, undefined);
+    assert.equal(prepared.outputFile, undefined);
+    assert.equal(prepared.nonInteractive, true);
+  }
+});
+
+test("verified provider parsers accept only their documented structured session fields", () => {
+  const fixtureRoot = path.join(process.cwd(), "tests-node", "fixtures", "adapters", "session");
+  const claude = parseAdapterStructuredSessionResult("claude-code-cli", {
+    exitCode: 0,
+    stdout: readFileSync(path.join(fixtureRoot, "claude-code-cli", "start.jsonl"), "utf-8"),
+  });
+  const opencode = parseAdapterStructuredSessionResult("opencode-cli", {
+    exitCode: 0,
+    stdout: readFileSync(path.join(fixtureRoot, "opencode-cli", "start.jsonl"), "utf-8"),
+  });
+
+  assert.deepEqual(claude, {
+    providerSessionId: "session-test-123",
+    outputText: "Structured Claude response",
+  });
+  assert.deepEqual(opencode, {
+    providerSessionId: "session-test-123",
+    outputText: "Structured OpenCode response",
+  });
+
+  const invalidOutputs = [
+    "previous session session-test-123",
+    "{not-json}",
+    '{"type":"result","subtype":"success","result":"missing id"}',
+    [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"result","subtype":"success","session_id":"session-test-123","result":"missing init id"}',
+    ].join("\n"),
+    [
+      '{"type":"system","subtype":"init","session_id":"session-test-123"}',
+      '{"type":"result","subtype":"success","result":"missing event id"}',
+    ].join("\n"),
+    '{"type":"result","subtype":"success","session_id":"","result":"empty id"}',
+    '{"type":"result","subtype":"success","session_id":123,"result":"wrong type"}',
+    [
+      '{"type":"system","subtype":"init","session_id":"session-test-123"}',
+      '{"type":"result","subtype":"success","session_id":"session-test-456","result":"conflict"}',
+    ].join("\n"),
+    '{"type":"unrecognized","session_id":"session-test-123"}',
+  ];
+  for (const output of invalidOutputs) {
+    assert.equal(
+      parseAdapterStructuredSessionResult("claude-code-cli", { exitCode: 0, stdout: output })
+        .failure?.classification,
+      "invalid_output",
+    );
+  }
+  assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", {
+      exitCode: 0,
+      stdout: [
+        '{"type":"step_start","part":{}}',
+        '{"type":"text","sessionID":"session-test-123","part":{"type":"text","text":"missing event id"}}',
+      ].join("\n"),
+    }).failure?.classification,
+    "invalid_output",
+  );
+  assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", {
+      exitCode: 0,
+      stdout: '{"type":"text","session_id":"session-test-123","part":{"type":"text","text":"wrong casing"}}',
+    }).failure?.classification,
+    "invalid_output",
+  );
+});
+
+test("verified provider parsers map public failures without returning provider diagnostics", () => {
+  const notFoundCases = [
+    ["claude-code-cli", "No conversation found with session ID: session-test-123"],
+    ["opencode-cli", "Error: Session not found"],
+  ] as const;
+  for (const [adapter, stderr] of notFoundCases) {
+    const parsed = parseAdapterStructuredSessionResult(adapter, { exitCode: 1, stderr });
+    assert.deepEqual(parsed.failure, {
+      classification: "session_not_found",
+      message: "provider session was not found",
+      retryable: false,
+    });
+    assert.doesNotMatch(JSON.stringify(parsed), /session-test-123/);
+  }
+
+  assert.equal(
+    parseAdapterStructuredSessionResult("claude-code-cli", {
+      exitCode: 1,
+      stderr: "authentication required",
+    }).failure?.classification,
+    "auth_required",
+  );
+  assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", {
+      exitCode: 1,
+      stderr: "rate limit exceeded",
+    }).failure?.classification,
+    "provider_busy",
+  );
+  const network = parseAdapterStructuredSessionResult("opencode-cli", {
+    exitCode: 1,
+    stderr: "network connection failed",
+  });
+  assert.equal(network.failure?.classification, "unknown");
+  assert.equal(network.failure?.retryable, true);
+  assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", { exitCode: 0, stdout: "" })
+      .failure?.classification,
+    "invalid_output",
+  );
+});
+
+test("fresh-only providers retain their legacy invocation and reject structured parsing", () => {
+  for (const adapter of ["codex-cli", "cursor-agent", "antigravity-cli"]) {
+    const agent = builtInAgent(adapter, { reasoning_effort: "none" });
+    assert.deepEqual(
+      prepareAdapterSessionInvocation(agent, { prompt: "fresh prompt" }, {
+        mode: "resume",
+        providerSessionId: "session-test-123",
+      }),
+      prepareAdapterInvocation(agent, { prompt: "fresh prompt" }),
+    );
+    assert.equal(
+      parseAdapterStructuredSessionResult(adapter, { exitCode: 0, stdout: "{}" }).failure?.classification,
+      "invalid_output",
+    );
+  }
 });
 
 test("plugins without session hooks preserve their fresh-only invocation behavior", () => {

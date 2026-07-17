@@ -33,7 +33,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     command: "codex",
     args: ["exec"],
     label: "Codex CLI",
-    capabilities: aiCliCapabilities(),
+    capabilities: aiCliCapabilities(false),
   },
   {
     id: "claude-code-cli",
@@ -42,7 +42,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     command: "claude",
     args: ["-p"],
     label: "Claude Code CLI",
-    capabilities: aiCliCapabilities(),
+    capabilities: aiCliCapabilities(true),
   },
   {
     id: "cursor-agent",
@@ -51,7 +51,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     command: "cursor-agent",
     args: ["--print", "--trust"],
     label: "Cursor Agent",
-    capabilities: aiCliCapabilities(),
+    capabilities: aiCliCapabilities(false),
   },
   {
     id: "antigravity-cli",
@@ -60,7 +60,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     command: "agy",
     args: [],
     label: "Antigravity CLI",
-    capabilities: aiCliCapabilities(),
+    capabilities: aiCliCapabilities(false),
   },
   {
     id: "opencode-cli",
@@ -69,7 +69,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     command: "opencode",
     args: ["run"],
     label: "OpenCode CLI",
-    capabilities: aiCliCapabilities(),
+    capabilities: aiCliCapabilities(true),
   },
 ];
 
@@ -106,11 +106,13 @@ export function runtimeAdapterSupportsStructuredSessions(idOrAlias: string): boo
   );
 }
 
-function aiCliCapabilities(): AdapterCapabilityMetadata {
+function aiCliCapabilities(supportsStructuredSessions: boolean): AdapterCapabilityMetadata {
   return {
     roles: [...DEFAULT_ROLES],
     stages: [...DEFAULT_STAGES],
     supports_non_interactive: true,
+    supports_resume: supportsStructuredSessions,
+    supports_structured_session_id: supportsStructuredSessions,
   };
 }
 

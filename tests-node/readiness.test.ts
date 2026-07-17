@@ -15,6 +15,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { probeAgentRegistrationReadiness } from "../packages/runtime/src/adapters/registration.js";
+import { detectSupportedProviderClis } from "../packages/runtime/src/adapters/provider-cli-diagnostics.js";
 import {
   buildDoctorReport,
   probeAgentReadiness,
@@ -78,6 +79,48 @@ function assertSamePath(actual: string, expected: string): void {
 function macTmpPath(filePath: string): string {
   return filePath.replace(/^\/private\/var\//, "/var/");
 }
+
+test("provider CLI detection projects only matrix-verified session capabilities", () => {
+  const previousPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const report = detectSupportedProviderClis({
+      enabled: false,
+      shellPath: path.join(tmpdir(), "missing-shell"),
+    });
+    assert.equal(report.schema_version, 1);
+    const capabilityByAdapter = Object.fromEntries(
+      report.tools.map((tool) => [tool.adapter, {
+        supportsResume: tool.supports_resume,
+        supportsStructuredSessionId: tool.supports_structured_session_id,
+        version: tool.version,
+      }]),
+    );
+    assert.deepEqual(capabilityByAdapter["claude-code-cli"], {
+      supportsResume: true,
+      supportsStructuredSessionId: true,
+      version: "missing",
+    });
+    assert.deepEqual(capabilityByAdapter["opencode-cli"], {
+      supportsResume: true,
+      supportsStructuredSessionId: true,
+      version: "missing",
+    });
+    for (const adapter of ["codex-cli", "cursor-agent", "antigravity-cli"]) {
+      assert.deepEqual(capabilityByAdapter[adapter], {
+        supportsResume: false,
+        supportsStructuredSessionId: false,
+        version: "missing",
+      });
+    }
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+  }
+});
 
 test("canonical AgentMesh skill asks entry agents to provide concise Chinese titles", () => {
   const skill = agentmeshSkillMarkdown();

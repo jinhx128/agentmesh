@@ -24,6 +24,8 @@ export interface ProviderCliToolReport {
   source: ProviderToolResolutionSource;
   path?: string;
   version: string;
+  supports_resume: boolean;
+  supports_structured_session_id: boolean;
   diagnostics: string[];
   diagnostic?: string;
 }
@@ -79,6 +81,8 @@ function detectProviderCli(
     source: resolution.source,
     ...(resolution.path ? { path: resolution.path } : {}),
     version: versionProbe.version,
+    supports_resume: adapter.capabilities.supports_resume === true,
+    supports_structured_session_id: adapter.capabilities.supports_structured_session_id === true,
     diagnostics,
     ...(diagnostics[0] ? { diagnostic: diagnostics[0] } : {}),
   };

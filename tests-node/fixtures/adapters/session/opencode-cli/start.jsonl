@@ -1,0 +1,3 @@
+{"type":"step_start","sessionID":"session-test-123","part":{}}
+{"type":"text","sessionID":"session-test-123","part":{"type":"text","text":"Structured OpenCode response"}}
+{"type":"step_finish","sessionID":"session-test-123","part":{}}
