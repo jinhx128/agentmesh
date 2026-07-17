@@ -3,13 +3,16 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -18,9 +21,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  initializeReviewerSessionLeaseCoordinationForTest,
   inspectReviewerSessionLeaseProcessForTest,
   parseLinuxProcessStartIdentityForTest,
   readReviewerSessionBootFingerprintForTest,
+  reviewerSessionLeaseCoordinationPathForTest,
   setReviewerSessionLeaseTestHooks,
   withReviewerSessionLease,
 } from "../packages/runtime/src/reviewer-sessions/lease.js";
@@ -44,16 +49,24 @@ function registryDirectory(): string {
 }
 
 function candidatePath(registryPath: string, ownerToken: string): string {
-  return path.join(registryPath, `.${KEY}.lease.${ownerToken}.json`);
+  return path.join(reviewerSessionLeaseCoordinationPathForTest(registryPath), `.${KEY}.lease.${ownerToken}.json`);
 }
 
 function candidatePaths(registryPath: string): string[] {
-  if (!existsSync(registryPath)) {
+  const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);
+  if (!existsSync(coordinationPath)) {
     return [];
   }
-  return readdirSync(registryPath)
+  return readdirSync(coordinationPath)
     .filter((name) => new RegExp(`^\\.${KEY}\\.lease\\.[a-f0-9]{32}\\.json$`).test(name))
-    .map((name) => path.join(registryPath, name));
+    .map((name) => path.join(coordinationPath, name));
+}
+
+function heartbeatNames(registryPath: string): string[] {
+  const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);
+  return existsSync(coordinationPath)
+    ? readdirSync(coordinationPath).filter((name) => name.includes(".heartbeat."))
+    : [];
 }
 
 function writeCandidate(
@@ -68,7 +81,8 @@ function writeCandidate(
     bootFingerprint?: string;
   } = {},
 ): string {
-  mkdirSync(registryPath, { recursive: true, mode: 0o700 });
+  const coordinationPath = initializeReviewerSessionLeaseCoordinationForTest(registryPath);
+  assert.ok(coordinationPath);
   const ownerToken = input.ownerToken ?? "a".repeat(32);
   const filePath = candidatePath(registryPath, ownerToken);
   writeFileSync(filePath, `${JSON.stringify({
@@ -161,6 +175,119 @@ test("unique candidates elect one owner and serialize contenders", async () => {
   assert.deepEqual(order, ["first-start", "first-end", "second"]);
 });
 
+test("registry directory replacement cannot split one key lease or redirect owner cleanup", async () => {
+  const registryPath = registryDirectory();
+  const movedRegistryPath = `${registryPath}-moved`;
+  test.after(() => {
+    resetHooks();
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+    rmSync(movedRegistryPath, { recursive: true, force: true });
+  });
+  let owner = OWNER;
+  let active = false;
+  let overlap = false;
+  let release!: () => void;
+  let started!: () => void;
+  let heartbeat!: () => void;
+  const blocker = new Promise<void>((resolve) => { release = resolve; });
+  const actionStarted = new Promise<void>((resolve) => { started = resolve; });
+  setLeaseHooks({
+    currentOwner: () => owner,
+    monotonicNow: () => 1_000_000_000n,
+    inspectProcess: () => ({ status: "same" }),
+  });
+
+  const first = withReviewerSessionLease(KEY, async (lease) => {
+    heartbeat = lease.heartbeat;
+    active = true;
+    started();
+    await blocker;
+    active = false;
+    return "first";
+  }, { registryPath, waitMs: 0 });
+  await actionStarted;
+  const originalCandidate = candidatePaths(registryPath)[0];
+  assert.ok(originalCandidate);
+
+  renameSync(registryPath, movedRegistryPath);
+  mkdirSync(registryPath, { mode: 0o700 });
+  owner = SECOND_OWNER;
+  const second = await withReviewerSessionLease(KEY, async () => {
+    overlap = active;
+    return "second";
+  }, { registryPath, waitMs: 0 });
+
+  assert.deepEqual(second, { acquired: false, reason: "busy" });
+  assert.equal(overlap, false);
+  const redirectedSuccessor = path.join(registryPath, path.basename(originalCandidate));
+  writeFileSync(redirectedSuccessor, "successor", { mode: 0o600 });
+  heartbeat();
+  assert.deepEqual(
+    readdirSync(registryPath).filter((name) => name.includes(".heartbeat.")),
+    [],
+    "the old owner heartbeat must not publish through the recreated pathname",
+  );
+  release();
+  assert.deepEqual(await first, { acquired: true, value: "first" });
+  assert.equal(existsSync(redirectedSuccessor), true, "the old owner release must not delete a pathname successor");
+});
+
+test("coordination identity anchor is private, fail-closed, and recoverable only while empty", async () => {
+  const registryPath = registryDirectory();
+  const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);
+  const anchorPath = `${coordinationPath}.identity.json`;
+  test.after(() => {
+    resetHooks();
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  });
+  setLeaseHooks({ currentOwner: () => OWNER, monotonicNow: () => 1_000_000_000n });
+
+  assert.equal((await withReviewerSessionLease(KEY, async () => "initial", { registryPath })).acquired, true);
+  assert.equal(statSync(coordinationPath).mode & 0o777, 0o700);
+  assert.equal(statSync(anchorPath).mode & 0o777, 0o600);
+
+  unlinkSync(anchorPath);
+  const unexplainedEvidence = path.join(coordinationPath, "unexplained");
+  writeFileSync(unexplainedEvidence, "present", { mode: 0o600 });
+  let unsafeActionCalls = 0;
+  assert.deepEqual(await withReviewerSessionLease(KEY, async () => {
+    unsafeActionCalls += 1;
+  }, { registryPath, waitMs: 0 }), { acquired: false, reason: "busy" });
+  assert.equal(unsafeActionCalls, 0);
+
+  unlinkSync(unexplainedEvidence);
+  assert.equal((await withReviewerSessionLease(KEY, async () => "recovered", { registryPath })).acquired, true);
+  assert.equal(statSync(anchorPath).mode & 0o777, 0o600);
+});
+
+test("coordination directory replacement or symlink substitution fails closed", async () => {
+  const registryPath = registryDirectory();
+  const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);
+  const movedCoordinationPath = `${coordinationPath}-moved`;
+  test.after(() => {
+    resetHooks();
+    try {
+      if (lstatSync(coordinationPath).isSymbolicLink()) unlinkSync(coordinationPath);
+    } catch {
+      // Cleanup only.
+    }
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  });
+  setLeaseHooks({ currentOwner: () => OWNER, monotonicNow: () => 1_000_000_000n });
+  assert.equal((await withReviewerSessionLease(KEY, async () => "initial", { registryPath })).acquired, true);
+
+  renameSync(coordinationPath, movedCoordinationPath);
+  symlinkSync(movedCoordinationPath, coordinationPath);
+  let actionCalls = 0;
+  const result = await withReviewerSessionLease(KEY, async () => {
+    actionCalls += 1;
+  }, { registryPath, waitMs: 0 });
+
+  assert.deepEqual(result, { acquired: false, reason: "busy" });
+  assert.equal(actionCalls, 0);
+  assert.equal(lstatSync(coordinationPath).isSymbolicLink(), true);
+});
+
 test("candidate metadata is complete and 0600 before atomic publication", async () => {
   const registryPath = registryDirectory();
   test.after(() => {
@@ -201,15 +328,18 @@ test("automatic and manual heartbeats publish monotonic owner pulses while activ
     heartbeat();
     heartbeat();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const pulses = readdirSync(registryPath).filter((name) => name.includes(".heartbeat."));
+    const pulses = heartbeatNames(registryPath);
     assert.equal(pulses.length, 1);
-    const pulse = JSON.parse(readFileSync(path.join(registryPath, pulses[0]), "utf-8"));
+    const pulse = JSON.parse(readFileSync(path.join(
+      reviewerSessionLeaseCoordinationPathForTest(registryPath),
+      pulses[0],
+    ), "utf-8"));
     assert.match(pulse.heartbeat_monotonic_ns, /^[0-9]+$/);
     return "ok";
   }, { registryPath, heartbeatMs: 5 });
 
   assert.deepEqual(result, { acquired: true, value: "ok" });
-  assert.deepEqual(readdirSync(registryPath).filter((name) => name.includes(".heartbeat.")), []);
+  assert.deepEqual(heartbeatNames(registryPath), []);
 });
 
 test("three monotonic heartbeat misses plus proven death reclaims; live and unknown do not", async () => {
@@ -391,6 +521,29 @@ test("release deletes only its unique candidate when a successor appears", async
   assert.deepEqual(candidatePaths(registryPath), [candidatePath(registryPath, successorToken)]);
 });
 
+test("release preserves a same-path successor with a different file identity", async () => {
+  const registryPath = registryDirectory();
+  let successorPath = "";
+  test.after(() => {
+    resetHooks();
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+  });
+  setLeaseHooks({
+    currentOwner: () => OWNER,
+    monotonicNow: () => 1_000_000_000n,
+    beforeRelease: (ownedPath) => {
+      unlinkSync(ownedPath);
+      writeFileSync(ownedPath, "successor", { mode: 0o600 });
+      successorPath = ownedPath;
+    },
+  });
+
+  const result = await withReviewerSessionLease(KEY, async () => "primary", { registryPath });
+
+  assert.deepEqual(result, { acquired: true, value: "primary" });
+  assert.equal(readFileSync(successorPath, "utf-8"), "successor");
+});
+
 test("a reclaimer cannot delete a new owner created after its stale-candidate check", async () => {
   const registryPath = registryDirectory();
   const stale = writeCandidate(registryPath, { ownerToken: "a".repeat(32) });
@@ -431,18 +584,19 @@ test("a reclaimer cannot delete a new owner created after its stale-candidate ch
 
 test("cleanup failure is swallowed but leaves concrete owner evidence", async () => {
   const registryPath = registryDirectory();
+  const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);
   test.after(() => {
-    chmodSync(registryPath, 0o700);
+    if (existsSync(coordinationPath)) chmodSync(coordinationPath, 0o700);
     resetHooks();
     rmSync(path.dirname(registryPath), { recursive: true, force: true });
   });
   setLeaseHooks({
     currentOwner: () => OWNER,
     monotonicNow: () => 1_000_000_000n,
-    beforeRelease: () => chmodSync(registryPath, 0o500),
+    beforeRelease: () => chmodSync(coordinationPath, 0o500),
   });
   const result = await withReviewerSessionLease(KEY, async () => "primary", { registryPath });
-  chmodSync(registryPath, 0o700);
+  chmodSync(coordinationPath, 0o700);
 
   assert.deepEqual(result, { acquired: true, value: "primary" });
   assert.equal(candidatePaths(registryPath).length, 1, "unlink really failed instead of the test merely replacing the path");

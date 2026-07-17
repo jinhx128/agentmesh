@@ -956,6 +956,57 @@ test("purge removes only dead stale registry temps while preserving active and u
   }
 });
 
+test("purge removes only dead stale management atomic temps without following symlinks", () => {
+  const registryPath = registryDirectory();
+  const outsideDirectory = mkdtempSync(path.join(os.tmpdir(), "agentmesh-session-management-gc-outside-"));
+  const outside = path.join(outsideDirectory, "outside.tmp");
+  try {
+    createSession(registryPath);
+    const staleDead = path.join(
+      registryPath,
+      `..reviewer-session-management.rs-${"a".repeat(16)}.json.99999999.${"b".repeat(24)}.tmp`,
+    );
+    const staleActive = path.join(
+      registryPath,
+      `..reviewer-session-management.rs-${"c".repeat(16)}.json.${process.pid}.${"d".repeat(24)}.tmp`,
+    );
+    const freshDead = path.join(
+      registryPath,
+      `..reviewer-session-management.rs-${"e".repeat(16)}.json.99999998.${"f".repeat(24)}.tmp`,
+    );
+    const linkedDead = path.join(
+      registryPath,
+      `..reviewer-session-management.rs-${"1".repeat(16)}.json.99999997.${"2".repeat(24)}.tmp`,
+    );
+    const unrelated = path.join(
+      registryPath,
+      `..reviewer-session-management.rs-${"3".repeat(16)}.json.123.not-a-registry-nonce.tmp`,
+    );
+    writeFileSync(staleDead, "dead", { mode: 0o600 });
+    writeFileSync(staleActive, "active", { mode: 0o600 });
+    writeFileSync(freshDead, "fresh", { mode: 0o600 });
+    writeFileSync(outside, "outside", { mode: 0o600 });
+    symlinkSync(outside, linkedDead);
+    writeFileSync(unrelated, "unrelated", { mode: 0o600 });
+    for (const stale of [staleDead, staleActive]) {
+      utimesSync(stale, new Date(0), new Date(0));
+    }
+
+    const purged = purgeReviewerSessions({ registryPath, now: new Date() });
+
+    assert.equal(purged.status, "purged");
+    assert.equal(existsSync(staleDead), false);
+    assert.equal(existsSync(staleActive), true);
+    assert.equal(existsSync(freshDead), true);
+    assert.equal(lstatSync(linkedDead).isSymbolicLink(), true);
+    assert.equal(readFileSync(outside, "utf-8"), "outside");
+    assert.equal(readFileSync(unrelated, "utf-8"), "unrelated");
+  } finally {
+    rmSync(path.dirname(registryPath), { recursive: true, force: true });
+    rmSync(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
 test("context headroom validates inputs and uses exact 60 percent warning and 80 percent rotation thresholds", () => {
   const base = { currentPacket: 100, reservedOutput: 100, reasoningHeadroom: 100, providerLimit: 1_000 };
   assert.equal(shouldRotateForContext({ ...base, estimatedHistory: 299 }), "keep");

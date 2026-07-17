@@ -1312,13 +1312,19 @@ function parseTemporaryArtifact(
   directory: SafeRegistryDirectory,
   name: string,
 ): TemporaryArtifact | undefined {
-  const match = /^\.(rk-[a-f0-9]{32})\.(?:json|epoch\.json)\.([1-9][0-9]*)\.([a-f0-9]{24})\.tmp$/.exec(name);
+  const entry = /^\.(rk-[a-f0-9]{32})\.(?:json|epoch\.json)\.([1-9][0-9]*)\.([a-f0-9]{24})\.tmp$/.exec(name);
+  const management = /^\.\.reviewer-session-management\.(rs-[a-f0-9]{16})\.json\.([1-9][0-9]*)\.([a-f0-9]{24})\.tmp$/.exec(name);
+  const match = entry ?? management;
   if (!match) {
     return undefined;
   }
   const ownerPid = Number(match[2]);
   return Number.isSafeInteger(ownerPid)
-    ? { filePath: path.join(directory.registryPath, name), key: match[1], ownerPid }
+    ? {
+      filePath: path.join(directory.registryPath, name),
+      key: entry ? entry[1] : `management-${match[1]}`,
+      ownerPid,
+    }
     : undefined;
 }
 
