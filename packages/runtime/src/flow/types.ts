@@ -69,6 +69,8 @@ export interface FlowRunInput {
   reviewReleasePolicy?: ResolvedReviewReleasePolicy;
   reviewerSessionPolicy?: ResolvedReviewerSessionPolicy;
   hostScopeInput?: HostScopeInput;
+  /** Internal resolver seam; production callers use the protected default key path. */
+  hostScopeOptions?: { hmacKeyPath?: string };
   executionPolicy?: ResolvedExecutionPolicy;
   configProvenance?: ConfigProvenance;
   runtimeTiming?: RuntimeTimingInput;

@@ -178,7 +178,7 @@ test("flow creation never persists a native conversation identifier", async () =
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const nativeConversationId = "native-conversation-7b2633a8-6c7f-4d6d-a31f-907f0514c807";
 
-  const runDir = await createFlowRun({
+  const flowInput = {
     plan: null,
     execute: null,
     review: [],
@@ -201,7 +201,9 @@ test("flow creation never persists a native conversation identifier", async () =
       nativeConversationId,
       propagatedScopeToken: "amscope_v1:11111111-1111-4111-8111-111111111111",
     },
-  }, workspace);
+    hostScopeOptions: { hmacKeyPath: path.join(workspace, ".home", "scope.key") },
+  } as Parameters<typeof createFlowRun>[0] & { hostScopeOptions: { hmacKeyPath: string } };
+  const runDir = await createFlowRun(flowInput, workspace);
 
   const statusText = readFileSync(path.join(runDir, "status.json"), "utf-8");
   const eventsText = readFileSync(path.join(runDir, "events.jsonl"), "utf-8");
@@ -211,6 +213,14 @@ test("flow creation never persists a native conversation identifier", async () =
     scope_source: "native",
     propagated_scope_token_present: true,
   });
+  assert.deepEqual(status.resolved_host_scope, {
+    host_kind: "codex",
+    conversation_scope_ref: status.resolved_host_scope.conversation_scope_ref,
+    workspace_id: status.resolved_host_scope.workspace_id,
+    worktree_id: status.resolved_host_scope.worktree_id,
+    scope_source: "native",
+  });
+  assert.match(status.resolved_host_scope.conversation_scope_ref, /^cs-[a-f0-9]{16}$/);
   assert.doesNotMatch(`${statusText}\n${eventsText}`, new RegExp(nativeConversationId));
   assert.doesNotMatch(`${statusText}\n${eventsText}`, /amscope_v1:11111111-1111-4111-8111-111111111111/);
 });

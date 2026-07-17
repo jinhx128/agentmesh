@@ -23,6 +23,19 @@ import {
   type AgentCallResult,
   type AgentCallRuntimeTiming,
 } from "../adapters.js";
+import { lookupRuntimeAdapter } from "../adapters/registry.js";
+import {
+  readReviewerSession,
+  reviewerSessionInvocationFingerprint,
+  reviewerSessionRef,
+  sessionRegistryKey,
+  upsertReviewerSession,
+} from "../reviewer-sessions/registry.js";
+import { withReviewerSessionLease } from "../reviewer-sessions/lease.js";
+import {
+  invokeReviewerWithSession,
+  type ResolvedReviewerSessionScope,
+} from "./reviewer-session-dispatch.js";
 import { isReleaseVerdictNode, updateReleaseVerdict } from "../release/verdict.js";
 import {
   adapterTimeoutSecsForDispatch,
@@ -782,15 +795,19 @@ async function invokeStageAgentAttempt(
 ): Promise<StageAgentAttemptResult> {
   const startedAt = new Date().toISOString();
   try {
-    const invocation = await invokeAgentForStageAsync(runDir, stage, options.agent, {
+    const invocation = stageNodeForId(status, stage).type === "review"
+      ? await invokeReviewAgentWithSession(runDir, status, stage, options)
+      : await invokeAgentForStageAsync(runDir, stage, options.agent, {
       configPath: options.configPath,
       cwd: options.cwd,
       agentName: options.agent,
       promptFile: options.promptPath,
       outputFile: options.outputPath,
       timeoutSecs: options.timeoutSecs ?? undefined,
-    });
-    writeAgentLogs(runDir, stage, options.agent, invocation);
+      });
+    if (stageNodeForId(status, stage).type !== "review") {
+      writeAgentLogs(runDir, stage, options.agent, invocation);
+    }
     const statusValue = invocation.exitCode === 0 ? "completed" : "failed";
     recordStageAttempt(runDir, stage, {
       laneId: options.laneId,
@@ -805,6 +822,9 @@ async function invokeStageAgentAttempt(
       exitCode: invocation.exitCode,
       errorKind: invocation.exitCode === 0 ? undefined : "exit_code",
       error: invocation.exitCode === 0 ? undefined : `exit code ${invocation.exitCode}`,
+      session: "session" in invocation
+        ? invocation.session as ReturnType<typeof reviewerSessionAttemptFields>
+        : undefined,
     });
     return {
       primaryAgent: options.primaryAgent,
@@ -847,6 +867,179 @@ async function invokeStageAgentAttempt(
   }
 }
 
+async function invokeReviewAgentWithSession(
+  runDir: string,
+  status: PacketStatus,
+  stage: string,
+  options: {
+    configPath?: string;
+    cwd: string;
+    agent: string;
+    outputPath: string;
+    promptPath: string;
+    timeoutSecs?: number | null;
+  },
+): Promise<AgentCallResult & { session: ReturnType<typeof reviewerSessionAttemptFields> }> {
+  const agent = resolveAgent(loadAgents(options.configPath, options.cwd), options.agent);
+  const adapter = lookupRuntimeAdapter(agent.adapter);
+  const scope = safeFrozenScope(status);
+  const invokeFresh = async () => {
+    const result = await invokeAgentForStageAsync(runDir, stage, options.agent, {
+      configPath: options.configPath,
+      cwd: options.cwd,
+      agentName: options.agent,
+      promptFile: options.promptPath,
+      outputFile: options.outputPath,
+      timeoutSecs: options.timeoutSecs ?? undefined,
+    });
+    return { exitCode: result.exitCode, outputText: result.stdout ?? "", call: result };
+  };
+  let lastCall: AgentCallResult | undefined;
+  let usedStructuredSessionInvocation = false;
+  const result = await invokeReviewerWithSession(runDir, {
+    effectiveMode: status.resolved_reviewer_session_policy?.effective_mode ?? "independent",
+    invokeFresh: async () => {
+      const fresh = await invokeFresh();
+      lastCall = fresh.call;
+      return fresh;
+    },
+    invokeStructured: async (session) => {
+      usedStructuredSessionInvocation = true;
+      const call = await invokeAgentForStageAsync(runDir, stage, options.agent, {
+        configPath: options.configPath,
+        cwd: options.cwd,
+        agentName: options.agent,
+        promptFile: options.promptPath,
+        timeoutSecs: options.timeoutSecs ?? undefined,
+        session,
+      });
+      lastCall = call;
+      const structured = call.structuredSessionResult;
+      return {
+        exitCode: call.exitCode === 0 && !structured?.failure ? 0 : call.exitCode || 1,
+        result: structured ?? { outputText: "", failure: {
+          classification: "invalid_output" as const,
+          message: "provider did not return a structured session result",
+          retryable: false,
+        } },
+      };
+    },
+    sessionDependencies: {
+      resolveScope: () => scope,
+      supportsStructuredSessions: () => (
+        adapter.capabilities.supports_resume === true
+        && adapter.capabilities.supports_structured_session_id === true
+        && scope !== undefined
+      ),
+      registryKey: (resolvedScope) => reviewerSessionKey(agent, resolvedScope),
+      withLease: async (key, action) => {
+        let unavailable = false;
+        const lease = await withReviewerSessionLease(key, action, {
+          onUnavailable: () => { unavailable = true; },
+        });
+        return lease.acquired || !unavailable
+          ? lease
+          : { acquired: false as const, reason: "unavailable" as const };
+      },
+      read: (key) => {
+        const read = readReviewerSession(key);
+        return read.status === "available"
+          ? { providerSessionId: read.entry.provider_session_id, sessionRef: read.entry.session_ref, epoch: read.entry.epoch }
+          : undefined;
+      },
+      writeFresh: (key, providerSessionId) => {
+        const write = upsertReviewerSession({
+          key,
+          sessionRef: reviewerSessionRef(key),
+          providerSessionId,
+          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent)),
+          summary: scope ? { scopeRef: scope.conversationScopeRef, hostKind: scope.hostKind, reviewerId: agent.id, mode: "interactive_continuous" } : undefined,
+        });
+        return write.status === "written"
+          ? { providerSessionId: write.entry.provider_session_id, sessionRef: write.entry.session_ref, epoch: write.entry.epoch }
+          : undefined;
+      },
+      writeResume: (key, expectedEpoch, providerSessionId) => {
+        const write = upsertReviewerSession({
+          key,
+          sessionRef: reviewerSessionRef(key),
+          providerSessionId,
+          expectedEpoch,
+          successfulResume: true,
+          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent)),
+        });
+        return write.status === "written"
+          ? { providerSessionId: write.entry.provider_session_id, sessionRef: write.entry.session_ref, epoch: write.entry.epoch }
+          : undefined;
+      },
+      onEvent: (event, payload) => appendEvent(runDir, event, payload),
+    },
+  });
+  if (!usedStructuredSessionInvocation && lastCall) {
+    writeAgentLogs(runDir, stage, options.agent, lastCall);
+  }
+  if (result.outputText) writeFileAtomic(options.outputPath, result.outputText);
+  const call = lastCall;
+  return {
+    exitCode: result.exitCode,
+    timing: call?.timing ?? { config_load_ms: 0, adapter_spawn_ms: 0, agent_total_ms: 0, total_ms: 0 },
+    ...(call?.timedOut === undefined ? {} : { timedOut: call.timedOut }),
+    session: reviewerSessionAttemptFields(result.session),
+  };
+}
+
+function safeFrozenScope(status: PacketStatus): ResolvedReviewerSessionScope | undefined {
+  const scope = status.resolved_host_scope;
+  if (!scope?.conversation_scope_ref || scope.scope_source === "missing") return undefined;
+  return {
+    hostKind: scope.host_kind,
+    conversationScopeRef: scope.conversation_scope_ref,
+    workspaceId: scope.workspace_id,
+    worktreeId: scope.worktree_id,
+    scopeSource: scope.scope_source,
+  };
+}
+
+function reviewerSessionInvocation(agent: ReturnType<typeof resolveAgent>) {
+  return {
+    command: agent.command,
+    args: agent.args,
+    capabilities: agent.capabilities,
+    permissionMode: "workspace-aware",
+    contextMode: "workspace-aware",
+    reviewerPersonaVersion: "v1",
+    promptSchemaVersion: "v1",
+    adapterPluginVersion: "v1",
+    providerCliVersion: "unknown",
+    environmentVariableNames: agent.env.map((entry) => entry.split("=", 1)[0] ?? ""),
+  };
+}
+
+function reviewerSessionKey(agent: ReturnType<typeof resolveAgent>, scope: ResolvedReviewerSessionScope): string {
+  return sessionRegistryKey({
+    conversationScopeRef: scope.conversationScopeRef,
+    workspaceId: scope.workspaceId,
+    worktreeId: scope.worktreeId,
+    agentId: agent.id,
+    adapterId: agent.adapter,
+    model: agent.model ?? "current",
+    reasoningEffort: agent.reasoning_effort ?? "none",
+    invocation: reviewerSessionInvocation(agent),
+  });
+}
+
+function reviewerSessionAttemptFields(session: Awaited<ReturnType<typeof invokeReviewerWithSession>>["session"]) {
+  return {
+    sessionMode: session.mode,
+    ...(session.sessionRef ? { sessionRef: session.sessionRef } : {}),
+    ...(session.conversationScopeRef ? { conversationScopeRef: session.conversationScopeRef } : {}),
+    ...(session.scopeSource ? { scopeSource: session.scopeSource } : {}),
+    hermetic: session.hermetic,
+    ...(session.nonHermeticReason ? { nonHermeticReason: session.nonHermeticReason } : {}),
+    registryWrite: session.registryWrite,
+  };
+}
+
 function recordStageAttempt(
   runDir: string,
   stage: string,
@@ -863,6 +1056,7 @@ function recordStageAttempt(
     exitCode?: number;
     errorKind?: string;
     error?: string;
+    session?: ReturnType<typeof reviewerSessionAttemptFields>;
   },
 ): void {
   const status = loadStatus(runDir);
@@ -888,6 +1082,15 @@ function recordStageAttempt(
         ...(input.exitCode === undefined ? {} : { exit_code: input.exitCode }),
         ...(input.errorKind ? { error_kind: input.errorKind } : {}),
         ...(input.error ? { error: input.error } : {}),
+        ...(input.session ? {
+          session_mode: input.session.sessionMode,
+          ...(input.session.sessionRef ? { session_ref: input.session.sessionRef } : {}),
+          ...(input.session.conversationScopeRef ? { conversation_scope_ref: input.session.conversationScopeRef } : {}),
+          ...(input.session.scopeSource ? { scope_source: input.session.scopeSource } : {}),
+          hermetic: input.session.hermetic,
+          ...(input.session.nonHermeticReason ? { non_hermetic_reason: input.session.nonHermeticReason } : {}),
+          registry_write: input.session.registryWrite,
+        } : {}),
       },
     ],
   };

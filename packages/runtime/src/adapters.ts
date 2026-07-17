@@ -19,7 +19,12 @@ import {
   normalizeRuntimeAdapterId,
   type RuntimeAdapterMetadata,
 } from "./adapters/registry.js";
-import { prepareAdapterInvocation } from "./adapters/invocation.js";
+import {
+  parseAdapterStructuredSessionResult,
+  prepareAdapterInvocation,
+  prepareAdapterSessionInvocation,
+} from "./adapters/invocation.js";
+import type { AdapterSessionDirective, AdapterStructuredResult } from "./adapters/session.js";
 import { resolveProviderTool } from "./adapters/provider-tools.js";
 import { buildAgentProcessEnv } from "./process-env.js";
 
@@ -78,6 +83,7 @@ export interface AgentCallResult {
   stdout?: string;
   stderr?: string;
   timedOut?: boolean;
+  structuredSessionResult?: AdapterStructuredResult;
 }
 
 export class AgentCallError extends Error {
@@ -298,6 +304,7 @@ export async function runAgentCallAsync(options: {
   promptFile?: string;
   outputFile?: string;
   timeoutSecs?: number;
+  session?: AdapterSessionDirective;
 }): Promise<AgentCallResult> {
   if (options.agentName === "current") {
     throw new Error(
@@ -310,7 +317,9 @@ export async function runAgentCallAsync(options: {
   const agents = loadAgents(options.configPath, cwd);
   const configLoadMs = elapsedMs(configStartedAt);
   const agent = resolveAgent(agents, options.agentName);
-  const prepared = prepareAdapterInvocation(resolveInvokableAgent(agent, cwd), options);
+  const prepared = options.session
+    ? prepareAdapterSessionInvocation(resolveInvokableAgent(agent, cwd), options, options.session)
+    : prepareAdapterInvocation(resolveInvokableAgent(agent, cwd), options);
   const command = prepared.command;
   const stdin = prepared.stdin;
   const captureStdout = prepared.captureStdout;
@@ -403,19 +412,23 @@ export async function runAgentCallAsync(options: {
         return;
       }
       try {
-        if (captureStdout && prepared.outputFile && stdout) {
+        if (!options.session && captureStdout && prepared.outputFile && stdout) {
           writeFileSync(prepared.outputFile, stdout, { encoding: "utf-8" });
         }
       } catch (error) {
         reject(new AgentCallError(asError(error), timing(), { stdout, stderr, timedOut }));
         return;
       }
+      const structuredSessionResult = options.session
+        ? parseAdapterStructuredSessionResult(agent.adapter, { exitCode: code ?? 1, stdout, stderr, timedOut })
+        : undefined;
       resolve({
         exitCode: code ?? 1,
         timing: timing(),
         stdout,
         stderr,
         timedOut,
+        ...(structuredSessionResult ? { structuredSessionResult } : {}),
       });
     });
   });

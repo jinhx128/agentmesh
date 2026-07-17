@@ -39,6 +39,8 @@ export interface ReviewerSessionLeaseOptions {
   waitMs?: number;
   heartbeatMs?: number;
   registryPath?: string;
+  /** Dispatch-only signal for safe fresh fallback; legacy result remains busy. */
+  onUnavailable?: () => void;
 }
 
 interface ProcessOwner {
@@ -167,10 +169,12 @@ export async function withReviewerSessionLease<T>(
   const requestedRegistryPath = options.registryPath ?? reviewerSessionRegistryPath();
   const registryPath = ensureSafeRegistryDirectory(requestedRegistryPath);
   if (!registryPath) {
+    options.onUnavailable?.();
     return busy();
   }
   const leaseDirectory = ensureSafeLeaseDirectory(registryPath);
   if (!leaseDirectory) {
+    options.onUnavailable?.();
     return busy();
   }
   const owner = reviewerSessionLeaseTestHooks?.currentOwner?.() ?? currentProcessOwner();

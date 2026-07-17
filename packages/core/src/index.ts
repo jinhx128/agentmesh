@@ -334,6 +334,18 @@ export const PacketStatusSchema = z
     stage_timing: z.record(z.string(), InvocationTimingSchema),
     agent_timing: z.record(z.string(), z.record(z.string(), InvocationTimingSchema)),
     runtime_timing: RuntimeTimingSchema.optional(),
+    resolved_reviewer_session_policy: z.object({
+      requested_mode: ReviewSessionModeSchema,
+      effective_mode: z.enum(["interactive_continuous", "independent"]),
+      source: z.enum(["workflow", "profile", "cli", "fallback"]),
+    }).optional(),
+    resolved_host_scope: z.object({
+      host_kind: NonEmptyStringSchema,
+      conversation_scope_ref: NonEmptyStringSchema.optional(),
+      workspace_id: NonEmptyStringSchema,
+      worktree_id: NonEmptyStringSchema,
+      scope_source: z.enum(["native", "propagated", "missing"]),
+    }).optional(),
     context_bytes: NonNegativeIntegerSchema.optional(),
     prompt_bytes: z.record(z.string(), PromptByteMetricSchema).optional(),
     user_gate: z.boolean(),

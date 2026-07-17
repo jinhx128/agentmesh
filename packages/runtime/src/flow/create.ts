@@ -44,6 +44,7 @@ import type {
   WorkflowCompatibilityInput,
 } from "./types.js";
 import { resolveDisplayTitle } from "../display-title.js";
+import { resolveHostScope } from "../reviewer-sessions/scope.js";
 
 type TimeoutProvenance = "cli" | "preset_fallback" | "global_fallback" | "agent" | "system_default" | "current";
 type FallbackProvenance = "preset_fallback" | "global_fallback" | "none";
@@ -70,6 +71,9 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   assertWorkspaceWritable(cwd);
   assertWorkflowCompatibility(input.workflowCompatibility);
   const runtimeTiming = { ...(input.runtimeTiming ?? {}) };
+  const resolvedHostScope = input.hostScopeInput
+    ? resolveHostScope(input.hostScopeInput, cwd, input.hostScopeOptions)
+    : undefined;
   const preparedContext = input.contextPolicy
     ? prepareContextPolicyInput(input, input.contextPolicy, cwd)
     : undefined;
@@ -129,6 +133,9 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
       : {}),
     ...(input.hostScopeInput
       ? { host_scope_input: safeHostScopeInput(input.hostScopeInput) }
+      : {}),
+    ...(resolvedHostScope
+      ? { resolved_host_scope: resolvedHostScope }
       : {}),
     ...(input.executionPolicy
       ? { resolved_execution_policy: input.executionPolicy }

@@ -115,6 +115,84 @@ test("flow dispatch refreshes current workspace registry activity", () => {
   assertWorkspaceRecordRefreshed(workspace, staleTimestamp);
 });
 
+test("continuous review dispatch writes safe provenance then resumes without leaking the provider ID", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const reviewer = path.join(workspace, "reviewer-session.sh");
+  const workflow = path.join(workspace, "review-only.toml");
+  writeFileSync(workflow, [
+    "schema_version = 1",
+    "workflow_recipe_version = 1",
+    "compatible_packet_schema_versions = [1]",
+    'name = "Review Only"',
+    'stages = ["review"]',
+    'description = "Dispatch one review stage."',
+    'when_to_use = ["Focused session dispatch test."]',
+    'packet_artifacts = ["findings.md"]',
+    'quality_gates = ["Review output exists."]',
+    "",
+  ].join("\n"));
+  writeExecutable(
+    reviewer,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "session='session-test-123'",
+      "printf '%s\\n' \"$*\" >> \"$0.args\"",
+      "printf '%s\\n' \\",
+      "  \"{\\\"type\\\":\\\"system\\\",\\\"subtype\\\":\\\"init\\\",\\\"session_id\\\":\\\"$session\\\"}\" \\",
+      "  \"{\\\"type\\\":\\\"assistant\\\",\\\"session_id\\\":\\\"$session\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review output\\\"}]}}\" \\",
+      "  \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"session_id\\\":\\\"$session\\\",\\\"result\\\":\\\"review output\\\"}\"",
+      "",
+    ].join("\n"),
+  );
+  const config = writeConfig(
+    workspace,
+    [
+      "[agents.reviewer]",
+      'adapter = "claude-code-cli"',
+      `command = "${reviewer}"`,
+      "args = []",
+      'model = "claude-sonnet-4-6"',
+      'reasoning_effort = "high"',
+      'capabilities = ["review"]',
+      "",
+    ].join("\n"),
+  );
+  const scope = "amscope_v1:11111111-1111-4111-8111-111111111111";
+  for (const runId of ["session-first", "session-second"]) {
+    const run = runCli(workspace, [
+      "--config", config,
+      "flow", "run",
+      "--workflow-file", workflow, "--review", "reviewer",
+      "--task", "session dispatch",
+      "--review-session-mode", "interactive_continuous",
+      "--host-kind", "codex", "--conversation-scope", scope,
+      "--run-id", runId,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const dispatch = runCli(workspace, ["--config", config, "flow", "dispatch", runId, "--stage", "review"]);
+    assert.equal(dispatch.status, 0, dispatch.stderr);
+  }
+  const first = JSON.parse(readFileSync(path.join(workspace, ".agentmesh", "runs", "session-first", "status.json"), "utf-8"));
+  const secondDir = path.join(workspace, ".agentmesh", "runs", "session-second");
+  const second = JSON.parse(readFileSync(path.join(secondDir, "status.json"), "utf-8"));
+  assert.equal(first.stage_attempts.review[0].session_mode, "fresh");
+  assert.equal(first.stage_attempts.review[0].registry_write, true);
+  assert.equal(second.stage_attempts.review[0].session_mode, "resumed");
+  assert.equal(second.stage_attempts.review[0].hermetic, false);
+  assert.equal(second.stage_attempts.review[0].non_hermetic_reason, "session_resume");
+  const invocationText = readFileSync(`${reviewer}.args`, "utf-8");
+  assert.match(invocationText, /--resume session-test-123/);
+  assert.equal([...invocationText.matchAll(/--resume session-test-123/g)].length, 1);
+  const packetText = [
+    readFileSync(path.join(secondDir, "status.json"), "utf-8"),
+    readFileSync(path.join(secondDir, "events.jsonl"), "utf-8"),
+    readFileSync(path.join(secondDir, "findings.md"), "utf-8"),
+  ].join("\n");
+  assert.doesNotMatch(packetText, /session-test-123/);
+});
+
 test("flow attach refreshes current workspace registry activity", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
