@@ -10,6 +10,29 @@ export * from "./packet/compatibility.js";
 export * from "./packet/io.js";
 export * from "./packet/validate.js";
 export * from "./release/check.js";
+export {
+  REVIEWER_SESSION_ABSOLUTE_TTL_MS,
+  REVIEWER_SESSION_IDLE_TTL_MS,
+  REVIEWER_SESSION_MAX_SUCCESSFUL_RESUMES,
+  REVIEWER_SESSION_SCHEMA_VERSION,
+  closeReviewerSession,
+  evaluateReviewerSessionLifecycle,
+  purgeReviewerSessions,
+  readReviewerSession,
+  reviewerSessionInvocationFingerprint,
+  reviewerSessionRef,
+  reviewerSessionRegistryPath,
+  sessionRegistryKey,
+  shouldRotateForContext,
+  upsertReviewerSession,
+} from "./reviewer-sessions/registry.js";
+export type {
+  ReviewerSessionInvocationFingerprintInput,
+  ReviewerSessionLifecycle,
+  ReviewerSessionRegistryOptions,
+  SessionRegistryKeyInput,
+  UpsertReviewerSessionInput,
+} from "./reviewer-sessions/registry.js";
 export * from "./reviewer-sessions/scope.js";
 export * from "./spec/index.js";
 export * from "./workflow/registry.js";
