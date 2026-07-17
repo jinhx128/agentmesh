@@ -315,7 +315,7 @@
 
 ## P2. Host Scope、Registry 与 Lease 基础设施
 
-- [ ] P2 阶段完成门禁：scope 不串线、registry 权限/原子性/TTL/epoch 正确、锁与 CLI 管理闭环。
+- [x] ~~P2 阶段完成门禁：scope 不串线、registry 权限/原子性/TTL/epoch 正确、锁与 CLI 管理闭环。~~ ✅
 
 ### ~~P2.1 / Task 6：实现 Host Scope Resolver~~ ✅
 
@@ -416,7 +416,7 @@
 - 提交：`bfa3ea8`、`5770a7f`、`360dade`；日志与完成记录单独提交。
 - 下一步：P2.3 实现 entry lease/heartbeat 与 sessions CLI；provider invocation resume 仍未接入。
 
-### P2.3 / Task 8：实现 Entry Lease、Heartbeat 与 Sessions CLI
+### ~~P2.3 / Task 8：实现 Entry Lease、Heartbeat 与 Sessions CLI~~ ✅
 
 **Files:**
 - Create: `packages/runtime/src/reviewer-sessions/lease.ts`
@@ -428,8 +428,8 @@
 **Interfaces:**
 - Produces: `withReviewerSessionLease`、`sessions scope/list/inspect/close/purge`。
 
-- [ ] 写失败测试：5s contention、10s heartbeat、三次 miss + dead PID reclaim、live PID 不抢锁、PID reuse、epoch close race、fresh isolated 不写 registry。
-- [ ] 实现：
+- [x] 写失败测试：5s contention、10s heartbeat、三次 miss + dead PID reclaim、live PID 不抢锁、PID reuse、epoch close race、fresh isolated 不写 registry。
+- [x] 实现：
 
   ```ts
   export async function withReviewerSessionLease<T>(
@@ -440,7 +440,7 @@
   ```
 
   默认 wait 5000ms、heartbeat 10000ms；锁顺序由 dispatch 保证为 run→entry→spawn。
-- [ ] 实现 CLI surfaces：
+- [x] 实现 CLI surfaces：
 
   ```text
   agentmesh sessions scope create --host codex [--json]
@@ -452,18 +452,35 @@
   ```
 
   输出必须 mask provider ID。
-- [ ] Run targeted tests and CLI help tests; Expected: PASS。
+- [x] Run targeted tests and CLI help tests; Expected: PASS。
 
 审查方式：外审；涉及并发与敏感信息。失败不可降级。证据：lease/CLI tests、审查。Commit: `功能(cli)：增加 reviewer session 生命周期管理`
 
-### P2.Z / Task 9：P2 阶段收尾校准
+**进度记录（2026-07-18 01:51）：**
 
-- [ ] Run P2 targeted tests、`npm run build:node`、`git diff --check`。
-- [ ] 手工创建两个 scope、两个 linked worktree，确认 key/ref 隔离且 CLI 不显示原始 ID。
-- [ ] AgentMesh 外审 scope/registry/lease 安全与死锁顺序；修复 accepted findings。
-- [ ] 同步 changelog、提交、更新当前下一步。
+- 状态：完成。实现 entry lease、自动 heartbeat、boot fingerprint/PID 身份恢复、epoch/CAS 证据，以及 `sessions scope/list/inspect/close/purge` 管理面；所有 human/JSON 输出仅含安全摘要。
+- 验证：focused 52/52、全量 `npm test` 630/630、`git diff --check` 通过。
+- 审查：最终独立复核 Spec/Quality Approved，0 Must / 0 Should / 0 Nit；AgentMesh gate `workflow-20260717231259` 已完成 decide。
+- 提交：`bf6e7ac`、`8872ecd`、`02457d3`、`6cb3a17`。
+- 下一步：P2.Z 对本机状态层执行可重放隔离验证和最终安全门禁。
+
+### ~~P2.Z / Task 9：P2 阶段收尾校准~~ ✅
+
+- [x] Run P2 targeted tests、`npm run build:node`、`git diff --check`。
+- [x] 手工创建两个 scope、两个 linked worktree，确认 key/ref 隔离且 CLI 不显示原始 ID。
+- [x] AgentMesh 外审 scope/registry/lease 安全与死锁顺序；修复 accepted findings。
+- [x] 同步 changelog、提交、更新当前下一步。
 
 审查方式：外审；失败不可降级。Commit: `收尾：校准 reviewer session 本机状态层`
+
+**进度记录（2026-07-18 05:40）：**
+
+- 状态：完成。可重放 disposable verifier 证明 linked worktree、双 propagated scope、registry key/session ref 隔离和 CLI human/JSON 脱敏，safe output 的 forbidden-value match count 为 0，cleanup 完成。
+- 修复：lease election 迁移到 0700 coordination anchor，并用 0600 dev/ino identity evidence 保护 heartbeat/release/reclaim；registry rename/recreate、coordination/anchor replacement 与 real path/ancestor-symlink alias 均不能建立第二个 lease namespace；management atomic-write stale temp 纳入安全 GC。
+- 验证：最终 P2 focused 68/68；可重放 verifier 通过；首轮修复后全量 `npm test` 643/643；alias follow-up targeted 1/1、lease 23/23；`git diff --check` 通过。
+- 审查：AgentMesh gate `workflow-20260718044744` 原始 2 Must/1 Should 与 follow-up alias Must 全部修复；最终定向复核 Spec/Quality Approved、LGTM、0 Must/0 Should/0 Nit，gate 状态 `decide_completed`。
+- 提交：`a09c005`、`fc4c02e`；本条日志与阶段记录由收尾 commit 固化。
+- 下一步：P3.1 定义 Adapter Session Contract 与 Fake CLI；仍只实现公共 adapter contract，不提前接 dispatch resume。
 
 ---
 
@@ -759,4 +776,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P2.3` 实现 Entry Lease、Heartbeat 与 Sessions CLI；只完成本机锁/管理面，不接 provider adapter/dispatch resume。
+- 当前下一步：`P3.1` 定义 Adapter Session Contract 与 Fake CLI；先冻结 fresh/resume builder、structured parser 和 failure mapping，不提前接 provider 或 dispatch resume。
