@@ -343,6 +343,9 @@ function resolveReviewerSessionRunInput(
   hostScopeInput?: HostScopeInput;
 } | string {
   const requestedModeValue = optionValue(args, "--review-session-mode");
+  if (hasMissingOptionValue(args, "--review-session-mode", requestedModeValue)) {
+    return "--review-session-mode requires a value";
+  }
   const requestedMode = requestedModeValue === undefined
     ? workflowMode
     : ReviewSessionModeSchema.safeParse(requestedModeValue);
@@ -351,10 +354,16 @@ function resolveReviewerSessionRunInput(
   }
   const mode = typeof requestedMode === "string" ? requestedMode : requestedMode.data;
   const hostKind = optionValue(args, "--host-kind");
+  if (hasMissingOptionValue(args, "--host-kind", hostKind)) {
+    return "--host-kind requires a value";
+  }
   if (hostKind !== undefined && !HOST_KINDS.includes(hostKind as (typeof HOST_KINDS)[number])) {
     return `--host-kind must be one of ${HOST_KINDS.join(", ")}`;
   }
   const propagatedScopeToken = optionValue(args, "--conversation-scope");
+  if (hasMissingOptionValue(args, "--conversation-scope", propagatedScopeToken)) {
+    return "--conversation-scope requires a value";
+  }
   if (propagatedScopeToken !== undefined && !PROPAGATED_SCOPE_TOKEN_PATTERN.test(propagatedScopeToken)) {
     return "--conversation-scope must use the form amscope_v1:<RFC4122 UUID>";
   }
@@ -380,6 +389,10 @@ function resolveReviewerSessionRunInput(
     },
     ...(hostScopeInput ? { hostScopeInput } : {}),
   };
+}
+
+function hasMissingOptionValue(args: string[], name: string, value: string | undefined): boolean {
+  return args.includes(name) && (value === undefined || value.startsWith("--"));
 }
 
 function workflowCompatibilityForRun(workflow: Workflow): {

@@ -223,7 +223,7 @@ test("workflow auto policy remains compatible without reviewer session flags", (
     "flow",
     "run",
     "--workflow",
-    "w-4963ede2",
+    BUILTIN_WORKFLOW_IDS.IMPLEMENTATION_PLAN,
     "--plan",
     "current",
     "--decide",
@@ -245,6 +245,40 @@ test("workflow auto policy remains compatible without reviewer session flags", (
     source: "workflow",
   });
   assert.equal(status.host_scope_input, undefined);
+});
+
+test("workflow run records a missing scope for a non-Codex host kind", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const run = runCli(workspace, [
+    "flow",
+    "run",
+    "--plan",
+    "current",
+    "--execute",
+    "current",
+    "--review",
+    "current",
+    "--decide",
+    "current",
+    "--task",
+    "record missing cursor scope",
+    "--host-kind",
+    "cursor",
+    "--run-id",
+    "reviewer-session-missing-scope",
+  ]);
+  assert.equal(run.status, 0, run.stderr);
+
+  const status = JSON.parse(readFileSync(
+    path.join(workspace, ".agentmesh", "runs", "reviewer-session-missing-scope", "status.json"),
+    "utf-8",
+  ));
+  assert.deepEqual(status.host_scope_input, {
+    host_kind: "cursor",
+    scope_source: "missing",
+  });
 });
 
 test("independent workflow policy cannot be weakened by a continuous CLI request", () => {

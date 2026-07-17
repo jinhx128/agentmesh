@@ -195,7 +195,7 @@ test("parses review session mode and rejects unknown values", () => {
   withHome(sandbox.home, () => {
     assert.throws(
       () => getWorkflow("invalid-review", workflowSearchDirs(sandbox.workspace)),
-      /review_session_mode.*auto|interactive_continuous|independent/,
+      /review_session_mode[\s\S]*auto[\s\S]*interactive_continuous[\s\S]*independent/,
     );
   });
 });

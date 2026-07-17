@@ -150,6 +150,16 @@ test("workflow run rejects invalid reviewer session inputs without echoing sensi
     assert.equal(result.status, 2, result.stderr);
     assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /provider-private-host|amscope_v1:not-a-uuid/);
   }
+  const missingValueInputs = [
+    ["--review-session-mode", "--review-session-mode requires a value"],
+    ["--host-kind", "--host-kind requires a value"],
+    ["--conversation-scope", "--conversation-scope requires a value"],
+  ];
+  for (const [flag, error] of missingValueInputs) {
+    const result = runCli(workspace, [...sharedArgs, flag]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stderr.trim(), error);
+  }
   const rawScopeResult = runCli(workspace, [
     ...sharedArgs,
     "--host-kind",
