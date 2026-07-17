@@ -26,6 +26,13 @@ export const REVIEWER_SESSION_MAX_SUCCESSFUL_RESUMES = 8;
 const REGISTRY_KEY_PATTERN = /^rk-[a-f0-9]{32}$/;
 const SESSION_REF_PATTERN = /^rs-[a-f0-9]{16}$/;
 const INVOCATION_FINGERPRINT_PATTERN = /^if-[a-f0-9]{32}$/;
+const SCOPE_REF_PATTERN = /^cs-[a-f0-9]{16}$/;
+const REVIEWER_ID_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const SENSITIVE_REVIEWER_ID_PATTERN = /(?:secret|token|provider[-_.]?session|native[-_.]?id|session[-_.]?id)/i;
+const SAFE_HOST_KINDS = new Set([
+  "codex", "cursor", "claude-code", "antigravity", "opencode", "studio-desktop", "headless-cli", "unknown",
+]);
+const SAFE_SESSION_MODES = new Set(["auto", "interactive_continuous", "independent"]);
 const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TEMPORARY_ARTIFACT_STALE_MS = 30_000;
 const MUTATION_LOCK_LEGACY_STALE_MS = 30_000;
@@ -242,11 +249,21 @@ const reviewerSessionEntrySchema = z.object({
   successful_resumes: z.number().int().nonnegative().max(REVIEWER_SESSION_MAX_SUCCESSFUL_RESUMES),
   invocation_fingerprint: z.string().regex(INVOCATION_FINGERPRINT_PATTERN),
   estimated_context_tokens: z.number().finite().nonnegative().optional(),
-  scope_ref: z.string().regex(/^cs-[a-f0-9]{16}$/).optional(),
-  host_kind: z.string().min(1).optional(),
-  reviewer_id: z.string().min(1).optional(),
-  session_mode: z.string().min(1).optional(),
+  scope_ref: z.string().regex(SCOPE_REF_PATTERN).optional(),
+  host_kind: z.string().refine((value) => SAFE_HOST_KINDS.has(value)).optional(),
+  reviewer_id: z.string().regex(REVIEWER_ID_PATTERN).refine((value) => !SENSITIVE_REVIEWER_ID_PATTERN.test(value)).optional(),
+  session_mode: z.string().refine((value) => SAFE_SESSION_MODES.has(value)).optional(),
 }).strict();
+
+const reviewerSessionManagementSchema = z.object({
+  schema_version: z.literal(REVIEWER_SESSION_SCHEMA_VERSION),
+  session_ref: z.string().regex(SESSION_REF_PATTERN),
+  scope_ref: z.string().regex(SCOPE_REF_PATTERN).optional(),
+  state: z.enum(["active", "closed"]),
+  updated_at: z.string().refine(isValidInstant),
+}).strict();
+
+type ReviewerSessionManagementRecord = z.infer<typeof reviewerSessionManagementSchema>;
 
 const reviewerSessionEpochSchema = z.object({
   schema_version: z.literal(REVIEWER_SESSION_SCHEMA_VERSION),
@@ -363,6 +380,7 @@ export function upsertReviewerSession(
       const entry = freshEntry(input, epoch, options.now);
       atomicWriteEpoch(directory, input.key, epoch, currentEpoch.kind === "valid" ? currentEpoch.identity : undefined);
       atomicWriteEntry(directory, entry, undefined);
+      writeManagementRecord(directory, entry, "active", options.now);
       return { status: "written", entry };
     }
     if (currentEpoch.kind === "valid" && currentEpoch.epoch > current.entry.epoch) {
@@ -376,6 +394,7 @@ export function upsertReviewerSession(
       const entry = freshEntry(input, epoch, options.now);
       atomicWriteEpoch(directory, input.key, epoch, currentEpoch.identity);
       atomicWriteEntry(directory, entry, current.identity);
+      writeManagementRecord(directory, entry, "active", options.now);
       return { status: "written", entry };
     }
     if (currentEpoch.kind !== "valid" || currentEpoch.epoch !== current.entry.epoch) {
@@ -420,6 +439,7 @@ export function upsertReviewerSession(
     };
     atomicWriteEpoch(directory, input.key, entry.epoch, currentEpoch.identity);
     atomicWriteEntry(directory, entry, current.identity);
+    writeManagementRecord(directory, entry, "active", options.now);
     return { status: "written", entry };
   });
 }
@@ -470,6 +490,7 @@ export function closeReviewerSession(
       ) {
         return epochConflict();
       }
+      writeManagementRecord(directory, current.entry, "closed", options.now);
       unlinkEntry(directory, key, current.identity);
       return { status: "closed", epoch: currentEpoch.epoch };
     }
@@ -484,6 +505,7 @@ export function closeReviewerSession(
     }
     const epoch = nextEpoch(current.entry.epoch);
     atomicWriteEpoch(directory, key, epoch, currentEpoch.identity);
+    writeManagementRecord(directory, current.entry, "closed", options.now);
     unlinkEntry(directory, key, current.identity);
     return { status: "closed", epoch };
   });
@@ -570,13 +592,21 @@ export function closeReviewerSessionReference(
   if (!SESSION_REF_PATTERN.test(sessionRef)) {
     return { status: "not_found" };
   }
+  const directory = ensureRegistryDirectory(options.registryPath ?? reviewerSessionRegistryPath());
+  if (!directory.safe) return { status: "unavailable", diagnostic: directory.diagnostic };
+  const management = inspectManagementRecord(directory, sessionRef);
+  if (management.kind === "unsafe" || management.kind === "invalid") {
+    return { status: "unavailable", diagnostic: "reviewer session management state is unsafe" };
+  }
   const candidates = safeRegistryKeys(options);
   if (!Array.isArray(candidates)) {
     return candidates;
   }
   const matches = candidates.filter((key) => reviewerSessionRef(key) === sessionRef);
   if (matches.length === 0) {
-    return { status: "not_found" };
+    return management.kind === "valid" && management.record.state === "closed"
+      ? { status: "closed", closed: 0 }
+      : { status: "not_found" };
   }
   if (matches.length > 1) {
     return { status: "ambiguous" };
@@ -592,9 +622,15 @@ export function closeReviewerSessionReference(
     ...(current ? { expectedEpoch: current.summary.epoch } : {}),
   });
   if (result.status === "closed") {
+    if (management.kind === "missing") {
+      writeManagementRecord(directory, { session_ref: sessionRef }, "closed", options.now);
+    }
     return { status: "closed", closed: 1 };
   }
   if (result.status === "already_absent") {
+    if (management.kind === "missing") {
+      writeManagementRecord(directory, { session_ref: sessionRef }, "closed", options.now);
+    }
     return { status: "closed", closed: 0 };
   }
   if (result.status === "conflict" || result.status === "busy") {
@@ -607,16 +643,24 @@ export function closeReviewerSessionScope(
   scopeRef: string,
   options: ReviewerSessionRegistryOptions = {},
 ): ReviewerSessionManagementCloseResult {
-  if (!/^cs-[a-f0-9]{16}$/.test(scopeRef)) {
+  if (!SCOPE_REF_PATTERN.test(scopeRef)) {
     return { status: "not_found" };
   }
+  const directory = ensureRegistryDirectory(options.registryPath ?? reviewerSessionRegistryPath());
+  if (!directory.safe) return { status: "unavailable", diagnostic: directory.diagnostic };
+  const management = listManagementRecords(directory);
+  if (!management) return { status: "unavailable", diagnostic: "reviewer session management state is unsafe" };
   const records = safeSummaryRecords(options);
   if (!Array.isArray(records)) {
     return records;
   }
   const matches = records.filter((record) => record.summary.scope_ref === scopeRef);
   if (matches.length === 0) {
-    return { status: "closed", closed: 0 };
+    const evidence = management.filter((record) => record.scope_ref === scopeRef);
+    if (evidence.length === 0) return { status: "not_found" };
+    return evidence.every((record) => record.state === "closed")
+      ? { status: "closed", closed: 0 }
+      : { status: "conflict" };
   }
   let closed = 0;
   for (const record of matches) {
@@ -816,18 +860,15 @@ function validateUpsertInput(input: UpsertReviewerSessionInput): void {
     }
   }
   if (input.summary !== undefined) {
-    if (!/^cs-[a-f0-9]{16}$/.test(input.summary.scopeRef)) {
-      throw new Error("reviewer session scope reference is invalid");
-    }
-    for (const [value, label] of [
-      [input.summary.hostKind, "host kind"],
-      [input.summary.reviewerId, "reviewer id"],
-      [input.summary.mode, "session mode"],
-    ] as const) {
-      if (value !== undefined) {
-        requiredString(value, `${label} is invalid`);
-      }
-    }
+    if (
+      !SCOPE_REF_PATTERN.test(input.summary.scopeRef)
+      || (input.summary.hostKind !== undefined && !SAFE_HOST_KINDS.has(input.summary.hostKind))
+      || (input.summary.mode !== undefined && !SAFE_SESSION_MODES.has(input.summary.mode))
+      || (input.summary.reviewerId !== undefined && (
+        !REVIEWER_ID_PATTERN.test(input.summary.reviewerId)
+        || SENSITIVE_REVIEWER_ID_PATTERN.test(input.summary.reviewerId)
+      ))
+    ) throw new Error("reviewer session summary is invalid");
   }
 }
 
@@ -965,6 +1006,78 @@ function inspectEpoch(directory: SafeRegistryDirectory, key: string): InspectedE
       bestEffortClose(descriptor);
     }
   }
+}
+
+function inspectManagementRecord(
+  directory: SafeRegistryDirectory,
+  sessionRef: string,
+): { kind: "missing" }
+  | { kind: "valid"; record: ReviewerSessionManagementRecord; identity: FileIdentity }
+  | { kind: "unsafe" | "invalid"; identity?: FileIdentity } {
+  const filePath = managementPath(directory.registryPath, sessionRef);
+  let initial: ReturnType<typeof lstatSync>;
+  try {
+    initial = lstatSync(filePath);
+  } catch (error: unknown) {
+    return isNotFound(error) ? { kind: "missing" } : { kind: "unsafe" };
+  }
+  if (!initial.isFile() || !hasSafeModeAndOwner(initial, 0o600)) return { kind: "unsafe" };
+  const identity = fileIdentity(initial);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(filePath, constants.O_RDONLY | noFollowFlag());
+    const opened = fstatSync(descriptor);
+    if (!opened.isFile() || !sameFileIdentity(identity, fileIdentity(opened)) || !hasSafeModeAndOwner(opened, 0o600)) {
+      return { kind: "unsafe", identity };
+    }
+    const parsed = reviewerSessionManagementSchema.safeParse(JSON.parse(readFileSync(descriptor, "utf-8")));
+    return parsed.success && parsed.data.session_ref === sessionRef
+      ? { kind: "valid", record: parsed.data, identity }
+      : { kind: "invalid", identity };
+  } catch {
+    return { kind: "invalid", identity };
+  } finally {
+    if (descriptor !== undefined) bestEffortClose(descriptor);
+  }
+}
+
+function writeManagementRecord(
+  directory: SafeRegistryDirectory,
+  entry: { session_ref: string; scope_ref?: string },
+  state: "active" | "closed",
+  nowInput: Date | string | undefined,
+): void {
+  const inspected = inspectManagementRecord(directory, entry.session_ref);
+  if (inspected.kind === "unsafe" || inspected.kind === "invalid") {
+    throw new Error("reviewer session management state is unsafe");
+  }
+  const record: ReviewerSessionManagementRecord = {
+    schema_version: REVIEWER_SESSION_SCHEMA_VERSION,
+    session_ref: entry.session_ref,
+    state,
+    updated_at: instant(nowInput),
+    ...(entry.scope_ref === undefined ? {} : { scope_ref: entry.scope_ref }),
+  };
+  atomicWriteJson(
+    directory,
+    managementPath(directory.registryPath, entry.session_ref),
+    record,
+    inspected.kind === "valid" ? inspected.identity : undefined,
+  );
+}
+
+function listManagementRecords(
+  directory: SafeRegistryDirectory,
+): ReviewerSessionManagementRecord[] | undefined {
+  const records: ReviewerSessionManagementRecord[] = [];
+  for (const name of readRegistryDirectory(directory)) {
+    const match = /^\.reviewer-session-management\.(rs-[a-f0-9]{16})\.json$/.exec(name);
+    if (!match) continue;
+    const inspected = inspectManagementRecord(directory, match[1]);
+    if (inspected.kind !== "valid") return undefined;
+    records.push(inspected.record);
+  }
+  return records;
 }
 
 function atomicWriteEpoch(
@@ -1295,6 +1408,9 @@ function purgeReviewerSessionKey(
       ? marker.identity
       : undefined,
   );
+  if (entry.kind === "valid") {
+    writeManagementRecord(directory, entry.entry, "closed", options.now);
+  }
   if (entry.kind === "valid" || entry.kind === "invalid") {
     unlinkEntry(directory, key, entry.identity);
   }
@@ -1516,6 +1632,11 @@ function entryPath(registryPath: string, key: string): string {
 
 function epochPath(registryPath: string, key: string): string {
   return path.join(registryPath, `${key}.epoch.json`);
+}
+
+function managementPath(registryPath: string, sessionRef: string): string {
+  if (!SESSION_REF_PATTERN.test(sessionRef)) throw new Error("reviewer session reference is invalid");
+  return path.join(registryPath, `.reviewer-session-management.${sessionRef}.json`);
 }
 
 function hasSafeModeAndOwner(stat: { mode: number; uid: number }, mode: number): boolean {

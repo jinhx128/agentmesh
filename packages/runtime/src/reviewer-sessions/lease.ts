@@ -5,13 +5,12 @@ import {
   constants,
   fstatSync,
   fsyncSync,
-  futimesSync,
   linkSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
-  statSync,
+  readdirSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -25,13 +24,14 @@ import {
 export const REVIEWER_SESSION_LEASE_WAIT_MS = 5_000;
 export const REVIEWER_SESSION_HEARTBEAT_MS = 10_000;
 export const REVIEWER_SESSION_MISSED_HEARTBEATS = 3;
-
-/** Required acquisition order for later dispatch integration. */
+/** Later dispatch must acquire in this order to avoid run/entry deadlocks. */
 export const REVIEWER_SESSION_LOCK_ORDER = ["run-mutation", "entry-lease", "provider-spawn"] as const;
 
 const REGISTRY_KEY_PATTERN = /^rk-[a-f0-9]{32}$/;
 const OWNER_TOKEN_PATTERN = /^[a-f0-9]{32}$/;
+const MONOTONIC_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 const RETRY_INTERVAL_MS = 10;
+const NANOSECONDS_PER_MILLISECOND = 1_000_000n;
 
 export interface ReviewerSessionLeaseOptions {
   waitMs?: number;
@@ -41,7 +41,7 @@ export interface ReviewerSessionLeaseOptions {
 
 interface ProcessOwner {
   pid: number;
-  startIdentity: string;
+  startIdentity: string | null;
 }
 
 type ProcessInspection =
@@ -51,50 +51,75 @@ type ProcessInspection =
   | { status: "unknown" };
 
 export interface ReviewerSessionLeaseTestHooks {
-  now?: () => number;
+  monotonicNow?: () => bigint;
   currentOwner?: () => ProcessOwner | undefined;
-  inspectProcess?: (pid: number, expectedStartIdentity: string) => ProcessInspection;
+  inspectProcess?: (pid: number, expectedStartIdentity: string | null, remainingMs: number) => ProcessInspection;
   sleep?: (milliseconds: number) => Promise<void>;
   onConfigured?: (options: { waitMs: number; heartbeatMs: number }) => void;
   beforePublish?: (temporaryPath: string, publishedPath: string) => void;
-  beforeRelease?: (publishedPath: string) => void;
+  beforeRelease?: (candidatePath: string) => void;
+  beforeCandidateDelete?: (candidatePath: string) => void;
   onEpochEvidenceRead?: () => void;
 }
 
 let reviewerSessionLeaseTestHooks: ReviewerSessionLeaseTestHooks | undefined;
 
-/** Deterministic process/clock injection for focused lease tests only. */
+/** Internal deterministic concurrency/process hooks for focused tests. */
 export function setReviewerSessionLeaseTestHooks(
   hooks: ReviewerSessionLeaseTestHooks | undefined,
 ): void {
   reviewerSessionLeaseTestHooks = hooks;
 }
 
-interface FileIdentity {
-  device: number | bigint;
-  inode: number | bigint;
-}
-
-interface LeaseMetadata {
+interface LeaseCandidateMetadata {
   schema_version: 1;
   registry_key: string;
   pid: number;
-  process_start_identity: string;
+  process_start_identity: string | null;
   owner_token: string;
-  heartbeat_at_ms: number;
+  lease_ticket: number;
+  created_monotonic_ns: string;
+  heartbeat_monotonic_ns: string;
+}
+
+interface LeaseHeartbeatMetadata {
+  schema_version: 1;
+  registry_key: string;
+  owner_token: string;
+  heartbeat_monotonic_ns: string;
+}
+
+interface LeaseCandidate {
+  filePath: string;
+  metadata: LeaseCandidateMetadata;
+  createdMonotonicNs: bigint;
+  heartbeatMonotonicNs: bigint;
+  heartbeatPaths: string[];
+}
+
+interface LeaseChoosingMetadata {
+  schema_version: 1;
+  registry_key: string;
+  pid: number;
+  process_start_identity: string | null;
+  owner_token: string;
+  created_monotonic_ns: string;
+}
+
+interface LeaseChoosingMarker {
+  filePath: string;
+  metadata: LeaseChoosingMetadata;
+  createdMonotonicNs: bigint;
 }
 
 interface OwnedLease {
-  descriptor: number;
-  identity: FileIdentity;
-  filePath: string;
+  candidatePath: string;
+  ownerToken: string;
+  heartbeatPaths: Set<string>;
+  active: boolean;
 }
 
-interface ExistingLease {
-  identity: FileIdentity;
-  metadata: LeaseMetadata;
-  mtimeMs: number;
-}
+type ElectionResult = "won" | "blocked" | "deadline" | "retry";
 
 export async function withReviewerSessionLease<T>(
   registryKey: string,
@@ -103,353 +128,538 @@ export async function withReviewerSessionLease<T>(
 ): Promise<{ acquired: true; value: T } | { acquired: false; reason: "busy" }> {
   assertRegistryKey(registryKey);
   const waitMs = boundedMilliseconds(options.waitMs, REVIEWER_SESSION_LEASE_WAIT_MS, "lease wait");
-  const heartbeatMs = boundedMilliseconds(
-    options.heartbeatMs,
-    REVIEWER_SESSION_HEARTBEAT_MS,
-    "lease heartbeat",
-    true,
-  );
+  const heartbeatMs = boundedMilliseconds(options.heartbeatMs, REVIEWER_SESSION_HEARTBEAT_MS, "lease heartbeat", true);
   reviewerSessionLeaseTestHooks?.onConfigured?.({ waitMs, heartbeatMs });
   const registryPath = options.registryPath ?? reviewerSessionRegistryPath();
-  const directory = ensureSafeRegistryDirectory(registryPath);
-  if (!directory) {
-    return { acquired: false, reason: "busy" };
+  if (!ensureSafeRegistryDirectory(registryPath)) {
+    return busy();
   }
   const owner = reviewerSessionLeaseTestHooks?.currentOwner?.() ?? currentProcessOwner();
   if (!owner) {
-    return { acquired: false, reason: "busy" };
+    return busy();
   }
-  const startedAt = now();
-  const deadline = startedAt + waitMs;
-  let owned: OwnedLease | undefined;
-  for (;;) {
-    owned = tryPublishLease(directory, registryKey, owner);
-    if (owned) {
-      break;
+  const startedAt = monotonicNow();
+  const deadline = startedAt + millisecondsToNanoseconds(waitMs);
+  const ownerToken = randomBytes(16).toString("hex");
+  const candidatePath = leaseCandidatePath(registryPath, registryKey, ownerToken);
+  const choosingPath = leaseChoosingPath(registryPath, registryKey, ownerToken);
+  if (!publishChoosing(registryPath, registryKey, ownerToken, owner, startedAt, choosingPath)) {
+    return busy();
+  }
+  const existing = scanLeaseCandidates(registryPath, registryKey);
+  const ticket = existing ? Math.max(0, ...existing.map((candidate) => candidate.metadata.lease_ticket)) + 1 : undefined;
+  if (
+    ticket === undefined
+    || !Number.isSafeInteger(ticket)
+    || !publishCandidate(registryPath, registryKey, ownerToken, owner, startedAt, ticket, candidatePath)
+  ) {
+    bestEffortUnlink(choosingPath);
+    return busy();
+  }
+  bestEffortUnlink(choosingPath);
+  const owned: OwnedLease = { candidatePath, ownerToken, heartbeatPaths: new Set(), active: true };
+
+  try {
+    for (;;) {
+      const election = electCandidate(registryPath, registryKey, owned, heartbeatMs, deadline);
+      if (election === "won") {
+        break;
+      }
+      if (election === "deadline") {
+        return busy();
+      }
+      if (election === "retry") {
+        continue;
+      }
+      const remaining = remainingMilliseconds(deadline);
+      if (remaining <= 0) {
+        return busy();
+      }
+      await sleep(Math.min(RETRY_INTERVAL_MS, remaining));
     }
-    const reclaimed = tryReclaimStaleLease(directory, registryKey, heartbeatMs);
-    if (reclaimed) {
+
+    const heartbeat = (): void => {
+      if (!owned.active) {
+        return;
+      }
+      publishHeartbeat(registryPath, registryKey, owned, monotonicNow());
+    };
+    const timer = setInterval(heartbeat, heartbeatMs);
+    timer.unref();
+    try {
+      reviewerSessionLeaseTestHooks?.onEpochEvidenceRead?.();
+      const evidence = readReviewerSessionEpochEvidence(registryKey, { registryPath });
+      if (evidence.status !== "available") {
+        throw new Error("reviewer session epoch evidence is unavailable");
+      }
+      const value = await action({ epoch: evidence.epoch, heartbeat });
+      return { acquired: true, value };
+    } finally {
+      owned.active = false;
+      clearInterval(timer);
+    }
+  } finally {
+    owned.active = false;
+    try {
+      reviewerSessionLeaseTestHooks?.beforeRelease?.(owned.candidatePath);
+    } catch {
+      // Cleanup hooks cannot replace the action result.
+    }
+    releaseOwnedCandidate(owned);
+  }
+}
+
+function electCandidate(
+  registryPath: string,
+  registryKey: string,
+  owned: OwnedLease,
+  heartbeatMs: number,
+  deadline: bigint,
+): ElectionResult {
+  const choosing = scanChoosingMarkers(registryPath, registryKey);
+  if (!choosing) {
+    return "blocked";
+  }
+  for (const marker of choosing) {
+    const elapsed = monotonicElapsed(monotonicNow(), marker.createdMonotonicNs);
+    if (elapsed < millisecondsToNanoseconds(heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS)) {
+      return "blocked";
+    }
+    if (monotonicNow() > deadline) return "deadline";
+    const state = inspectOwnerProcess(
+      marker.metadata.pid,
+      marker.metadata.process_start_identity,
+      Math.max(0, remainingMilliseconds(deadline)),
+    );
+    if (monotonicNow() > deadline) return "deadline";
+    if (state.status !== "dead" && state.status !== "different") return "blocked";
+    reviewerSessionLeaseTestHooks?.beforeCandidateDelete?.(marker.filePath);
+    bestEffortUnlink(marker.filePath);
+    return "retry";
+  }
+  const scan = scanLeaseCandidates(registryPath, registryKey);
+  if (!scan) {
+    return "blocked";
+  }
+  for (const candidate of scan) {
+    if (candidate.metadata.owner_token === owned.ownerToken) {
       continue;
     }
-    const remaining = deadline - now();
-    if (remaining <= 0) {
-      return { acquired: false, reason: "busy" };
+    const elapsed = monotonicElapsed(monotonicNow(), candidate.heartbeatMonotonicNs);
+    if (elapsed < millisecondsToNanoseconds(heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS)) {
+      continue;
     }
-    await sleep(Math.min(RETRY_INTERVAL_MS, remaining));
+    if (monotonicNow() > deadline) {
+      return "deadline";
+    }
+    const remaining = Math.max(0, remainingMilliseconds(deadline));
+    const state = inspectOwnerProcess(
+      candidate.metadata.pid,
+      candidate.metadata.process_start_identity,
+      remaining,
+    );
+    if (monotonicNow() > deadline) {
+      return "deadline";
+    }
+    if (state.status !== "dead" && state.status !== "different") {
+      continue;
+    }
+    reviewerSessionLeaseTestHooks?.beforeCandidateDelete?.(candidate.filePath);
+    if (deleteUniqueCandidate(candidate)) {
+      return "retry";
+    }
+    return "retry";
   }
-
-  const heartbeat = (): void => {
-    try {
-      const instant = new Date(now());
-      futimesSync(owned!.descriptor, instant, instant);
-    } catch {
-      // A lost/reclaimed inode is intentionally not allowed to affect a successor.
-    }
-  };
-  const timer = setInterval(heartbeat, heartbeatMs);
-  timer.unref();
-  try {
-    reviewerSessionLeaseTestHooks?.onEpochEvidenceRead?.();
-    const evidence = readReviewerSessionEpochEvidence(registryKey, { registryPath });
-    if (evidence.status !== "available") {
-      throw new Error("reviewer session epoch evidence is unavailable");
-    }
-    const value = await action({ epoch: evidence.epoch, heartbeat });
-    return { acquired: true, value };
-  } finally {
-    clearInterval(timer);
-    try {
-      reviewerSessionLeaseTestHooks?.beforeRelease?.(owned.filePath);
-    } catch {
-      // Test hooks and cleanup cannot replace the action result.
-    }
-    releaseOwnedLease(owned);
+  const refreshed = scanLeaseCandidates(registryPath, registryKey);
+  if (!refreshed) {
+    return "blocked";
   }
+  const elected = [...refreshed].sort((left, right) => {
+    if (left.metadata.lease_ticket !== right.metadata.lease_ticket) {
+      return left.metadata.lease_ticket - right.metadata.lease_ticket;
+    }
+    return left.metadata.owner_token.localeCompare(right.metadata.owner_token);
+  })[0];
+  return elected?.metadata.owner_token === owned.ownerToken ? "won" : "blocked";
 }
 
-function ensureSafeRegistryDirectory(registryPath: string): string | undefined {
-  try {
-    try {
-      const existing = lstatSync(registryPath);
-      return existing.isDirectory() && safeModeAndOwner(existing, 0o700) ? registryPath : undefined;
-    } catch (error: unknown) {
-      if (!hasCode(error, "ENOENT")) {
-        return undefined;
-      }
-    }
-    mkdirSync(registryPath, { recursive: true, mode: 0o700 });
-    const created = lstatSync(registryPath);
-    return created.isDirectory() && safeModeAndOwner(created, 0o700) ? registryPath : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function tryPublishLease(
+function publishCandidate(
   registryPath: string,
   registryKey: string,
+  ownerToken: string,
   owner: ProcessOwner,
-): OwnedLease | undefined {
-  const filePath = leaseFilePath(registryPath, registryKey);
-  const temporaryPath = path.join(
-    registryPath,
-    `.${registryKey}.lease.${process.pid}.${randomBytes(12).toString("hex")}.tmp`,
-  );
-  let descriptor: number | undefined;
-  let publishedIdentity: FileIdentity | undefined;
-  try {
-    descriptor = openSync(temporaryPath, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
-    const heartbeatAt = now();
-    const metadata: LeaseMetadata = {
-      schema_version: 1,
-      registry_key: registryKey,
-      pid: owner.pid,
-      process_start_identity: owner.startIdentity,
-      owner_token: randomBytes(16).toString("hex"),
-      heartbeat_at_ms: heartbeatAt,
-    };
-    writeFully(descriptor, Buffer.from(`${JSON.stringify(metadata)}\n`, "utf-8"));
-    fsyncSync(descriptor);
-    const instant = new Date(heartbeatAt);
-    futimesSync(descriptor, instant, instant);
-    reviewerSessionLeaseTestHooks?.beforePublish?.(temporaryPath, filePath);
-    try {
-      linkSync(temporaryPath, filePath);
-    } catch (error: unknown) {
-      if (hasCode(error, "EEXIST")) {
-        closeSync(descriptor);
-        descriptor = undefined;
-        bestEffortUnlink(temporaryPath);
-        return undefined;
-      }
-      throw error;
-    }
-    const identity = fileIdentity(fstatSync(descriptor));
-    publishedIdentity = identity;
-    unlinkSync(temporaryPath);
-    syncDirectory(registryPath);
-    return { descriptor, identity, filePath };
-  } catch {
-    if (descriptor !== undefined) {
-      bestEffortClose(descriptor);
-    }
-    if (publishedIdentity !== undefined) {
-      try {
-        const published = lstatSync(filePath);
-        if (published.isFile() && sameFileIdentity(fileIdentity(published), publishedIdentity)) {
-          unlinkSync(filePath);
-        }
-      } catch {
-        // Best effort cleanup.
-      }
-    }
-    bestEffortUnlink(temporaryPath);
-    return undefined;
-  }
+  createdAt: bigint,
+  ticket: number,
+  candidatePath: string,
+): boolean {
+  const metadata: LeaseCandidateMetadata = {
+    schema_version: 1,
+    registry_key: registryKey,
+    pid: owner.pid,
+    process_start_identity: owner.startIdentity,
+    owner_token: ownerToken,
+    lease_ticket: ticket,
+    created_monotonic_ns: createdAt.toString(),
+    heartbeat_monotonic_ns: createdAt.toString(),
+  };
+  return atomicNoReplaceJson(registryPath, candidatePath, metadata, true);
 }
 
-function tryReclaimStaleLease(
+function publishChoosing(
   registryPath: string,
   registryKey: string,
-  heartbeatMs: number,
+  ownerToken: string,
+  owner: ProcessOwner,
+  createdAt: bigint,
+  choosingPath: string,
 ): boolean {
-  const filePath = leaseFilePath(registryPath, registryKey);
-  const initial = inspectLease(filePath, registryKey);
-  if (!initial || now() - initial.mtimeMs < heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS) {
-    return false;
+  const metadata: LeaseChoosingMetadata = {
+    schema_version: 1,
+    registry_key: registryKey,
+    pid: owner.pid,
+    process_start_identity: owner.startIdentity,
+    owner_token: ownerToken,
+    created_monotonic_ns: createdAt.toString(),
+  };
+  return atomicNoReplaceJson(registryPath, choosingPath, metadata, false);
+}
+
+function publishHeartbeat(
+  registryPath: string,
+  registryKey: string,
+  owned: OwnedLease,
+  tick: bigint,
+): void {
+  if (!owned.active || !existsRegularFile(owned.candidatePath)) {
+    return;
   }
-  const processState = inspectOwnerProcess(
-    initial.metadata.pid,
-    initial.metadata.process_start_identity,
+  const heartbeatPath = path.join(
+    registryPath,
+    `.${registryKey}.lease.${owned.ownerToken}.heartbeat.${randomBytes(12).toString("hex")}.json`,
   );
-  if (processState.status !== "dead" && processState.status !== "different") {
-    return false;
+  const metadata: LeaseHeartbeatMetadata = {
+    schema_version: 1,
+    registry_key: registryKey,
+    owner_token: owned.ownerToken,
+    heartbeat_monotonic_ns: tick.toString(),
+  };
+  if (!atomicNoReplaceJson(registryPath, heartbeatPath, metadata, false)) {
+    return;
   }
-  const current = inspectLease(filePath, registryKey);
-  if (
-    !current
-    || !sameFileIdentity(initial.identity, current.identity)
-    || current.mtimeMs !== initial.mtimeMs
-    || now() - current.mtimeMs < heartbeatMs * REVIEWER_SESSION_MISSED_HEARTBEATS
-  ) {
-    return false;
-  }
-  const revalidatedProcess = inspectOwnerProcess(
-    current.metadata.pid,
-    current.metadata.process_start_identity,
-  );
-  if (revalidatedProcess.status !== "dead" && revalidatedProcess.status !== "different") {
-    return false;
-  }
-  try {
-    const stat = lstatSync(filePath);
-    if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), current.identity)) {
-      return false;
+  owned.heartbeatPaths.add(heartbeatPath);
+  for (const oldPath of [...owned.heartbeatPaths]) {
+    if (oldPath !== heartbeatPath) {
+      bestEffortUnlink(oldPath);
+      owned.heartbeatPaths.delete(oldPath);
     }
-    unlinkSync(filePath);
-    syncDirectory(registryPath);
-    return true;
-  } catch {
-    return false;
   }
 }
 
-function inspectLease(filePath: string, registryKey: string): ExistingLease | undefined {
+function scanLeaseCandidates(registryPath: string, registryKey: string): LeaseCandidate[] | undefined {
+  let names: string[];
+  try {
+    names = readdirSync(registryPath);
+  } catch {
+    return undefined;
+  }
+  const candidatePattern = new RegExp(`^\\.${registryKey}\\.lease\\.([a-f0-9]{32})\\.json$`);
+  const heartbeatPattern = new RegExp(`^\\.${registryKey}\\.lease\\.([a-f0-9]{32})\\.heartbeat\\.([a-f0-9]{24})\\.json$`);
+  const heartbeatNames = new Map<string, string[]>();
+  for (const name of names) {
+    const match = heartbeatPattern.exec(name);
+    if (match) {
+      const paths = heartbeatNames.get(match[1]) ?? [];
+      paths.push(path.join(registryPath, name));
+      heartbeatNames.set(match[1], paths);
+    }
+  }
+  const candidates: LeaseCandidate[] = [];
+  for (const name of names) {
+    const match = candidatePattern.exec(name);
+    if (!match) continue;
+    const filePath = path.join(registryPath, name);
+    const metadata = readCandidate(filePath, registryKey, match[1]);
+    if (!metadata) return undefined;
+    let heartbeatMonotonicNs = BigInt(metadata.heartbeat_monotonic_ns);
+    const heartbeatPaths = heartbeatNames.get(match[1]) ?? [];
+    for (const heartbeatPath of heartbeatPaths) {
+      const heartbeat = readHeartbeat(heartbeatPath, registryKey, match[1]);
+      if (!heartbeat) return undefined;
+      const tick = BigInt(heartbeat.heartbeat_monotonic_ns);
+      if (tick > heartbeatMonotonicNs) heartbeatMonotonicNs = tick;
+    }
+    candidates.push({
+      filePath,
+      metadata,
+      createdMonotonicNs: BigInt(metadata.created_monotonic_ns),
+      heartbeatMonotonicNs,
+      heartbeatPaths,
+    });
+  }
+  return candidates;
+}
+
+function scanChoosingMarkers(registryPath: string, registryKey: string): LeaseChoosingMarker[] | undefined {
+  let names: string[];
+  try {
+    names = readdirSync(registryPath);
+  } catch {
+    return undefined;
+  }
+  const pattern = new RegExp(`^\\.${registryKey}\\.lease\\.([a-f0-9]{32})\\.choosing\\.json$`);
+  const markers: LeaseChoosingMarker[] = [];
+  for (const name of names) {
+    const match = pattern.exec(name);
+    if (!match) continue;
+    const filePath = path.join(registryPath, name);
+    const value = readSafeJson(filePath);
+    if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
+      "created_monotonic_ns", "owner_token", "pid", "process_start_identity", "registry_key", "schema_version",
+    ].sort().join(",")) return undefined;
+    if (
+      value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== match[1]
+      || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0
+      || !(value.process_start_identity === null || (typeof value.process_start_identity === "string" && value.process_start_identity.length > 0))
+      || typeof value.created_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.created_monotonic_ns)
+    ) return undefined;
+    const metadata = value as unknown as LeaseChoosingMetadata;
+    markers.push({ filePath, metadata, createdMonotonicNs: BigInt(metadata.created_monotonic_ns) });
+  }
+  return markers;
+}
+
+function readCandidate(filePath: string, registryKey: string, ownerToken: string): LeaseCandidateMetadata | undefined {
+  const value = readSafeJson(filePath);
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
+    "created_monotonic_ns", "heartbeat_monotonic_ns", "lease_ticket", "owner_token", "pid",
+    "process_start_identity", "registry_key", "schema_version",
+  ].sort().join(",")) return undefined;
+  if (
+    value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== ownerToken
+    || typeof value.pid !== "number" || !Number.isSafeInteger(value.pid) || value.pid <= 0
+    || typeof value.lease_ticket !== "number" || !Number.isSafeInteger(value.lease_ticket) || value.lease_ticket <= 0
+    || !(value.process_start_identity === null || (typeof value.process_start_identity === "string" && value.process_start_identity.length > 0))
+    || typeof value.created_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.created_monotonic_ns)
+    || typeof value.heartbeat_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.heartbeat_monotonic_ns)
+  ) return undefined;
+  return value as unknown as LeaseCandidateMetadata;
+}
+
+function readHeartbeat(filePath: string, registryKey: string, ownerToken: string): LeaseHeartbeatMetadata | undefined {
+  const value = readSafeJson(filePath);
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== [
+    "heartbeat_monotonic_ns", "owner_token", "registry_key", "schema_version",
+  ].sort().join(",")) return undefined;
+  if (
+    value.schema_version !== 1 || value.registry_key !== registryKey || value.owner_token !== ownerToken
+    || typeof value.heartbeat_monotonic_ns !== "string" || !MONOTONIC_PATTERN.test(value.heartbeat_monotonic_ns)
+  ) return undefined;
+  return value as unknown as LeaseHeartbeatMetadata;
+}
+
+function readSafeJson(filePath: string): unknown {
   let descriptor: number | undefined;
   try {
     const initial = lstatSync(filePath);
-    if (!initial.isFile() || !safeModeAndOwner(initial, 0o600)) {
-      return undefined;
-    }
-    const identity = fileIdentity(initial);
+    if (!initial.isFile() || !safeModeAndOwner(initial, 0o600)) return undefined;
     descriptor = openSync(filePath, constants.O_RDONLY | noFollowFlag());
     const opened = fstatSync(descriptor);
-    if (!opened.isFile() || !sameFileIdentity(identity, fileIdentity(opened)) || !safeModeAndOwner(opened, 0o600)) {
+    if (!opened.isFile() || opened.dev !== initial.dev || opened.ino !== initial.ino || !safeModeAndOwner(opened, 0o600)) {
       return undefined;
     }
-    const value: unknown = JSON.parse(readFileSync(descriptor, "utf-8"));
-    const metadata = parseLeaseMetadata(value, registryKey);
-    return metadata ? { identity, metadata, mtimeMs: opened.mtimeMs } : undefined;
+    return JSON.parse(readFileSync(descriptor, "utf-8"));
   } catch {
     return undefined;
   } finally {
-    if (descriptor !== undefined) {
-      bestEffortClose(descriptor);
-    }
+    if (descriptor !== undefined) bestEffortClose(descriptor);
   }
 }
 
-function parseLeaseMetadata(value: unknown, registryKey: string): LeaseMetadata | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
+function deleteUniqueCandidate(candidate: LeaseCandidate): boolean {
+  let removed = false;
+  try {
+    unlinkSync(candidate.filePath);
+    removed = true;
+  } catch {
+    // Another reclaimer may already have removed this unique owner path.
   }
-  const record = value as Record<string, unknown>;
-  if (Object.keys(record).sort().join(",") !== [
-    "heartbeat_at_ms",
-    "owner_token",
-    "pid",
-    "process_start_identity",
-    "registry_key",
-    "schema_version",
-  ].join(",")) {
-    return undefined;
-  }
-  if (
-    record.schema_version !== 1
-    || record.registry_key !== registryKey
-    || typeof record.pid !== "number"
-    || !Number.isSafeInteger(record.pid)
-    || record.pid <= 0
-    || typeof record.process_start_identity !== "string"
-    || record.process_start_identity.length === 0
-    || typeof record.owner_token !== "string"
-    || !OWNER_TOKEN_PATTERN.test(record.owner_token)
-    || typeof record.heartbeat_at_ms !== "number"
-    || !Number.isFinite(record.heartbeat_at_ms)
-  ) {
-    return undefined;
-  }
-  return record as unknown as LeaseMetadata;
+  for (const heartbeatPath of candidate.heartbeatPaths) bestEffortUnlink(heartbeatPath);
+  return removed;
 }
 
-function currentProcessOwner(): ProcessOwner | undefined {
-  const startIdentity = platformProcessStartIdentity(process.pid);
-  return startIdentity ? { pid: process.pid, startIdentity } : undefined;
+function releaseOwnedCandidate(owned: OwnedLease): void {
+  bestEffortUnlink(owned.candidatePath);
+  for (const heartbeatPath of owned.heartbeatPaths) bestEffortUnlink(heartbeatPath);
 }
 
-function inspectOwnerProcess(pid: number, expectedStartIdentity: string): ProcessInspection {
+function atomicNoReplaceJson(
+  registryPath: string,
+  publishedPath: string,
+  value: object,
+  notifyBeforePublish: boolean,
+): boolean {
+  const temporaryPath = path.join(registryPath, `.${path.basename(publishedPath)}.${process.pid}.${randomBytes(12).toString("hex")}.tmp`);
+  let descriptor: number | undefined;
+  let published = false;
+  try {
+    descriptor = openSync(temporaryPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    writeFully(descriptor, Buffer.from(`${JSON.stringify(value)}\n`, "utf-8"));
+    fsyncSync(descriptor);
+    if (notifyBeforePublish) reviewerSessionLeaseTestHooks?.beforePublish?.(temporaryPath, publishedPath);
+    linkSync(temporaryPath, publishedPath);
+    published = true;
+    unlinkSync(temporaryPath);
+    syncDirectory(registryPath);
+    return true;
+  } catch {
+    if (published) bestEffortUnlink(publishedPath);
+    bestEffortUnlink(temporaryPath);
+    return false;
+  } finally {
+    if (descriptor !== undefined) bestEffortClose(descriptor);
+  }
+}
+
+function currentProcessOwner(): ProcessOwner {
+  const startIdentity = process.platform === "linux"
+    ? linuxProcessStartIdentity(process.pid)
+    : null;
+  return { pid: process.pid, startIdentity };
+}
+
+function inspectOwnerProcess(pid: number, expectedStartIdentity: string | null, remainingMs: number): ProcessInspection {
   if (reviewerSessionLeaseTestHooks?.inspectProcess) {
-    return reviewerSessionLeaseTestHooks.inspectProcess(pid, expectedStartIdentity);
+    return reviewerSessionLeaseTestHooks.inspectProcess(pid, expectedStartIdentity, remainingMs);
   }
-  if (!pidExists(pid)) {
-    return { status: "dead" };
+  return inspectReviewerSessionLeaseProcessForTest(pid, expectedStartIdentity, { remainingMs });
+}
+
+export function inspectReviewerSessionLeaseProcessForTest(
+  pid: number,
+  expectedStartIdentity: string | null,
+  options: {
+    platform?: NodeJS.Platform;
+    remainingMs: number;
+    killProbe?: (pid: number) => "alive" | "dead" | "unknown";
+    readLinuxStat?: (pid: number) => string;
+    execFile?: (file: string, args: string[], timeoutMs: number) => string;
+  },
+): ProcessInspection {
+  const killProbe = options.killProbe ?? defaultKillProbe;
+  const existence = killProbe(pid);
+  if (existence === "dead") return { status: "dead" };
+  if (existence !== "alive") return { status: "unknown" };
+  const platform = options.platform ?? process.platform;
+  if (platform === "linux") {
+    if (expectedStartIdentity === null) return { status: "unknown" };
+    let actual: string | undefined;
+    try {
+      const stat = options.readLinuxStat?.(pid) ?? readFileSync(`/proc/${pid}/stat`, "utf-8");
+      actual = parseLinuxProcessStartIdentityForTest(stat);
+    } catch {
+      return killProbe(pid) === "dead" ? { status: "dead" } : { status: "unknown" };
+    }
+    if (!actual) return { status: "unknown" };
+    return actual === expectedStartIdentity
+      ? { status: "same" }
+      : { status: "different", actualStartIdentity: actual };
   }
-  const actualStartIdentity = platformProcessStartIdentity(pid);
-  if (!actualStartIdentity) {
+  if (platform === "darwin") {
+    if (options.remainingMs <= 0) return { status: "unknown" };
+    const timeoutMs = Math.max(1, Math.min(Math.ceil(options.remainingMs), 1_000));
+    try {
+      const output = options.execFile
+        ? options.execFile("/bin/ps", ["-p", String(pid), "-o", "pid="], timeoutMs)
+        : execFileSync("/bin/ps", ["-p", String(pid), "-o", "pid="], {
+          encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: timeoutMs,
+        });
+      if (output.trim().length === 0 && killProbe(pid) === "dead") return { status: "dead" };
+    } catch {
+      if (killProbe(pid) === "dead") return { status: "dead" };
+    }
     return { status: "unknown" };
   }
-  return actualStartIdentity === expectedStartIdentity
-    ? { status: "same" }
-    : { status: "different", actualStartIdentity };
+  return { status: "unknown" };
 }
 
-function pidExists(pid: number): boolean {
+export function parseLinuxProcessStartIdentityForTest(stat: string): string | undefined {
+  const closeParen = stat.lastIndexOf(")");
+  if (closeParen === -1) return undefined;
+  const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
+  const startTicks = fields[19];
+  return startTicks && /^[0-9]+$/.test(startTicks) ? `linux-proc-start:${startTicks}` : undefined;
+}
+
+function linuxProcessStartIdentity(pid: number): string | null {
+  try {
+    return parseLinuxProcessStartIdentityForTest(readFileSync(`/proc/${pid}/stat`, "utf-8")) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultKillProbe(pid: number): "alive" | "dead" | "unknown" {
   try {
     process.kill(pid, 0);
-    return true;
+    return "alive";
   } catch (error: unknown) {
-    return !hasCode(error, "ESRCH");
+    if (hasCode(error, "ESRCH")) return "dead";
+    return "unknown";
   }
 }
 
-function platformProcessStartIdentity(pid: number): string | undefined {
-  if (process.platform === "linux") {
-    try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
-      const closeParen = stat.lastIndexOf(")");
-      if (closeParen === -1) {
-        return undefined;
-      }
-      const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
-      const startTicks = fields[19];
-      return startTicks && /^[0-9]+$/.test(startTicks) ? `linux-proc-start:${startTicks}` : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  if (process.platform === "darwin") {
-    try {
-      const output = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 1_000,
-      }).trim().replace(/\s+/g, " ");
-      return output.length > 0 ? `darwin-ps-lstart:${output}` : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-function releaseOwnedLease(owned: OwnedLease): void {
+function ensureSafeRegistryDirectory(registryPath: string): boolean {
   try {
-    const stat = lstatSync(owned.filePath);
-    if (stat.isFile() && sameFileIdentity(fileIdentity(stat), owned.identity)) {
-      unlinkSync(owned.filePath);
-      syncDirectory(path.dirname(owned.filePath));
+    try {
+      const existing = lstatSync(registryPath);
+      return existing.isDirectory() && safeModeAndOwner(existing, 0o700);
+    } catch (error: unknown) {
+      if (!hasCode(error, "ENOENT")) return false;
     }
+    mkdirSync(registryPath, { recursive: true, mode: 0o700 });
+    const created = lstatSync(registryPath);
+    return created.isDirectory() && safeModeAndOwner(created, 0o700);
   } catch {
-    // Cleanup must not replace a successful action or its primary error.
-  } finally {
-    bestEffortClose(owned.descriptor);
+    return false;
   }
 }
 
-function leaseFilePath(registryPath: string, registryKey: string): string {
-  return path.join(registryPath, `.${registryKey}.lease`);
+function existsRegularFile(filePath: string): boolean {
+  try {
+    const stat = lstatSync(filePath);
+    return stat.isFile() && safeModeAndOwner(stat, 0o600);
+  } catch {
+    return false;
+  }
 }
 
-function now(): number {
-  return reviewerSessionLeaseTestHooks?.now?.() ?? Date.now();
+function monotonicNow(): bigint {
+  return reviewerSessionLeaseTestHooks?.monotonicNow?.() ?? process.hrtime.bigint();
+}
+
+function monotonicElapsed(now: bigint, heartbeat: bigint): bigint {
+  return now > heartbeat ? now - heartbeat : 0n;
+}
+
+function remainingMilliseconds(deadline: bigint): number {
+  const remaining = deadline - monotonicNow();
+  if (remaining <= 0n) return 0;
+  return Number((remaining + NANOSECONDS_PER_MILLISECOND - 1n) / NANOSECONDS_PER_MILLISECOND);
+}
+
+function millisecondsToNanoseconds(milliseconds: number): bigint {
+  return BigInt(Math.ceil(milliseconds * 1_000_000));
 }
 
 function sleep(milliseconds: number): Promise<void> {
-  if (reviewerSessionLeaseTestHooks?.sleep) {
-    return reviewerSessionLeaseTestHooks.sleep(milliseconds);
-  }
+  if (reviewerSessionLeaseTestHooks?.sleep) return reviewerSessionLeaseTestHooks.sleep(milliseconds);
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function boundedMilliseconds(
-  value: number | undefined,
-  fallback: number,
-  label: string,
-  requirePositive = false,
-): number {
+function boundedMilliseconds(value: number | undefined, fallback: number, label: string, positive = false): number {
   const normalized = value ?? fallback;
-  if (!Number.isFinite(normalized) || normalized < 0 || (requirePositive && normalized === 0)) {
-    throw new Error(`${label} must be ${requirePositive ? "positive" : "non-negative"} finite`);
+  if (!Number.isFinite(normalized) || normalized < 0 || (positive && normalized === 0)) {
+    throw new Error(`${label} must be ${positive ? "positive" : "non-negative"} finite`);
   }
   return normalized;
 }
@@ -458,9 +668,7 @@ function writeFully(descriptor: number, data: Buffer): void {
   let offset = 0;
   while (offset < data.length) {
     const written = writeSync(descriptor, data, offset, data.length - offset, offset);
-    if (written <= 0) {
-      throw new Error("unable to write reviewer session lease");
-    }
+    if (written <= 0) throw new Error("unable to write reviewer session lease");
     offset += written;
   }
 }
@@ -471,13 +679,9 @@ function syncDirectory(directory: string): void {
     descriptor = openSync(directory, constants.O_RDONLY);
     fsyncSync(descriptor);
   } catch (error: unknown) {
-    if (!["EINVAL", "ENOTSUP", "ENOSYS", "EISDIR"].some((code) => hasCode(error, code))) {
-      throw error;
-    }
+    if (!["EINVAL", "ENOTSUP", "ENOSYS", "EISDIR"].some((code) => hasCode(error, code))) throw error;
   } finally {
-    if (descriptor !== undefined) {
-      bestEffortClose(descriptor);
-    }
+    if (descriptor !== undefined) bestEffortClose(descriptor);
   }
 }
 
@@ -490,36 +694,36 @@ function safeModeAndOwner(stat: { mode: number; uid: number }, mode: number): bo
   return (stat.mode & 0o777) === mode && (typeof getuid !== "function" || stat.uid === getuid.call(process));
 }
 
-function fileIdentity(stat: { dev: number | bigint; ino: number | bigint }): FileIdentity {
-  return { device: stat.dev, inode: stat.ino };
-}
-
-function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
-  return left.device === right.device && left.inode === right.inode;
-}
-
 function assertRegistryKey(key: string): void {
-  if (!REGISTRY_KEY_PATTERN.test(key)) {
-    throw new Error("reviewer session registry key is invalid");
-  }
+  if (!REGISTRY_KEY_PATTERN.test(key)) throw new Error("reviewer session registry key is invalid");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function bestEffortClose(descriptor: number): void {
-  try {
-    closeSync(descriptor);
-  } catch {
-    // Best effort cleanup.
-  }
+  try { closeSync(descriptor); } catch { /* cleanup */ }
 }
 
 function bestEffortUnlink(filePath: string): void {
-  try {
-    unlinkSync(filePath);
-  } catch {
-    // Best effort cleanup.
-  }
+  try { unlinkSync(filePath); } catch { /* cleanup */ }
 }
 
 function hasCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === code;
+}
+
+function leaseCandidatePath(registryPath: string, registryKey: string, ownerToken: string): string {
+  if (!OWNER_TOKEN_PATTERN.test(ownerToken)) throw new Error("reviewer session lease owner token is invalid");
+  return path.join(registryPath, `.${registryKey}.lease.${ownerToken}.json`);
+}
+
+function leaseChoosingPath(registryPath: string, registryKey: string, ownerToken: string): string {
+  if (!OWNER_TOKEN_PATTERN.test(ownerToken)) throw new Error("reviewer session lease owner token is invalid");
+  return path.join(registryPath, `.${registryKey}.lease.${ownerToken}.choosing.json`);
+}
+
+function busy(): { acquired: false; reason: "busy" } {
+  return { acquired: false, reason: "busy" };
 }

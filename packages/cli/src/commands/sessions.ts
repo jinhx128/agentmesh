@@ -13,6 +13,10 @@ import { HOST_KINDS } from "@agentmesh/runtime/src/reviewer-sessions/scope.js";
 const SESSION_REF_PATTERN = /^rs-[a-f0-9]{16}$/;
 const SCOPE_REF_PATTERN = /^cs-[a-f0-9]{16}$/;
 const CREATABLE_HOSTS: Set<string> = new Set(HOST_KINDS.filter((host) => host !== "unknown"));
+const SAFE_HOSTS: Set<string> = new Set(HOST_KINDS);
+const SAFE_MODES = new Set(["auto", "interactive_continuous", "independent"]);
+const REVIEWER_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const SENSITIVE_REVIEWER_PATTERN = /(?:secret|token|provider[-_.]?session|native[-_.]?id|session[-_.]?id)/i;
 
 export function sessionsCommand(args: string[]): number {
   const [subcommand, ...rest] = args;
@@ -63,11 +67,15 @@ function sessionsList(args: string[]): number {
     console.error("reviewer session registry is unavailable");
     return 1;
   }
+  const sessions = result.sessions.flatMap((session) => {
+    const projected = safeCliSummary(session);
+    return projected ? [projected] : [];
+  });
   if (parsed.flags.has("--json")) {
-    console.log(JSON.stringify({ schema_version: 1, sessions: result.sessions }, null, 2));
+    console.log(JSON.stringify({ schema_version: 1, sessions }, null, 2));
     return 0;
   }
-  for (const session of result.sessions) {
+  for (const session of sessions) {
     console.log(formatSummary(session));
   }
   return 0;
@@ -93,10 +101,15 @@ function sessionsInspect(args: string[]): number {
     console.error("reviewer session registry is unavailable");
     return 1;
   }
+  const session = safeCliSummary(result.session);
+  if (!session) {
+    console.error("reviewer session registry is unavailable");
+    return 1;
+  }
   if (parsed.flags.has("--json")) {
-    console.log(JSON.stringify({ schema_version: 1, session: result.session }, null, 2));
+    console.log(JSON.stringify({ schema_version: 1, session }, null, 2));
   } else {
-    console.log(formatSummary(result.session));
+    console.log(formatSummary(session));
   }
   return 0;
 }
@@ -121,8 +134,8 @@ function sessionsClose(args: string[]): number {
     ? closeReviewerSessionScope(scopeRef)
     : closeReviewerSessionReference(sessionRef as string);
   if (result.status === "not_found") {
-    // A well-formed absent reference is an idempotent no-op.
-    return printCloseResult(0, parsed.flags.has("--json"));
+    console.error(scopeRef === undefined ? "reviewer session not found" : "reviewer session scope not found");
+    return 1;
   }
   if (result.status === "ambiguous") {
     console.error("reviewer session reference is ambiguous");
@@ -170,6 +183,33 @@ function formatSummary(session: ReviewerSessionSafeSummary): string {
     `last_used=${session.last_used_at}`,
     `expires=${session.expires_at}`,
   ].join("\t");
+}
+
+function safeCliSummary(session: ReviewerSessionSafeSummary): ReviewerSessionSafeSummary | undefined {
+  if (
+    !SESSION_REF_PATTERN.test(session.session_ref)
+    || !Number.isSafeInteger(session.epoch) || session.epoch < 0
+    || !Number.isSafeInteger(session.resume_count) || session.resume_count < 0
+    || ![session.created_at, session.last_used_at, session.expires_at].every((value) => Number.isFinite(Date.parse(value)))
+    || (session.scope_ref !== undefined && !SCOPE_REF_PATTERN.test(session.scope_ref))
+    || (session.host !== undefined && !SAFE_HOSTS.has(session.host))
+    || (session.mode !== undefined && !SAFE_MODES.has(session.mode))
+    || (session.reviewer !== undefined && (
+      !REVIEWER_PATTERN.test(session.reviewer) || SENSITIVE_REVIEWER_PATTERN.test(session.reviewer)
+    ))
+  ) return undefined;
+  return {
+    session_ref: session.session_ref,
+    created_at: session.created_at,
+    last_used_at: session.last_used_at,
+    expires_at: session.expires_at,
+    epoch: session.epoch,
+    resume_count: session.resume_count,
+    ...(session.scope_ref === undefined ? {} : { scope_ref: session.scope_ref }),
+    ...(session.host === undefined ? {} : { host: session.host }),
+    ...(session.reviewer === undefined ? {} : { reviewer: session.reviewer }),
+    ...(session.mode === undefined ? {} : { mode: session.mode }),
+  };
 }
 
 function printCloseResult(closed: number, json: boolean): number {

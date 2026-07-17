@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 import {
   reviewerSessionInvocationFingerprint,
   reviewerSessionRef,
+  readReviewerSession,
   sessionRegistryKey,
   upsertReviewerSession,
 } from "../packages/runtime/src/reviewer-sessions/registry.js";
@@ -18,7 +19,12 @@ function registryPath(workspace: string): string {
   return path.join(workspace, ".home", ".config", "agentmesh", "reviewer-sessions");
 }
 
-function seedSession(workspace: string, overrides: { scopeRef?: string; reviewerId?: string; now?: string } = {}) {
+function seedSession(workspace: string, overrides: {
+  scopeRef?: string;
+  reviewerId?: string;
+  now?: string;
+  summaryOverride?: Partial<{ scopeRef: string; hostKind: string; reviewerId: string; mode: string }>;
+} = {}) {
   const invocation = {
     command: "provider",
     args: ["review"],
@@ -53,6 +59,7 @@ function seedSession(workspace: string, overrides: { scopeRef?: string; reviewer
       hostKind: "codex",
       reviewerId,
       mode: "interactive_continuous",
+      ...overrides.summaryOverride,
     },
   }, { registryPath: registryPath(workspace), now: overrides.now ?? "2026-07-17T00:00:00.000Z" });
   assert.equal(result.status, "written");
@@ -120,6 +127,80 @@ test("sessions close by ref and scope is idempotent and epoch-safe", () => {
   const missing = runCli(workspace, ["sessions", "inspect", second.sessionRef, "--json"]);
   assert.equal(missing.status, 1);
   assert.equal(missing.stderr.trim(), "reviewer session not found");
+
+  const managementFiles = readdirSync(registryPath(workspace)).filter((name) => name.includes("management"));
+  assert.ok(managementFiles.length >= 2);
+  const management = managementFiles.map((name) => readFileSync(path.join(registryPath(workspace), name), "utf-8")).join("\n");
+  assert.doesNotMatch(management, new RegExp(SECRET));
+  assert.doesNotMatch(management, /rk-[a-f0-9]{32}|provider_session_id|native_id/);
+});
+
+test("sessions close distinguishes never-seen references and scopes from idempotent retries", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  const unknownRef = runCli(workspace, ["sessions", "close", "rs-aaaaaaaaaaaaaaaa", "--json"]);
+  assert.equal(unknownRef.status, 1);
+  assert.equal(unknownRef.stderr.trim(), "reviewer session not found");
+  const unknownScope = runCli(workspace, ["sessions", "close", "--scope", "cs-aaaaaaaaaaaaaaaa", "--json"]);
+  assert.equal(unknownScope.status, 1);
+  assert.equal(unknownScope.stderr.trim(), "reviewer session scope not found");
+
+  const seeded = seedSession(workspace);
+  assert.equal(runCli(workspace, ["sessions", "close", seeded.sessionRef]).status, 0);
+  const refRetry = runCli(workspace, ["sessions", "close", seeded.sessionRef, "--json"]);
+  assert.equal(refRetry.status, 0, refRetry.stderr);
+  assert.equal((JSON.parse(refRetry.stdout) as { closed: number }).closed, 0);
+  const scopeRetry = runCli(workspace, ["sessions", "close", "--scope", SCOPE, "--json"]);
+  assert.equal(scopeRetry.status, 0, scopeRetry.stderr);
+  assert.equal((JSON.parse(scopeRetry.stdout) as { closed: number }).closed, 0);
+});
+
+test("scope close never falls back to old entries without safe scope metadata", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const invocation = {
+    command: "provider", args: ["review"], capabilities: ["resume"], permissionMode: "read-only",
+    contextMode: "packet", reviewerPersonaVersion: "v1", promptSchemaVersion: "v1",
+    adapterPluginVersion: "v1", providerCliVersion: "v1", environmentVariableNames: ["PATH"],
+  };
+  const key = sessionRegistryKey({
+    conversationScopeRef: SCOPE, workspaceId: "ws-2222222222222222", worktreeId: "wt-3333333333333333",
+    agentId: "legacy-reviewer", adapterId: "provider", model: "review-model", reasoningEffort: "high", invocation,
+  });
+  const created = upsertReviewerSession({
+    key, sessionRef: reviewerSessionRef(key), providerSessionId: SECRET,
+    invocationFingerprint: reviewerSessionInvocationFingerprint(invocation),
+  }, { registryPath: registryPath(workspace) });
+  assert.equal(created.status, "written");
+
+  const result = runCli(workspace, ["sessions", "close", "--scope", SCOPE]);
+  assert.equal(result.status, 1);
+  assert.equal(readReviewerSession(key, { registryPath: registryPath(workspace) }).status, "available");
+});
+
+test("safe summary rejects open-ended host mode reviewer and CLI re-projects persisted fields", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const invalidValues = [
+    { hostKind: "codex\nINJECT" },
+    { mode: "resume-everything" },
+    { reviewerId: "provider-session-secret" },
+  ];
+  for (const [index, summaryOverride] of invalidValues.entries()) {
+    assert.throws(
+      () => seedSession(workspace, { reviewerId: `reviewer-${index}`, summaryOverride }),
+      /reviewer session summary is invalid/,
+    );
+  }
+
+  const seeded = seedSession(workspace);
+  const entryPath = path.join(registryPath(workspace), `${seeded.key}.json`);
+  const entry = JSON.parse(readFileSync(entryPath, "utf-8"));
+  writeFileSync(entryPath, JSON.stringify({ ...entry, host_kind: "codex\nINJECT" }), { mode: 0o600 });
+  const listed = runCli(workspace, ["sessions", "list", "--json"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.doesNotMatch(listed.stdout + listed.stderr, /INJECT/);
 });
 
 test("sessions purge removes only expired, exhausted, or corrupt safe candidates", () => {

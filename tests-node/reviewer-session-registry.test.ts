@@ -237,11 +237,16 @@ test("new registry state is user-only and provider identity is confined to the e
     assert.equal(result.status, "written");
 
     const files = readdirSync(registryPath);
-    assert.deepEqual(files.sort(), [`${ids.key}.epoch.json`, `${ids.key}.json`].sort());
+    const managementFile = `.reviewer-session-management.${ids.sessionRef}.json`;
+    assert.deepEqual(files.sort(), [managementFile, `${ids.key}.epoch.json`, `${ids.key}.json`].sort());
     const entryPath = path.join(registryPath, `${ids.key}.json`);
     assert.equal(statSync(registryPath).mode & 0o777, 0o700);
     assert.equal(statSync(entryPath).mode & 0o777, 0o600);
     assert.equal(readFileSync(entryPath, "utf-8").includes(providerId), true);
+    const management = readFileSync(path.join(registryPath, managementFile), "utf-8");
+    assert.equal(statSync(path.join(registryPath, managementFile)).mode & 0o777, 0o600);
+    assert.equal(management.includes(providerId), false);
+    assert.doesNotMatch(management, /rk-[a-f0-9]{32}|provider_session_id|native_id/);
     assert.equal(files.join("\n").includes(providerId), false);
     assert.equal(JSON.stringify({ key: ids.key, session_ref: ids.sessionRef }).includes(providerId), false);
   } finally {
