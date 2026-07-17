@@ -460,14 +460,26 @@
 - Modify: `packages/runtime/src/adapters/provider-cli-diagnostics.ts`
 - Test: `tests-node/adapter-invocation.test.ts`
 - Test: `tests-node/readiness.test.ts`
-- Fixture: `tests-node/fixtures/adapters/session/codex-cli/`, `claude-code-cli/`, `cursor-agent/`, `antigravity-cli/`, `opencode-cli/`
+- Fixture: `tests-node/fixtures/adapters/session/claude-code-cli/`, `opencode-cli/`
 
 **Interfaces:**
 - Consumes: P0 matrix 的结构化字段和 command shape；P3.1 contract。
 - Produces: 每个 verified adapter 的 session builder/parser；其余 fresh-only。
 
-- [ ] 为矩阵中每个 experimental adapter 保存脱敏结构化 fixture，session 值统一替换为 `session-test-123`。
-- [ ] 先写 parser/command failing tests，再实现 P0 已验证的 exact event/field；没有稳定字段的 adapter 明确返回 capability false。
+- **P0 校准记录（2026-07-17，唯一 provider 能力事实源：`docs/diagnostics/reviewer-session-capability-matrix.md`）：** V1 enabled/experimental adapter 仅为 `claude-code-cli`（parser input field：`session_id`）和 `opencode-cli`（parser input field：`sessionID`）。仅这两个 adapter 可新增 V1 session parser、脱敏 fixture 与 resume command builder。
+
+  | Adapter | V1 状态 | 已观测字段 | 未达到显式 resume 证据门槛的原因 |
+  | --- | --- | --- | --- |
+  | `codex-cli` | `fresh-only` | `thread_id` | 本次结构化 start 未成功，实际/伪 ID resume 均未形成精确回复闭环。 |
+  | `cursor-agent` | `fresh-only` | `session_id` | 伪 ID 与实际 ID 同样被接受并回显，不能证明会话连续性。 |
+  | `antigravity-cli` | `fresh-only` | `none` | 未取得结构化 ID，start 与伪 ID conversation 调用均未形成可用闭环。 |
+
+  上述三者不得安排 V1 session parser、fixture 或 resume command builder；其 capability 必须保持 false，并继续使用现有 fresh invocation。
+
+- **P1–P5 可执行性校准：** P1 的通用 capability/policy 契约与 P2 的 scope/registry/lease 均不依赖 provider resume，仍可执行；P3.1 的通用 fake CLI contract、P3.3 的 capability-false fresh fallback 和 P3.4 的 provenance 传播仍可执行，P3.2 仅实现上述两个 enabled adapter；P4 的五宿主 scope 续传不复制 provider session ID，正式 gate 仍为 `independent`，无需因 enablement 缩减；P5.1 继续说明三者 fresh-only，P5.2 的 fresh/reuse A/B 仅对两个 enabled adapter 执行。除本 P3.2 的 fixture 范围与明确 adapter 清单外，不需要改动后续任务。
+
+- [ ] 仅为 `claude-code-cli` 与 `opencode-cli` 保存脱敏结构化 fixture，session 值统一替换为 `session-test-123`。
+- [ ] 先写 parser/command failing tests，再实现上述两个 adapter 的 P0 已验证 exact event/field；`codex-cli`、`cursor-agent`、`antigravity-cli` 明确返回 capability false。
 - [ ] Readiness 输出 adapter/version 的 `supports_resume` 和 `supports_structured_session_id`，不执行真实 resume。
 - [ ] Run: `npm run build:node && node --test dist-node/tests-node/adapter-invocation.test.js dist-node/tests-node/readiness.test.js && git diff --check`; Expected: PASS。
 
