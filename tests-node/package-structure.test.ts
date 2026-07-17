@@ -681,6 +681,40 @@ test("studio desktop distribution decision chooses host and updater policy", () 
   }
 });
 
+test("studio desktop distribution explicitly permits native preferences commands", () => {
+  const tauriRoot = path.join(process.cwd(), "apps", "studio-desktop", "src-tauri");
+  const rustSource = readFileSync(path.join(tauriRoot, "src", "lib.rs"), "utf-8");
+  const handlerCommands = rustSource.match(
+    /invoke_handler\(tauri::generate_handler!\[([\s\S]*?)\]\)/,
+  )?.[1];
+  assert.ok(handlerCommands, "the Tauri invoke handler must be registered");
+  assert.match(handlerCommands, /\bget_desktop_preferences\b/);
+  assert.match(handlerCommands, /\bset_desktop_preferences\b/);
+
+  const permissionPath = path.join(tauriRoot, "permissions", "desktop-preferences.toml");
+  assert.equal(existsSync(permissionPath), true, "the app command permission manifest must exist");
+  const permissionSource = readFileSync(permissionPath, "utf-8");
+  assert.match(permissionSource, /identifier\s*=\s*"allow-desktop-preferences"/);
+  const allowedCommands = permissionSource
+    .match(/commands\.allow\s*=\s*\[([^\]]*)\]/)?.[1]
+    .match(/"[^"]+"/g)
+    ?.map((value) => JSON.parse(value))
+    .sort();
+  assert.deepEqual(allowedCommands, ["get_desktop_preferences", "set_desktop_preferences"]);
+  assert.doesNotMatch(permissionSource, /\b(?:scope|commands\.deny)\b/);
+
+  const capability = JSON.parse(
+    readFileSync(path.join(tauriRoot, "capabilities", "default.json"), "utf-8"),
+  ) as {
+    remote?: { urls?: string[] };
+    permissions?: string[];
+  };
+  assert.deepEqual(capability.remote?.urls, ["http://127.0.0.1:*"]);
+  assert.ok(capability.permissions?.includes("allow-desktop-preferences"));
+  assert.ok(capability.permissions?.includes("updater:default"));
+  assert.ok(capability.permissions?.includes("process:allow-restart"));
+});
+
 test("studio distribution coexistence smoke evidence covers app and CLI channels", () => {
   const evidence = readFileSync(
     path.join(process.cwd(), "docs", "distribution", "studio-coexistence-smoke.md"),

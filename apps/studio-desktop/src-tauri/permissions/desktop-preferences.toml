@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-preferences"
+description = "Allows the AgentMesh desktop shell to read and update its native preferences."
+commands.allow = ["get_desktop_preferences", "set_desktop_preferences"]

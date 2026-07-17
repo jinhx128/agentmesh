@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Main AgentMesh window. Only bundled local content and the loopback App Server origin may invoke the signed updater and restart the app; neither receives filesystem or shell command permissions.",
+  "description": "Main AgentMesh window. Only bundled local content and the loopback App Server origin may invoke native desktop preferences, the signed updater, and app restart; neither receives filesystem or shell command permissions.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
   },
   "permissions": [
     "core:default",
+    "allow-desktop-preferences",
     "updater:default",
     "process:allow-restart"
   ]
