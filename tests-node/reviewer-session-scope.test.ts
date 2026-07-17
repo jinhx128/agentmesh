@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { lstatSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import { resolveHostScope } from "../packages/runtime/src/reviewer-sessions/scope.js";
 
@@ -20,6 +21,40 @@ function makeRepository(): string {
 
 function scopeKeyPath(parent: string): string {
   return path.join(parent, ".config", "agentmesh", "reviewer-session-scope.key");
+}
+
+function resolveInSeparateProcess(repository: string, keyPath: string): Promise<string> {
+  const moduleUrl = pathToFileURL(
+    path.join(process.cwd(), "dist-node", "packages", "runtime", "src", "reviewer-sessions", "scope.js"),
+  ).href;
+  const program = [
+    `const { resolveHostScope } = await import(${JSON.stringify(moduleUrl)});`,
+    "const resolved = resolveHostScope({ hostKind: 'codex', nativeConversationId: process.env.AGENTMESH_TEST_NATIVE_ID }, process.env.AGENTMESH_TEST_REPOSITORY, { hmacKeyPath: process.env.AGENTMESH_TEST_KEY_PATH });",
+    "process.stdout.write(resolved.conversation_scope_ref ?? '');",
+  ].join("\n");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", program], {
+      env: {
+        ...process.env,
+        AGENTMESH_TEST_KEY_PATH: keyPath,
+        AGENTMESH_TEST_NATIVE_ID: "concurrent-test-native-id",
+        AGENTMESH_TEST_REPOSITORY: repository,
+      },
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf-8");
+    });
+    child.once("error", () => reject(new Error("scope resolver child could not start")));
+    child.once("close", (code) => {
+      if (code === 0) {
+        resolve(output);
+      } else {
+        reject(new Error("scope resolver child did not succeed"));
+      }
+    });
+  });
 }
 
 test("native host identity takes precedence without exposing native or propagated input", () => {
@@ -88,6 +123,51 @@ test("scope key is user-only, outside the checkout, and stable when reused", () 
     assert.equal(statSync(path.dirname(keyPath)).mode & 0o777, 0o700);
     assert.equal(lstatSync(keyPath).isSymbolicLink(), false);
     assert.doesNotMatch(JSON.stringify(first), /native-a/);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+    rmSync(keyParent, { recursive: true, force: true });
+  }
+});
+
+test("concurrent first use publishes one complete scope key without divergent references", async () => {
+  const repository = makeRepository();
+  const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
+  const keyPath = scopeKeyPath(keyParent);
+  try {
+    const references = await Promise.all(
+      Array.from({ length: 16 }, () => resolveInSeparateProcess(repository, keyPath)),
+    );
+
+    assert.equal(new Set(references).size, 1);
+    assert.match(references[0], /^cs-[a-f0-9]{16}$/);
+    assert.equal(readFileSync(keyPath).length, 32);
+    assert.equal(statSync(keyPath).mode & 0o777, 0o600);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+    rmSync(keyParent, { recursive: true, force: true });
+  }
+});
+
+test("invalid-length regular scope keys are replaced before HMAC use", () => {
+  const repository = makeRepository();
+  const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
+  try {
+    for (const invalidKey of [Buffer.alloc(0), Buffer.alloc(31), Buffer.alloc(33)]) {
+      const keyPath = scopeKeyPath(keyParent);
+      mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
+      writeFileSync(keyPath, invalidKey, { mode: 0o600 });
+
+      const resolved = resolveHostScope(
+        { hostKind: "codex", nativeConversationId: "recovery-test-native-id" },
+        repository,
+        { hmacKeyPath: keyPath },
+      );
+
+      assert.match(resolved.conversation_scope_ref ?? "", /^cs-[a-f0-9]{16}$/);
+      assert.equal(readFileSync(keyPath).length, 32);
+      assert.equal(statSync(keyPath).mode & 0o777, 0o600);
+      rmSync(keyPath);
+    }
   } finally {
     rmSync(repository, { recursive: true, force: true });
     rmSync(keyParent, { recursive: true, force: true });
