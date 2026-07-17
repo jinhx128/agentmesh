@@ -48,7 +48,24 @@ const SCOPE_KEY_FILE_NAME = "reviewer-session-scope.key";
 const SCOPE_KEY_BYTES = 32;
 const LOCK_RETRY_MILLISECONDS = 10;
 const LOCK_RETRY_ATTEMPTS = 500;
+const REPAIR_LOCK_STALE_MILLISECONDS = 30_000;
 const lockWaitArray = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+
+interface FileIdentity {
+  device: number | bigint;
+  inode: number | bigint;
+}
+
+interface ScopeKeyState {
+  kind: "valid" | "invalid" | "missing";
+  key?: Buffer;
+  identity?: FileIdentity;
+}
+
+interface RepairLock {
+  descriptor: number;
+  identity: FileIdentity;
+}
 
 export function resolveHostScope(
   input: HostScopeInput,
@@ -129,19 +146,27 @@ function loadOrCreateScopeKey(keyPath: string): Buffer {
   const parent = path.dirname(keyPath);
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   chmodSync(parent, 0o700);
-  return withScopeKeyLock(`${keyPath}.lock`, () => {
-    const existing = readExistingScopeKey(keyPath);
-    return existing ?? createAndPublishScopeKey(keyPath);
-  });
+  return ensureScopeKey(keyPath);
 }
 
-function readExistingScopeKey(keyPath: string): Buffer | undefined {
+function ensureScopeKey(keyPath: string): Buffer {
+  const state = inspectScopeKey(keyPath);
+  if (state.kind === "valid") {
+    return state.key as Buffer;
+  }
+  if (state.kind === "missing") {
+    return createAndPublishScopeKey(keyPath);
+  }
+  return repairInvalidScopeKey(keyPath);
+}
+
+function inspectScopeKey(keyPath: string): ScopeKeyState {
   let stat: ReturnType<typeof lstatSync>;
   try {
     stat = lstatSync(keyPath);
   } catch (error: unknown) {
     if (isNotFound(error)) {
-      return undefined;
+      return { kind: "missing" };
     }
     throw new Error("unable to inspect reviewer session scope key");
   }
@@ -151,10 +176,55 @@ function readExistingScopeKey(keyPath: string): Buffer | undefined {
   chmodSync(keyPath, 0o600);
   const key = readFileSync(keyPath);
   if (key.length === SCOPE_KEY_BYTES) {
-    return key;
+    return { kind: "valid", key, identity: fileIdentity(stat) };
   }
-  unlinkSync(keyPath);
-  return undefined;
+  return { kind: "invalid", identity: fileIdentity(stat) };
+}
+
+function repairInvalidScopeKey(keyPath: string): Buffer {
+  const lockPath = `${keyPath}.lock`;
+  return withRepairLock(lockPath, (lockIdentity) => {
+    for (;;) {
+      const state = inspectScopeKey(keyPath);
+      if (state.kind === "valid") {
+        return state.key as Buffer;
+      }
+      if (state.kind === "missing") {
+        return createAndPublishScopeKey(keyPath);
+      }
+      if (removeInvalidScopeKey(keyPath, state.identity as FileIdentity, lockPath, lockIdentity)) {
+        return createAndPublishScopeKey(keyPath);
+      }
+    }
+  });
+}
+
+function removeInvalidScopeKey(
+  keyPath: string,
+  expectedIdentity: FileIdentity,
+  lockPath: string,
+  lockIdentity: FileIdentity,
+): boolean {
+  const current = inspectScopeKey(keyPath);
+  if (current.kind !== "invalid" || !sameFileIdentity(current.identity as FileIdentity, expectedIdentity)) {
+    return false;
+  }
+  const revalidated = inspectScopeKey(keyPath);
+  if (revalidated.kind !== "invalid" || !sameFileIdentity(revalidated.identity as FileIdentity, expectedIdentity)) {
+    return false;
+  }
+  if (!isRepairLockCurrent(lockPath, lockIdentity)) {
+    return false;
+  }
+  try {
+    unlinkSync(keyPath);
+    return true;
+  } catch (error: unknown) {
+    if (isNotFound(error)) {
+      return false;
+    }
+    throw new Error("unable to repair reviewer session scope key");
+  }
 }
 
 function createAndPublishScopeKey(keyPath: string): Buffer {
@@ -174,25 +244,15 @@ function createAndPublishScopeKey(keyPath: string): Buffer {
       if (!isAlreadyExists(error)) {
         throw new Error("unable to publish reviewer session scope key");
       }
-      const winner = readExistingScopeKey(keyPath);
-      if (winner) {
-        return winner;
-      }
-      throw new Error("unable to publish reviewer session scope key");
+      return ensureScopeKey(keyPath);
     }
     syncDirectory(path.dirname(keyPath));
     return key;
   } finally {
     if (descriptor !== undefined) {
-      closeSync(descriptor);
+      bestEffortClose(descriptor);
     }
-    try {
-      unlinkSync(temporaryPath);
-    } catch (error: unknown) {
-      if (!isNotFound(error)) {
-        throw error;
-      }
-    }
+    bestEffortUnlink(temporaryPath);
   }
 }
 
@@ -214,34 +274,145 @@ function uniqueTemporaryKeyPath(keyPath: string): string {
   );
 }
 
-function withScopeKeyLock<T>(lockPath: string, operation: () => T): T {
-  const descriptor = acquireScopeKeyLock(lockPath);
+function withRepairLock<T>(lockPath: string, operation: (lockIdentity: FileIdentity) => T): T {
+  const lock = acquireRepairLock(lockPath);
   try {
-    return operation();
+    return operation(lock.identity);
   } finally {
-    closeSync(descriptor);
-    try {
-      unlinkSync(lockPath);
-    } catch (error: unknown) {
-      if (!isNotFound(error)) {
-        throw error;
-      }
-    }
+    bestEffortClose(lock.descriptor);
+    removeRepairLockIfCurrent(lockPath, lock.identity);
   }
 }
 
-function acquireScopeKeyLock(lockPath: string): number {
+function acquireRepairLock(lockPath: string): RepairLock {
   for (let attempt = 0; attempt < LOCK_RETRY_ATTEMPTS; attempt += 1) {
     try {
-      return openSync(lockPath, "wx", 0o600);
+      return createRepairLock(lockPath);
     } catch (error: unknown) {
       if (!isAlreadyExists(error)) {
         throw new Error("unable to lock reviewer session scope key");
+      }
+      if (reclaimStaleRepairLock(lockPath)) {
+        continue;
       }
       Atomics.wait(lockWaitArray, 0, 0, LOCK_RETRY_MILLISECONDS);
     }
   }
   throw new Error("timed out waiting for reviewer session scope key");
+}
+
+function createRepairLock(lockPath: string): RepairLock {
+  const descriptor = openSync(lockPath, "wx", 0o600);
+  let identity: FileIdentity | undefined;
+  try {
+    const stat = lstatSync(lockPath);
+    if (!stat.isFile()) {
+      throw new Error("reviewer session repair lock is unsafe");
+    }
+    identity = fileIdentity(stat);
+    const metadata = Buffer.from(JSON.stringify({ pid: process.pid, created_at_ms: Date.now() }));
+    writeFully(descriptor, metadata);
+    fsyncSync(descriptor);
+    return { descriptor, identity };
+  } catch (error) {
+    bestEffortClose(descriptor);
+    if (identity) {
+      removeRepairLockIfCurrent(lockPath, identity);
+    } else {
+      bestEffortUnlink(lockPath);
+    }
+    throw error;
+  }
+}
+
+function reclaimStaleRepairLock(lockPath: string): boolean {
+  const candidate = inspectRepairLock(lockPath);
+  if (!candidate || !isRepairLockStale(lockPath, candidate)) {
+    return false;
+  }
+  const revalidated = inspectRepairLock(lockPath);
+  if (!revalidated || !sameFileIdentity(candidate, revalidated) || !isRepairLockStale(lockPath, revalidated)) {
+    return false;
+  }
+  try {
+    unlinkSync(lockPath);
+    return true;
+  } catch (error: unknown) {
+    return isNotFound(error);
+  }
+}
+
+function inspectRepairLock(lockPath: string): FileIdentity | undefined {
+  try {
+    const stat = lstatSync(lockPath);
+    return stat.isFile() ? fileIdentity(stat) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRepairLockStale(lockPath: string, expectedIdentity: FileIdentity): boolean {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(lockPath);
+  } catch {
+    return false;
+  }
+  if (!stat.isFile() || !sameFileIdentity(fileIdentity(stat), expectedIdentity)) {
+    return false;
+  }
+  if (Date.now() - stat.mtimeMs >= REPAIR_LOCK_STALE_MILLISECONDS) {
+    return true;
+  }
+  const owner = readRepairLockOwner(lockPath);
+  return owner !== undefined && !isProcessAlive(owner);
+}
+
+function readRepairLockOwner(lockPath: string): number | undefined {
+  try {
+    const payload: unknown = JSON.parse(readFileSync(lockPath, "utf-8"));
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      typeof (payload as { pid?: unknown }).pid === "number" &&
+      Number.isSafeInteger((payload as { pid: number }).pid) &&
+      (payload as { pid: number }).pid > 0
+    ) {
+      return (payload as { pid: number }).pid;
+    }
+  } catch {
+    // An unreadable lock relies on the conservative mtime stale check.
+  }
+  return undefined;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    return !(typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ESRCH");
+  }
+}
+
+function removeRepairLockIfCurrent(lockPath: string, expectedIdentity: FileIdentity): void {
+  try {
+    const stat = lstatSync(lockPath);
+    if (stat.isFile() && sameFileIdentity(fileIdentity(stat), expectedIdentity)) {
+      unlinkSync(lockPath);
+    }
+  } catch {
+    // Lock cleanup is best effort and must not replace the operation result.
+  }
+}
+
+function isRepairLockCurrent(lockPath: string, expectedIdentity: FileIdentity): boolean {
+  try {
+    const stat = lstatSync(lockPath);
+    return stat.isFile() && sameFileIdentity(fileIdentity(stat), expectedIdentity);
+  } catch {
+    return false;
+  }
 }
 
 function syncDirectory(directory: string): void {
@@ -253,9 +424,33 @@ function syncDirectory(directory: string): void {
     // Directory syncing is unavailable on some supported filesystems.
   } finally {
     if (descriptor !== undefined) {
-      closeSync(descriptor);
+      bestEffortClose(descriptor);
     }
   }
+}
+
+function bestEffortClose(descriptor: number): void {
+  try {
+    closeSync(descriptor);
+  } catch {
+    // Cleanup failures must not replace a successful key operation.
+  }
+}
+
+function bestEffortUnlink(filePath: string): void {
+  try {
+    unlinkSync(filePath);
+  } catch {
+    // Cleanup failures must not replace a successful key operation.
+  }
+}
+
+function fileIdentity(stat: { dev: number | bigint; ino: number | bigint }): FileIdentity {
+  return { device: stat.dev, inode: stat.ino };
+}
+
+function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
+  return left.device === right.device && left.inode === right.inode;
 }
 
 function isAlreadyExists(error: unknown): error is NodeJS.ErrnoException {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -123,6 +123,56 @@ test("scope key is user-only, outside the checkout, and stable when reused", () 
     assert.equal(statSync(path.dirname(keyPath)).mode & 0o777, 0o700);
     assert.equal(lstatSync(keyPath).isSymbolicLink(), false);
     assert.doesNotMatch(JSON.stringify(first), /native-a/);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+    rmSync(keyParent, { recursive: true, force: true });
+  }
+});
+
+test("a valid scope key ignores a lingering repair lock", () => {
+  const repository = makeRepository();
+  const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
+  const keyPath = scopeKeyPath(keyParent);
+  const lockPath = `${keyPath}.lock`;
+  try {
+    const first = resolveHostScope({ hostKind: "codex", nativeConversationId: "lingering-lock-native-id" }, repository, { hmacKeyPath: keyPath });
+    writeFileSync(lockPath, JSON.stringify({ pid: 1, created_at_ms: 0 }), { mode: 0o600 });
+
+    const second = resolveHostScope({ hostKind: "codex", nativeConversationId: "lingering-lock-native-id" }, repository, { hmacKeyPath: keyPath });
+
+    assert.equal(second.conversation_scope_ref, first.conversation_scope_ref);
+    assert.equal(existsSync(lockPath), true);
+  } finally {
+    rmSync(repository, { recursive: true, force: true });
+    rmSync(keyParent, { recursive: true, force: true });
+  }
+});
+
+test("an invalid scope key recovers after a dead or expired repair lock", () => {
+  const repository = makeRepository();
+  const keyParent = mkdtempSync(path.join(os.tmpdir(), "agentmesh-reviewer-key-"));
+  const keyPath = scopeKeyPath(keyParent);
+  const lockPath = `${keyPath}.lock`;
+  try {
+    for (const owner of [{ pid: 99999999, expired: false }, { pid: process.pid, expired: true }]) {
+      mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
+      writeFileSync(keyPath, Buffer.alloc(0), { mode: 0o600 });
+      writeFileSync(lockPath, JSON.stringify({ pid: owner.pid, created_at_ms: 0 }), { mode: 0o600 });
+      if (owner.expired) {
+        utimesSync(lockPath, new Date(0), new Date(0));
+      }
+
+      const resolved = resolveHostScope(
+        { hostKind: "codex", nativeConversationId: "stale-lock-recovery-native-id" },
+        repository,
+        { hmacKeyPath: keyPath },
+      );
+
+      assert.match(resolved.conversation_scope_ref ?? "", /^cs-[a-f0-9]{16}$/);
+      assert.equal(readFileSync(keyPath).length, 32);
+      assert.equal(existsSync(lockPath), false);
+      rmSync(keyPath);
+    }
   } finally {
     rmSync(repository, { recursive: true, force: true });
     rmSync(keyParent, { recursive: true, force: true });
