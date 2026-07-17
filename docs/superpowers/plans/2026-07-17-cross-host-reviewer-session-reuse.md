@@ -167,7 +167,7 @@
 
 ## P1. 公共契约与策略冻结
 
-- [ ] P1 阶段完成门禁：核心 schema、workflow policy、CLI/run 输入已冻结且旧 packet/recipe 回归通过。
+- [x] P1 阶段完成门禁：核心 schema、workflow policy、CLI/run 输入已冻结且旧 packet/recipe 回归通过。
 - 阶段目标：先记录 session 决策与 provenance，所有 adapter 仍保持 fresh-only。
 
 ### ~~P1.1 / Task 3：扩展 Core 与 Workflow Session Contract~~ ✅
@@ -293,14 +293,23 @@
 - 提交：`db340e8`（冻结运行策略与 CLI 输入）；日志与完成记录单独提交。
 - 下一步：P1.Z 执行阶段回归与独立门禁外审，完成前不进入 P2。
 
-### P1.Z / Task 5：P1 阶段收尾校准
+### ~~P1.Z / Task 5：P1 阶段收尾校准~~ ✅
 
-- [ ] Run: `npm run build:node && node --test dist-node/tests-node/core-contracts.test.js dist-node/tests-node/workflow-registry.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/cli-surface.test.js && git diff --check`。
-- [ ] 验证旧 packet fixture、旧 workflow recipe 和无新 flags 的 run 仍 fresh-compatible。
-- [ ] AgentMesh 外审公共 schema、policy override 和独立门禁；处理已接受发现。
-- [ ] 同步 changelog、标记 P1 slices、提交。
+- [x] Run: `npm run build:node && node --test dist-node/tests-node/core-contracts.test.js dist-node/tests-node/workflow-registry.test.js dist-node/tests-node/flow-run.test.js dist-node/tests-node/cli-surface.test.js && git diff --check`。
+- [x] 验证旧 packet fixture、旧 workflow recipe 和无新 flags 的 run 仍 fresh-compatible。
+- [x] AgentMesh 外审公共 schema、policy override 和独立门禁；处理已接受发现。
+- [x] 同步 changelog、标记 P1 slices、提交。
 
 审查方式：外审；失败不可降级。证据：阶段测试、审查、日志、commit。Commit: `收尾：校准 reviewer session 公共契约`
+
+**进度记录（2026-07-17 15:58）：**
+
+- 状态：完成。批量处理 P1.1/P1.2 的四项 Minor：错误正则收紧、built-in workflow ID 常量化、补 Cursor/missing-scope 覆盖、三个尾随缺值 flag 明确 exit 2。
+- 验证：missing-value RED→GREEN；P1 stage suite 92/92，全量 `npm test`、`git diff --check` 通过；legacy packet/recipe/no-flag run、independent override、native ID/token 不泄漏回归均通过。
+- 审查：P1 累计 package `c54cfec..47a7a7a` 由 AgentMesh Review Gate `workflow-20260717155425` 外审，Spec/Quality Approved，0 Must / 0 Should / 1 Nit，decision 已完成。剩余 Nit 仅为相邻 flag 分支直接测试覆盖，记录到最终 branch triage。
+- 边界：所有 adapter 仍 fresh-only；P1 未新增 scope resolver、registry、lease、provider parser 或 dispatch resume。
+- 提交：`47a7a7a`（P1 阶段校准）；阶段完成记录与日志单独提交。
+- 下一步：P2.1 实现 Host Scope Resolver，先覆盖 native/propagated/missing 与 workspace/worktree 隔离。
 
 ---
 
@@ -732,4 +741,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P1.Z` 执行 P1 公共契约、legacy compatibility 与 independent policy 阶段门禁；完成前不进入 P2。
+- 当前下一步：`P2.1` 实现 Host Scope Resolver；先完成 native/propagated/missing、HMAC ref 与 linked-worktree 隔离，不开始 registry/lease。
