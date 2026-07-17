@@ -531,7 +531,7 @@
 - 提交：`4f255dc`、`ccf46cb`；本条日志与阶段记录由收尾 commit 固化。
 - 下一步：P3.2 仅为能力矩阵允许的 Claude Code/OpenCode 接入 parser/resume builder；Codex/Cursor/Antigravity 保持 fresh-only。
 
-### P3.2 / Task 11：按能力矩阵实现 Provider Adapter
+### ~~P3.2 / Task 11：按能力矩阵实现 Provider Adapter~~ ✅
 
 **Files:**
 - Modify: `packages/runtime/src/adapters/invocation.ts`
@@ -557,12 +557,22 @@
 
 - **P1–P5 可执行性校准：** P1 的通用 capability/policy 契约与 P2 的 scope/registry/lease 均不依赖 provider resume，仍可执行；P3.1 的通用 fake CLI contract、P3.3 的 capability-false fresh fallback 和 P3.4 的 provenance 传播仍可执行，P3.2 仅实现上述两个 enabled adapter；P4 的五宿主 scope 续传不复制 provider session ID，正式 gate 仍为 `independent`，无需因 enablement 缩减；P5.1 继续说明三者 fresh-only，P5.2 的 fresh/reuse A/B 仅对两个 enabled adapter 执行。除本 P3.2 的 fixture 范围与明确 adapter 清单外，不需要改动后续任务。
 
-- [ ] 仅为 `claude-code-cli` 与 `opencode-cli` 保存脱敏结构化 fixture，session 值统一替换为 `session-test-123`。
-- [ ] 先写 parser/command failing tests，再实现上述两个 adapter 的 P0 已验证 exact event/field；`codex-cli`、`cursor-agent`、`antigravity-cli` 明确返回 capability false。
-- [ ] Readiness 输出 adapter/version 的 `supports_resume` 和 `supports_structured_session_id`，不执行真实 resume。
-- [ ] Run: `npm run build:node && node --test dist-node/tests-node/adapter-invocation.test.js dist-node/tests-node/readiness.test.js && git diff --check`; Expected: PASS。
+- [x] 仅为 `claude-code-cli` 与 `opencode-cli` 保存脱敏结构化 fixture，session 值统一替换为 `session-test-123`。
+- [x] 先写 parser/command failing tests，再实现上述两个 adapter 的 P0 已验证 exact event/field；`codex-cli`、`cursor-agent`、`antigravity-cli` 明确返回 capability false。
+- [x] Readiness 输出 adapter/version 的 `supports_resume` 和 `supports_structured_session_id`，不执行真实 resume。
+- [x] Run: `npm run build:node && node --test dist-node/tests-node/adapter-invocation.test.js dist-node/tests-node/readiness.test.js && git diff --check`; Expected: PASS。
 
 审查方式：外审；跨 provider 兼容与 session ID 安全。失败策略：单 adapter 不通过时保持 fresh-only，不阻塞其他 verified adapter；计划记录残余限制。Commit: `功能(adapter)：接入已验证的 session resume`
+
+**进度记录（2026-07-18 06:21）：**
+
+- 状态：完成。仅 Claude Code/OpenCode 声明 structured session/resume capability，分别按已验证 `session_id`/`sessionID` 与 argv shape 构建 fresh/resume；Codex/Cursor/Antigravity capability 明确 false 且沿用 legacy fresh invocation。
+- Parser：只接受各自脱敏 fixture 证明的完整三 event lifecycle、固定顺序/基数和一致 ID；Claude 额外要求 success result 且 `is_error === false`。自由文本、缺失/冲突 ID、未知/截断/重复/乱序流统一 `invalid_output`。
+- Readiness/安全：只静态投影 adapter/version/capability，不做 start/resume/auth probe；fixture session 值全部为 `session-test-123`，public failure 不透传 provider diagnostics 或 ID。
+- TDD/验证：接口与 readiness 字段缺失 RED；missing-ID、截断 lifecycle RED→GREEN；fresh Node build、required focused 63/63、`git diff --check` 通过。
+- 审查：独立 reviewer 首轮 1 Must 已修复，最终 Approved、LGTM、0 Must/0 Should/0 Nit；AgentMesh gate `workflow-20260718062036` 已 `decide_completed`。
+- 提交：`b646012`、`689d721`；本条日志与阶段记录由收尾 commit 固化。
+- 残余限制：只证明 immediate resume；dispatch/fallback 编排留给 P3.3。
 
 ### P3.3 / Task 12：接入 Dispatch Resume、锁与 Failure Matrix
 
@@ -785,4 +795,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P3.2` 按能力矩阵接入 Provider Adapter；仅 Claude Code/OpenCode 实现 parser/resume builder，Codex/Cursor/Antigravity 保持 fresh-only。
+- 当前下一步：`P3.3` 接入 Dispatch Resume、锁与 Failure Matrix；先保证 independent 零 registry I/O，再接 continuous 状态机。
