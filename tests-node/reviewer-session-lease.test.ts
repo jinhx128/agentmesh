@@ -232,6 +232,50 @@ test("registry directory replacement cannot split one key lease or redirect owne
   assert.equal(existsSync(redirectedSuccessor), true, "the old owner release must not delete a pathname successor");
 });
 
+test("real and ancestor-symlink registry aliases share one physical lease namespace", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "agentmesh-session-lease-alias-"));
+  const physicalParent = path.join(root, "physical");
+  const stateDirectory = path.join(physicalParent, "state");
+  const aliasParent = path.join(root, "alias");
+  const realRegistryPath = path.join(stateDirectory, "reviewer-sessions");
+  const aliasRegistryPath = path.join(aliasParent, "state", "reviewer-sessions");
+  test.after(() => {
+    resetHooks();
+    rmSync(root, { recursive: true, force: true });
+  });
+  mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
+  symlinkSync(physicalParent, aliasParent);
+  let owner = OWNER;
+  let active = false;
+  let overlap = false;
+  let release!: () => void;
+  let started!: () => void;
+  const blocker = new Promise<void>((resolve) => { release = resolve; });
+  const actionStarted = new Promise<void>((resolve) => { started = resolve; });
+  setLeaseHooks({
+    currentOwner: () => owner,
+    monotonicNow: () => 1_000_000_000n,
+    inspectProcess: () => ({ status: "same" }),
+  });
+
+  const first = withReviewerSessionLease(KEY, async () => {
+    active = true;
+    started();
+    await blocker;
+    active = false;
+  }, { registryPath: realRegistryPath, waitMs: 0 });
+  await actionStarted;
+  owner = SECOND_OWNER;
+  const second = await withReviewerSessionLease(KEY, async () => {
+    overlap = active;
+  }, { registryPath: aliasRegistryPath, waitMs: 0 });
+
+  assert.deepEqual(second, { acquired: false, reason: "busy" });
+  assert.equal(overlap, false);
+  release();
+  assert.equal((await first).acquired, true);
+});
+
 test("coordination identity anchor is private, fail-closed, and recoverable only while empty", async () => {
   const registryPath = registryDirectory();
   const coordinationPath = reviewerSessionLeaseCoordinationPathForTest(registryPath);

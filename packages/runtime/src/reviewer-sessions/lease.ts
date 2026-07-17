@@ -11,6 +11,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -163,8 +164,9 @@ export async function withReviewerSessionLease<T>(
   const waitMs = boundedMilliseconds(options.waitMs, REVIEWER_SESSION_LEASE_WAIT_MS, "lease wait");
   const heartbeatMs = boundedMilliseconds(options.heartbeatMs, REVIEWER_SESSION_HEARTBEAT_MS, "lease heartbeat", true);
   reviewerSessionLeaseTestHooks?.onConfigured?.({ waitMs, heartbeatMs });
-  const registryPath = options.registryPath ?? reviewerSessionRegistryPath();
-  if (!ensureSafeRegistryDirectory(registryPath)) {
+  const requestedRegistryPath = options.registryPath ?? reviewerSessionRegistryPath();
+  const registryPath = ensureSafeRegistryDirectory(requestedRegistryPath);
+  if (!registryPath) {
     return busy();
   }
   const leaseDirectory = ensureSafeLeaseDirectory(registryPath);
@@ -784,33 +786,60 @@ function defaultKillProbe(pid: number): "alive" | "dead" | "unknown" {
   }
 }
 
-function ensureSafeRegistryDirectory(registryPath: string): boolean {
+function ensureSafeRegistryDirectory(registryPath: string): string | undefined {
   try {
     try {
       const existing = lstatSync(registryPath);
-      return existing.isDirectory() && safeModeAndOwner(existing, 0o700);
+      if (!existing.isDirectory() || !safeModeAndOwner(existing, 0o700)) return undefined;
     } catch (error: unknown) {
-      if (!hasCode(error, "ENOENT")) return false;
+      if (!hasCode(error, "ENOENT")) return undefined;
+      mkdirSync(registryPath, { recursive: true, mode: 0o700 });
     }
-    mkdirSync(registryPath, { recursive: true, mode: 0o700 });
-    const created = lstatSync(registryPath);
-    return created.isDirectory() && safeModeAndOwner(created, 0o700);
+    const initial = lstatSync(registryPath);
+    if (!initial.isDirectory() || !safeModeAndOwner(initial, 0o700)) return undefined;
+    const physicalRegistryPath = realpathSync.native(registryPath);
+    const physical = lstatSync(physicalRegistryPath);
+    const revalidated = lstatSync(registryPath);
+    if (
+      !physical.isDirectory()
+      || !revalidated.isDirectory()
+      || !safeModeAndOwner(physical, 0o700)
+      || !safeModeAndOwner(revalidated, 0o700)
+      || !sameFileIdentity(fileIdentity(initial), fileIdentity(physical))
+      || !sameFileIdentity(fileIdentity(initial), fileIdentity(revalidated))
+    ) return undefined;
+    return physicalRegistryPath;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
 /** Exposed only so focused tests can seed deterministic contender evidence. */
 export function reviewerSessionLeaseCoordinationPathForTest(registryPath: string): string {
   const resolvedRegistryPath = path.resolve(registryPath);
-  const registryPathHash = leaseRegistryPathHash(resolvedRegistryPath);
-  return path.join(path.dirname(resolvedRegistryPath), `.reviewer-session-leases.${registryPathHash}`);
+  let physicalRegistryPath: string;
+  try {
+    physicalRegistryPath = realpathSync.native(resolvedRegistryPath);
+  } catch {
+    try {
+      physicalRegistryPath = path.join(
+        realpathSync.native(path.dirname(resolvedRegistryPath)),
+        path.basename(resolvedRegistryPath),
+      );
+    } catch {
+      physicalRegistryPath = resolvedRegistryPath;
+    }
+  }
+  const registryPathHash = leaseRegistryPathHash(physicalRegistryPath);
+  return path.join(path.dirname(physicalRegistryPath), `.reviewer-session-leases.${registryPathHash}`);
 }
 
 /** Internal setup helper for focused tests that seed contender evidence. */
 export function initializeReviewerSessionLeaseCoordinationForTest(registryPath: string): string | undefined {
-  if (!ensureSafeRegistryDirectory(registryPath)) return undefined;
-  return ensureSafeLeaseDirectory(registryPath)?.directoryPath;
+  const physicalRegistryPath = ensureSafeRegistryDirectory(registryPath);
+  return physicalRegistryPath === undefined
+    ? undefined
+    : ensureSafeLeaseDirectory(physicalRegistryPath)?.directoryPath;
 }
 
 function ensureSafeLeaseDirectory(registryPath: string): SafeLeaseDirectory | undefined {
