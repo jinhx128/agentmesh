@@ -170,7 +170,7 @@
 - [ ] P1 阶段完成门禁：核心 schema、workflow policy、CLI/run 输入已冻结且旧 packet/recipe 回归通过。
 - 阶段目标：先记录 session 决策与 provenance，所有 adapter 仍保持 fresh-only。
 
-### P1.1 / Task 3：扩展 Core 与 Workflow Session Contract
+### ~~P1.1 / Task 3：扩展 Core 与 Workflow Session Contract~~ ✅
 
 **Files:**
 - Modify: `packages/core/src/index.ts`
@@ -182,7 +182,7 @@
 **Interfaces:**
 - Produces: `ReviewSessionMode`、`ReviewerSessionAttempt`、adapter capability 字段和 `Workflow.reviewSessionMode`。
 
-- [ ] **Step 1：写失败 schema 测试**
+- [x] **Step 1：写失败 schema 测试**
 
   ```ts
   const attempt = StageAttemptSchema.parse({
@@ -207,13 +207,13 @@
 
   Add workflow test asserting `review_session_mode = "independent"` parses and an unknown value fails.
 
-- [ ] **Step 2：运行失败测试**
+- [x] **Step 2：运行失败测试**
 
   Run: `npm run build:node && node --test dist-node/tests-node/core-contracts.test.js dist-node/tests-node/workflow-registry.test.js`
 
   Expected: FAIL because session schemas/workflow field do not exist.
 
-- [ ] **Step 3：实现最小 schema**
+- [x] **Step 3：实现最小 schema**
 
   ```ts
   export const REVIEW_SESSION_MODES = ["auto", "interactive_continuous", "independent"] as const;
@@ -226,17 +226,26 @@
 
   Extend optional attempt fields and adapter capability fields `supports_resume` / `supports_structured_session_id`. Add failure classifications `session_not_found`, `session_expired`, `session_incompatible`, `context_overflow`, and `provider_busy`.
 
-- [ ] **Step 4：实现 workflow 解析**
+- [x] **Step 4：实现 workflow 解析**
 
   Add `review_session_mode` to `WORKFLOW_TOP_LEVEL_FIELDS`, default built-in Review Gate to `auto`, Release Check to `independent`, and preserve old recipe compatibility.
 
-- [ ] **Step 5：验证与提交**
+- [x] **Step 5：验证与提交**
 
   Run: `npm run build:node && node --test dist-node/tests-node/core-contracts.test.js dist-node/tests-node/workflow-registry.test.js && git diff --check`
 
   Expected: PASS。
 
 审查方式：外审。判定依据：公共 schema/workflow 行为影响所有 run。外审执行：AgentMesh review stage；失败重试一次，仍失败 `needs_decision`。证据：测试输出、schema diff、审查结论。进度记录：执行时补齐。收尾：日志、commit、当前下一步。Commit: `功能(core)：增加 reviewer session 契约`
+
+**进度记录（2026-07-17 15:23）：**
+
+- 状态：完成。Core 新增 reviewer session mode/attempt schema、optional attempt provenance、adapter capability 与 failure classification；workflow recipe v1 支持 optional `review_session_mode`，旧 recipe 默认 `auto`，Review Gate 为 `auto`，Release Check 为 `independent`。
+- TDD：RED 因 session exports 与 `Workflow.reviewSessionMode` 缺失而失败；GREEN focused 33/33，通过全量 `npm test` 与 `git diff --check`。
+- 兼容：packet schema 与 workflow recipe version 继续为 1；新增 StageAttempt/capability 字段均 optional，legacy attempt/recipe 回归通过；未实现 provider/registry/scope/lease/CLI/dispatch。
+- 审查：AgentMesh Review Gate `workflow-20260717152057` 返回 spec/quality Approved，0 Must / 0 Should / 2 Nit，decision 已完成。接受测试错误正则精度 Nit 留待最终 branch review 统一处理；`scope_source` 三值来自已批准设计，不视为范围扩张。
+- 提交：`52a2de9`（公共契约实现）；日志与完成记录单独提交。
+- 下一步：P1.2 冻结 run policy、host scope 输入与 CLI flags，继续保持所有 adapter fresh-only。
 
 ### P1.2 / Task 4：冻结 Run Policy、Host Scope 输入与 CLI Flags
 
@@ -714,4 +723,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P1.1` 扩展 Core 与 Workflow Session Contract；本 slice 只冻结 optional schema/capability/workflow policy，所有 adapter 继续保持 fresh-only。
+- 当前下一步：`P1.2` 冻结 Run Policy、Host Scope 输入与 CLI Flags；只记录/冻结策略输入，不接入 registry 或 provider resume。
