@@ -8,6 +8,8 @@ export interface AdapterStructuredResult {
   providerSessionId?: string;
   outputText: string;
   failure?: AdapterFailure;
+  /** Adapter-local, already-parsed Retry-After evidence in milliseconds. */
+  retryAfterMs?: number;
 }
 
 export type AdapterSessionSafeResult = Omit<AdapterStructuredResult, "providerSessionId">;

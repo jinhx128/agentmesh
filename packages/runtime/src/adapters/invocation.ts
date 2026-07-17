@@ -328,7 +328,7 @@ function structuredProviderFailure(
     return { classification: "auth_required", message: "provider authentication is required", retryable: false };
   }
   if (/rate limit|too many requests|\b429\b/i.test(evidence)) {
-    return { classification: "provider_busy", message: "provider is rate limited", retryable: true };
+    return { classification: "rate_limited", message: "provider is rate limited", retryable: true };
   }
   if (/network|connection|dns|socket|econn/i.test(evidence)) {
     return { classification: "unknown", message: "provider network request failed", retryable: true };

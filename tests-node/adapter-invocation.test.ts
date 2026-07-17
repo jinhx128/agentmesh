@@ -536,7 +536,7 @@ test("verified provider parsers map public failures without returning provider d
       exitCode: 1,
       stderr: "rate limit exceeded",
     }).failure?.classification,
-    "provider_busy",
+    "rate_limited",
   );
   const network = parseAdapterStructuredSessionResult("opencode-cli", {
     exitCode: 1,

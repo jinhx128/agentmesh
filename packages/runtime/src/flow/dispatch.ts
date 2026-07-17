@@ -25,6 +25,7 @@ import {
 } from "../adapters.js";
 import { lookupRuntimeAdapter } from "../adapters/registry.js";
 import {
+  closeReviewerSession,
   readReviewerSession,
   reviewerSessionInvocationFingerprint,
   reviewerSessionRef,
@@ -883,6 +884,10 @@ async function invokeReviewAgentWithSession(
   const agent = resolveAgent(loadAgents(options.configPath, options.cwd), options.agent);
   const adapter = lookupRuntimeAdapter(agent.adapter);
   const scope = safeFrozenScope(status);
+  const sessionStartedAt = Date.now();
+  const sessionBudgetMs = options.timeoutSecs === undefined || options.timeoutSecs === null
+    ? undefined
+    : Math.max(0, options.timeoutSecs * 1_000);
   const invokeFresh = async () => {
     const result = await invokeAgentForStageAsync(runDir, stage, options.agent, {
       configPath: options.configPath,
@@ -972,6 +977,12 @@ async function invokeReviewAgentWithSession(
           ? { providerSessionId: write.entry.provider_session_id, sessionRef: write.entry.session_ref, epoch: write.entry.epoch }
           : undefined;
       },
+      close: (key, expectedEpoch) => closeReviewerSession(key, { expectedEpoch }).status === "closed",
+      sleep: async (delayMs) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
+      jitter: (baseMs) => Math.max(1, Math.round(baseMs * (0.8 + Math.random() * 0.4))),
+      remainingBudgetMs: () => sessionBudgetMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, sessionBudgetMs - (Date.now() - sessionStartedAt)),
       onEvent: (event, payload) => appendEvent(runDir, event, payload),
     },
   });

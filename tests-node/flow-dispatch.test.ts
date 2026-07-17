@@ -193,6 +193,84 @@ test("continuous review dispatch writes safe provenance then resumes without lea
   assert.doesNotMatch(packetText, /session-test-123/);
 });
 
+test("expired continuous reviewer resume recovers once before the existing lane can succeed", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const reviewer = path.join(workspace, "reviewer-expired-session.sh");
+  const workflow = path.join(workspace, "review-only.toml");
+  writeFileSync(workflow, [
+    "schema_version = 1",
+    "workflow_recipe_version = 1",
+    "compatible_packet_schema_versions = [1]",
+    'name = "Review Only"',
+    'stages = ["review"]',
+    'description = "Dispatch one review stage."',
+    'when_to_use = ["Focused session failure recovery test."]',
+    'packet_artifacts = ["findings.md"]',
+    'quality_gates = ["Review output exists."]',
+    "",
+  ].join("\n"));
+  writeExecutable(
+    reviewer,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "session='session-test-123'",
+      "printf '%s\\n' \"$*\" >> \"$0.args\"",
+      "if [[ \"$*\" == *\"--resume\"* ]]; then",
+      "  printf 'No conversation found with session ID: %s\\n' \"$session\" >&2",
+      "  exit 1",
+      "fi",
+      "printf '%s\\n' \\",
+      "  \"{\\\"type\\\":\\\"system\\\",\\\"subtype\\\":\\\"init\\\",\\\"session_id\\\":\\\"$session\\\"}\" \\",
+      "  \"{\\\"type\\\":\\\"assistant\\\",\\\"session_id\\\":\\\"$session\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review output\\\"}]}}\" \\",
+      "  \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"session_id\\\":\\\"$session\\\",\\\"result\\\":\\\"review output\\\"}\"",
+      "",
+    ].join("\n"),
+  );
+  const config = writeConfig(workspace, [
+    "[agents.reviewer]",
+    'adapter = "claude-code-cli"',
+    `command = "${reviewer}"`,
+    "args = []",
+    'model = "claude-sonnet-4-6"',
+    'reasoning_effort = "high"',
+    'capabilities = ["review"]',
+    "",
+  ].join("\n"));
+  const scope = "amscope_v1:22222222-2222-4222-8222-222222222222";
+  for (const runId of ["expired-first", "expired-second"]) {
+    const run = runCli(workspace, [
+      "--config", config,
+      "flow", "run",
+      "--workflow-file", workflow, "--review", "reviewer",
+      "--task", "session expiry recovery",
+      "--review-session-mode", "interactive_continuous",
+      "--host-kind", "codex", "--conversation-scope", scope,
+      "--run-id", runId,
+    ]);
+    assert.equal(run.status, 0, run.stderr);
+    const dispatch = runCli(workspace, ["--config", config, "flow", "dispatch", runId, "--stage", "review"]);
+    assert.equal(dispatch.status, 0, dispatch.stderr);
+  }
+  const secondDir = path.join(workspace, ".agentmesh", "runs", "expired-second");
+  const second = JSON.parse(readFileSync(path.join(secondDir, "status.json"), "utf-8"));
+  assert.equal(second.stage_attempts.review[0].session_mode, "fallback_fresh");
+  assert.equal(second.stage_attempts.review[0].registry_write, true);
+  const events = readFileSync(path.join(secondDir, "events.jsonl"), "utf-8");
+  assert.match(events, /reviewer_session\.resume_failed/);
+  assert.match(events, /reviewer_session\.closed/);
+  assert.match(events, /reviewer_session\.rotated/);
+  assert.match(events, /reviewer_session\.fallback_fresh/);
+  const calls = readFileSync(`${reviewer}.args`, "utf-8");
+  assert.equal([...calls.matchAll(/--resume session-test-123/g)].length, 1);
+  assert.doesNotMatch([
+    readFileSync(path.join(secondDir, "status.json"), "utf-8"),
+    events,
+    readFileSync(path.join(secondDir, "findings.md"), "utf-8"),
+  ].join("\n"), /session-test-123/);
+});
+
 test("flow attach refreshes current workspace registry activity", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
