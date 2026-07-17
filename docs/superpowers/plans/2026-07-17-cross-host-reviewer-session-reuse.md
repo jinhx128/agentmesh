@@ -247,7 +247,7 @@
 - 提交：`52a2de9`（公共契约实现）；日志与完成记录单独提交。
 - 下一步：P1.2 冻结 run policy、host scope 输入与 CLI flags，继续保持所有 adapter fresh-only。
 
-### P1.2 / Task 4：冻结 Run Policy、Host Scope 输入与 CLI Flags
+### ~~P1.2 / Task 4：冻结 Run Policy、Host Scope 输入与 CLI Flags~~ ✅
 
 **Files:**
 - Modify: `packages/runtime/src/flow/types.ts`
@@ -261,9 +261,9 @@
 - Consumes: P1.1 `ReviewSessionMode`。
 - Produces: `resolved_reviewer_session_policy`、`host_scope_input` 和 run flags。
 
-- [ ] 写失败测试：`--review-session-mode independent`、`--host-kind codex`、`--conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111` 被写入 status 的 resolved policy；非法 token/host/mode 返回 exit 2。
-- [ ] Run: `npm run build:node && node --test dist-node/tests-node/flow-run.test.js dist-node/tests-node/cli-surface.test.js`；Expected: FAIL。
-- [ ] 实现输入类型：
+- [x] 写失败测试：`--review-session-mode independent`、`--host-kind codex`、`--conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111` 被写入 status 的 resolved policy；非法 token/host/mode 返回 exit 2。
+- [x] Run: `npm run build:node && node --test dist-node/tests-node/flow-run.test.js dist-node/tests-node/cli-surface.test.js`；Expected: FAIL。
+- [x] 实现输入类型：
 
   ```ts
   export interface HostScopeInput {
@@ -280,9 +280,18 @@
   ```
 
   CLI 不打印 native ID/token；`independent` profile 不能被 CLI reuse override 降级。
-- [ ] Run targeted tests and `git diff --check`; Expected: PASS。
+- [x] Run targeted tests and `git diff --check`; Expected: PASS。
 
 审查方式：外审；判定依据：安全策略和 CLI 公共接口。外审失败策略：重试或 `needs_decision`。证据：CLI tests、status fixture、审查输出。进度记录：执行时补齐。Commit: `功能(cli)：冻结 reviewer session 运行策略`
+
+**进度记录（2026-07-17 15:44）：**
+
+- 状态：完成。`flow run`/preset run 接受 review session mode、闭集 host kind 与 `amscope_v1` scope token，status 仅冻结 policy 和脱敏 host 元数据；raw native ID/token 不进入 packet/event/output。
+- TDD：RED 覆盖 flags/校验/status 缺失；focused GREEN 58/58，全量 `npm test` 与 `git diff --check` 通过。无 flags 旧 run 兼容，Release Check independent 不可被 CLI continuous 降级。
+- 边界：当前配置无 reviewer-session profile 字段，未宣称 profile enforcement；本 slice 未实现 scope resolver、registry、lease、adapter 或 dispatch resume。
+- 审查：AgentMesh Review Gate `workflow-20260717153921` 返回 Spec/Quality Approved、LGTM，0 Must / 0 Should / 3 Nit，decision 已完成；三项 Nit 记录到最终 branch triage，不为非阻断项重复开 reviewer。
+- 提交：`db340e8`（冻结运行策略与 CLI 输入）；日志与完成记录单独提交。
+- 下一步：P1.Z 执行阶段回归与独立门禁外审，完成前不进入 P2。
 
 ### P1.Z / Task 5：P1 阶段收尾校准
 
@@ -723,4 +732,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P1.2` 冻结 Run Policy、Host Scope 输入与 CLI Flags；只记录/冻结策略输入，不接入 registry 或 provider resume。
+- 当前下一步：`P1.Z` 执行 P1 公共契约、legacy compatibility 与 independent policy 阶段门禁；完成前不进入 P2。
