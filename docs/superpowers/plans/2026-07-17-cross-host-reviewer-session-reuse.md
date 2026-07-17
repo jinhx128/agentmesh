@@ -488,7 +488,7 @@
 
 - [ ] P3 阶段完成门禁：fake CLI 合约、矩阵允许的 adapters、resume/failure/fresh fallback、packet provenance 和 non-hermetic 传播全部通过。
 
-### P3.1 / Task 10：定义 Adapter Session Contract 与 Fake CLI
+### ~~P3.1 / Task 10：定义 Adapter Session Contract 与 Fake CLI~~ ✅
 
 **Files:**
 - Create: `packages/runtime/src/adapters/session.ts`
@@ -501,8 +501,8 @@
 **Interfaces:**
 - Produces: `AdapterSessionDirective`、`AdapterStructuredResult`、failure action mapping。
 
-- [ ] 写失败测试覆盖 fresh/resume command builder、structured ID parsing、free-text rejection、raw ID redaction。
-- [ ] 实现接口：
+- [x] 写失败测试覆盖 fresh/resume command builder、structured ID parsing、free-text rejection、raw ID redaction。
+- [x] 实现接口：
 
   ```ts
   export type AdapterSessionDirective =
@@ -517,10 +517,19 @@
   ```
 
   Extend plugin with optional `buildSessionInvocation` and `parseStructuredSessionResult`; capability false 时继续旧 invocation。
-- [ ] 用测试 fake CLI 输出 JSONL start ID、resume success、not_found、rate_limited、auth_required、invalid_output。
-- [ ] Run adapter targeted tests; Expected: PASS。
+- [x] 用测试 fake CLI 输出 JSONL start ID、resume success、not_found、rate_limited、auth_required、invalid_output。
+- [x] Run adapter targeted tests; Expected: PASS。
 
 审查方式：外审；公共 adapter contract。失败不可降级。Commit: `功能(adapter)：定义 reviewer session 调用契约`
+
+**进度记录（2026-07-18 05:59）：**
+
+- 状态：完成。新增 provider-neutral fresh/resume directive、structured result、安全投影与 optional plugin hooks；capability/hook 不完整时保持 legacy fresh invocation，所有内置 adapter 在 P3.2 前仍 fresh-only。
+- 安全：safe projection 同时脱敏 result 自带 ID 和调用 directive 中已知的 resume ID；failure 未携带 ID、自由文本或未知 provider diagnostics 也不会把原始 ID 带入 public error/summary。
+- TDD/验证：初始接口缺失 RED；capability clone、free-text invalid output、known resume ID 与 fake CLI resume-success 分支均 RED→GREEN；fresh Node build、focused adapter 22/22、`git diff --check` 通过。
+- 审查：独立 reviewer 首轮 1 Must/1 Should 已修复，最终 Spec/Quality Pass、LGTM、0 Must/0 Should/0 Nit；AgentMesh gate `workflow-20260718055803` 已 `decide_completed`。
+- 提交：`4f255dc`、`ccf46cb`；本条日志与阶段记录由收尾 commit 固化。
+- 下一步：P3.2 仅为能力矩阵允许的 Claude Code/OpenCode 接入 parser/resume builder；Codex/Cursor/Antigravity 保持 fresh-only。
 
 ### P3.2 / Task 11：按能力矩阵实现 Provider Adapter
 
@@ -776,4 +785,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P3.1` 定义 Adapter Session Contract 与 Fake CLI；先冻结 fresh/resume builder、structured parser 和 failure mapping，不提前接 provider 或 dispatch resume。
+- 当前下一步：`P3.2` 按能力矩阵接入 Provider Adapter；仅 Claude Code/OpenCode 实现 parser/resume builder，Codex/Cursor/Antigravity 保持 fresh-only。
