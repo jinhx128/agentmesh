@@ -10,6 +10,7 @@ export * from "./packet/compatibility.js";
 export * from "./packet/io.js";
 export * from "./packet/validate.js";
 export * from "./release/check.js";
+export * from "./reviewer-sessions/scope.js";
 export * from "./spec/index.js";
 export * from "./workflow/registry.js";
 export * from "./workspaces/registry.js";
