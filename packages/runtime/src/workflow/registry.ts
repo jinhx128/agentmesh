@@ -7,11 +7,14 @@ import {
   BUILTIN_WORKFLOW_IDS,
   CURRENT_PACKET_SCHEMA_VERSION,
   CURRENT_SCHEMA_VERSION,
+  REVIEW_SESSION_MODES,
+  ReviewSessionModeSchema,
   STAGE_TYPES,
   StageFailurePolicySchema,
   type StageFailurePolicy,
   type StageNode,
   type StageType,
+  type ReviewSessionMode,
   WORKFLOW_RECIPE_SCHEMA_VERSION,
   deriveStageNodes,
 } from "@agentmesh/core";
@@ -35,6 +38,7 @@ const WORKFLOW_TOP_LEVEL_FIELDS = new Set([
   "user_gate",
   "recipe_source",
   "failure_policy",
+  "review_session_mode",
 ]);
 const FAILURE_POLICY_FIELDS = new Set(["stage_types", "nodes"]);
 const FAILURE_POLICY_OBJECT_FIELDS = new Set(["mode", "max_fallback_agents"]);
@@ -60,6 +64,7 @@ export interface Workflow {
   schemaVersion: typeof CURRENT_SCHEMA_VERSION;
   workflowRecipeVersion: typeof WORKFLOW_RECIPE_SCHEMA_VERSION;
   compatiblePacketSchemaVersions: (typeof CURRENT_PACKET_SCHEMA_VERSION)[];
+  reviewSessionMode: ReviewSessionMode;
   stages: string[];
   stageNodes: StageNode[];
   description: string;
@@ -146,6 +151,7 @@ export const BUILTIN_WORKFLOWS: readonly Workflow[] = [
     ],
     source: "builtin",
     recipeSource: REVIEW_GATE_RECIPE_SOURCE,
+    reviewSessionMode: "auto",
     ...workflowVersionMetadata(),
   }),
   defineWorkflow({
@@ -249,6 +255,7 @@ export const BUILTIN_WORKFLOWS: readonly Workflow[] = [
       "Known blockers stay visible instead of being hidden behind an LGTM.",
     ],
     source: "builtin",
+    reviewSessionMode: "independent",
     ...workflowVersionMetadata(),
   }),
   defineWorkflow({
@@ -433,6 +440,7 @@ function loadWorkflowToml(
     workflowPath,
   );
   const compatiblePacketSchemaVersions = compatiblePacketSchemas(payload, workflowPath);
+  const reviewSessionMode = workflowReviewSessionMode(payload, workflowPath);
   const workflowId = validateWorkflowId(
     workflowIdOverride ?? workflowIdFromPath(workflowPath),
     workflowPath,
@@ -449,6 +457,7 @@ function loadWorkflowToml(
     schemaVersion,
     workflowRecipeVersion,
     compatiblePacketSchemaVersions,
+    reviewSessionMode,
     stages,
     description: requireString(payload, "description", workflowPath),
     whenToUse: nonEmptyStringList(payload, "when_to_use", workflowPath),
@@ -462,14 +471,20 @@ function loadWorkflowToml(
 }
 
 function defineWorkflow(
-  workflow: Omit<Workflow, "stageNodes" | "failurePolicy"> & {
+  workflow: Omit<Workflow, "stageNodes" | "failurePolicy" | "reviewSessionMode"> & {
     failurePolicy?: WorkflowFailurePolicyConfig;
+    reviewSessionMode?: ReviewSessionMode;
   },
 ): Workflow {
-  const { failurePolicy = emptyFailurePolicy(), ...rest } = workflow;
+  const {
+    failurePolicy = emptyFailurePolicy(),
+    reviewSessionMode = "auto",
+    ...rest
+  } = workflow;
   return {
     ...rest,
     failurePolicy,
+    reviewSessionMode,
     stageNodes: deriveStageNodes(rest.stages),
   };
 }
@@ -512,6 +527,22 @@ function compatiblePacketSchemas(
     );
   }
   return [CURRENT_PACKET_SCHEMA_VERSION];
+}
+
+function workflowReviewSessionMode(
+  payload: Record<string, unknown>,
+  workflowPath: string,
+): ReviewSessionMode {
+  if (payload.review_session_mode === undefined) {
+    return "auto";
+  }
+  const parsed = ReviewSessionModeSchema.safeParse(payload.review_session_mode);
+  if (!parsed.success) {
+    throw new Error(
+      `workflow ${workflowPath}: review_session_mode must be one of ${REVIEW_SESSION_MODES.join(", ")}`,
+    );
+  }
+  return parsed.data;
 }
 
 function parseTomlRoot(content: string, label: string): Record<string, unknown> {

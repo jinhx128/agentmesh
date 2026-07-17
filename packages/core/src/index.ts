@@ -148,6 +148,23 @@ export const STAGE_STATES = [
 export const StageStateSchema = z.enum(STAGE_STATES);
 export type StageState = z.infer<typeof StageStateSchema>;
 
+export const REVIEW_SESSION_MODES = [
+  "auto",
+  "interactive_continuous",
+  "independent",
+] as const;
+export const ReviewSessionModeSchema = z.enum(REVIEW_SESSION_MODES);
+export type ReviewSessionMode = z.infer<typeof ReviewSessionModeSchema>;
+
+export const REVIEWER_SESSION_ATTEMPT_MODES = [
+  "fresh",
+  "resumed",
+  "fallback_fresh",
+  "fresh_isolated",
+] as const;
+export const ReviewerSessionAttemptModeSchema = z.enum(REVIEWER_SESSION_ATTEMPT_MODES);
+export type ReviewerSessionAttemptMode = z.infer<typeof ReviewerSessionAttemptModeSchema>;
+
 export const ReleaseVerdictSchema = z.enum([
   "ready",
   "not_ready",
@@ -282,6 +299,13 @@ export const StageAttemptSchema = z
     completed_at: NonEmptyStringSchema.optional(),
     error: z.string().optional(),
     error_kind: z.string().optional(),
+    session_mode: ReviewerSessionAttemptModeSchema.optional(),
+    session_ref: NonEmptyStringSchema.optional(),
+    conversation_scope_ref: NonEmptyStringSchema.optional(),
+    scope_source: z.enum(["native", "propagated", "missing"]).optional(),
+    hermetic: z.boolean().optional(),
+    non_hermetic_reason: z.string().optional(),
+    registry_write: z.boolean().optional(),
   })
   .passthrough();
 export type StageAttempt = z.infer<typeof StageAttemptSchema>;
@@ -690,6 +714,7 @@ export const WorkflowSchema = z
     name: NonEmptyStringSchema.optional(),
     stages: z.array(NonEmptyStringSchema).min(1),
     user_gate: z.boolean().optional(),
+    review_session_mode: ReviewSessionModeSchema.optional(),
   })
   .passthrough()
   .superRefine((workflow, ctx) => {
@@ -758,6 +783,11 @@ export const AdapterFailureClassificationSchema = z.enum([
   "rate_limited",
   "permission_denied",
   "configuration_error",
+  "session_not_found",
+  "session_expired",
+  "session_incompatible",
+  "context_overflow",
+  "provider_busy",
 ]);
 export type AdapterFailureClassification = z.infer<
   typeof AdapterFailureClassificationSchema
@@ -777,6 +807,8 @@ export const AdapterCapabilityMetadataSchema = z
     roles: z.array(NonEmptyStringSchema).default([]),
     stages: z.array(NonEmptyStringSchema).default([]),
     supports_non_interactive: z.boolean().optional(),
+    supports_resume: z.boolean().optional(),
+    supports_structured_session_id: z.boolean().optional(),
   })
   .passthrough();
 export type AdapterCapabilityMetadata = z.infer<

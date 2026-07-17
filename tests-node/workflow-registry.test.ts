@@ -40,6 +40,7 @@ function writeWorkflow(
   workflowDir: string,
   workflowId = "docs-delivery",
   stages = ["plan", "review", "decide"],
+  reviewSessionMode?: string,
 ): string {
   mkdirSync(workflowDir, { recursive: true });
   const workflowPath = path.join(workflowDir, `${workflowId}.toml`);
@@ -76,6 +77,9 @@ function writeWorkflow(
       ...stageArtifacts.map((artifact) => `  ${JSON.stringify(artifact)},`),
       "]",
       'quality_gates = ["The decider records accepted and rejected findings."]',
+      ...(reviewSessionMode === undefined
+        ? []
+        : [`review_session_mode = ${JSON.stringify(reviewSessionMode)}`]),
       "",
     ].join("\n"),
   );
@@ -86,11 +90,13 @@ function writeUserWorkflow(
   home: string,
   workflowId = "docs-delivery",
   stages = ["plan", "review", "decide"],
+  reviewSessionMode?: string,
 ): string {
   return writeWorkflow(
     path.join(home, ".config", "agentmesh", "workflows"),
     workflowId,
     stages,
+    reviewSessionMode,
   );
 }
 
@@ -118,6 +124,7 @@ test("lists built-in workflows with stable registry metadata", () => {
   assert.equal(reviewGate.schemaVersion, 1);
   assert.equal(reviewGate.workflowRecipeVersion, 1);
   assert.deepEqual(reviewGate.compatiblePacketSchemaVersions, [1]);
+  assert.equal(reviewGate.reviewSessionMode, "auto");
   const verifiedDelivery = getWorkflow(BUILTIN_WORKFLOW_IDS.VERIFIED_DELIVERY, []);
   assert.equal(verifiedDelivery.source, "builtin");
   assert.deepEqual(verifiedDelivery.stages, ["plan", "execute", "verify", "review", "decide"]);
@@ -129,6 +136,8 @@ test("lists built-in workflows with stable registry metadata", () => {
     { id: "decide", type: "decide", occurrence: 1 },
   ]);
   assert.ok(verifiedDelivery.packetArtifacts.includes("verification.md"));
+  const releaseCheck = getWorkflow(BUILTIN_WORKFLOW_IDS.RELEASE_CHECK, []);
+  assert.equal(releaseCheck.reviewSessionMode, "independent");
 });
 
 test("review-gate workflow mirrors the repo-maintained recipe source", () => {
@@ -165,9 +174,29 @@ test("loads workflow TOML from the user registry", () => {
     assert.equal(workflow.schemaVersion, 1);
     assert.equal(workflow.workflowRecipeVersion, 1);
     assert.deepEqual(workflow.compatiblePacketSchemaVersions, [1]);
+    assert.equal(workflow.reviewSessionMode, "auto");
     assert.deepEqual(workflow.stages, ["plan", "review", "decide"]);
     assert.equal(workflow.name, "Docs Delivery");
     assert.equal(workflow.packetArtifacts.length, 4);
+  });
+});
+
+test("parses review session mode and rejects unknown values", () => {
+  const sandbox = makeSandbox();
+  test.after(() => rmSync(sandbox.root, { recursive: true, force: true }));
+  writeUserWorkflow(sandbox.home, "independent-review", ["review", "decide"], "independent");
+
+  withHome(sandbox.home, () => {
+    const workflow = getWorkflow("independent-review", workflowSearchDirs(sandbox.workspace));
+    assert.equal(workflow.reviewSessionMode, "independent");
+  });
+
+  writeUserWorkflow(sandbox.home, "invalid-review", ["review", "decide"], "continuous");
+  withHome(sandbox.home, () => {
+    assert.throws(
+      () => getWorkflow("invalid-review", workflowSearchDirs(sandbox.workspace)),
+      /review_session_mode.*auto|interactive_continuous|independent/,
+    );
   });
 });
 

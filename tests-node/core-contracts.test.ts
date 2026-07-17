@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  AdapterCapabilityMetadataSchema,
   AdapterFailureClassificationSchema,
   AdapterInvocationInputSchema,
   AdapterInvocationOutputSchema,
@@ -27,7 +28,12 @@ import {
   ReleaseGateResultSchema,
   ReleaseVerdictSchema,
   RuntimeTimingSchema,
+  REVIEWER_SESSION_ATTEMPT_MODES,
+  REVIEW_SESSION_MODES,
+  ReviewerSessionAttemptModeSchema,
+  ReviewSessionModeSchema,
   STAGE_STATES,
+  StageAttemptSchema,
   StageNodeSchema,
   StageTypeSchema,
   WorkflowSchema,
@@ -717,6 +723,51 @@ test("core exports MCP failure classifications for context ingestion", () => {
   assert.throws(() => McpFailureClassificationSchema.parse("auth_required"));
 });
 
+test("core preserves optional reviewer session attempt provenance", () => {
+  assert.deepEqual(REVIEW_SESSION_MODES, ["auto", "interactive_continuous", "independent"]);
+  assert.equal(ReviewSessionModeSchema.parse("independent"), "independent");
+  assert.throws(() => ReviewSessionModeSchema.parse("continuous"));
+  assert.deepEqual(REVIEWER_SESSION_ATTEMPT_MODES, [
+    "fresh",
+    "resumed",
+    "fallback_fresh",
+    "fresh_isolated",
+  ]);
+  assert.equal(ReviewerSessionAttemptModeSchema.parse("resumed"), "resumed");
+
+  const attempt = StageAttemptSchema.parse({
+    lane_id: "review:a-test",
+    primary_agent: "a-test",
+    requested_agent: "a-test",
+    actual_agent: "a-test",
+    lane_attempt: 1,
+    attempt: 1,
+    timeout_seconds: 240,
+    status: "completed",
+    session_mode: "resumed",
+    session_ref: "rs-0123456789abcdef",
+    conversation_scope_ref: "cs-0123456789abcdef",
+    scope_source: "propagated",
+    hermetic: false,
+    non_hermetic_reason: "session_resume",
+    registry_write: true,
+  });
+  assert.equal(attempt.session_mode, "resumed");
+  assert.equal(attempt.scope_source, "propagated");
+
+  const legacyAttempt = StageAttemptSchema.parse({
+    lane_id: "review:a-test",
+    primary_agent: "a-test",
+    requested_agent: "a-test",
+    actual_agent: "a-test",
+    lane_attempt: 1,
+    attempt: 1,
+    timeout_seconds: 240,
+    status: "completed",
+  });
+  assert.equal(legacyAttempt.session_mode, undefined);
+});
+
 test("core exports adapter invocation interfaces without runtime coupling", () => {
   const input = AdapterInvocationInputSchema.parse({
     schema_version: 1,
@@ -747,7 +798,28 @@ test("core exports adapter invocation interfaces without runtime coupling", () =
   });
   assert.equal(output.failure?.classification, "auth_required");
 
-  assert.equal(AdapterFailureClassificationSchema.parse("timeout"), "timeout");
+  for (const classification of [
+    "timeout",
+    "session_not_found",
+    "session_expired",
+    "session_incompatible",
+    "context_overflow",
+    "provider_busy",
+  ]) {
+    assert.equal(AdapterFailureClassificationSchema.parse(classification), classification);
+  }
+  assert.deepEqual(
+    AdapterCapabilityMetadataSchema.parse({
+      supports_resume: true,
+      supports_structured_session_id: true,
+    }),
+    {
+      roles: [],
+      stages: [],
+      supports_resume: true,
+      supports_structured_session_id: true,
+    },
+  );
 });
 
 test("contract docs exist and describe external observation files", () => {

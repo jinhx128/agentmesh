@@ -5,6 +5,7 @@
 schema_version = 1
 workflow_recipe_version = 1
 compatible_packet_schema_versions = [1]
+review_session_mode = "auto"
 name = "Review Gate"
 stages = ["review", "decide"]
 description = "Collect code or plan reviews from one or more read-only reviewers, then have a decider merge, verify, and classify findings."
