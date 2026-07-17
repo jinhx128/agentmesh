@@ -1,15 +1,16 @@
 import {
   existsSync,
   lstatSync,
-  mkdtempSync,
   realpathSync,
-  renameSync,
   rmdirSync,
-  rmSync,
   type Stats,
 } from "node:fs";
 import path from "node:path";
 
+import {
+  cleanAnchoredDirectory,
+  isAnchoredDirectoryCleanupError,
+} from "@agentmesh/runtime/src/fs/anchored-directory.js";
 import {
   currentWorkspaceRegistryEntry,
   resolveRegisteredWorkspace,
@@ -28,11 +29,11 @@ export interface StudioActivityDeletionOptions {
   cwd: string;
   workspaceId?: string;
   registryPath?: string;
-  beforeIsolation?: () => void;
+  afterTargetOpen?: () => void;
+  beforeFinalRmdir?: () => void;
 }
 
 interface DirectoryIdentity {
-  path: string;
   realPath: string;
   dev: Stats["dev"];
   ino: Stats["ino"];
@@ -87,44 +88,43 @@ export function deleteStudioActivity(
     throw new StudioActivityDeletionError(404, `${kind} not found: ${id}`);
   }
 
-  const quarantine = mkdtempSync(path.join(workspaceRoot, ".agentmesh-delete-"));
-  const quarantineIdentity = directoryIdentity(quarantine, "deletion quarantine", 400);
-  assertContainedIdentity(workspaceIdentity, quarantineIdentity, "deletion quarantine");
-  const isolatedTarget = path.join(quarantine, `${kind}-${id}`);
-  let isolated = false;
-  let preserveQuarantine = false;
   try {
-    options.beforeIsolation?.();
-    assertDirectoryUnchanged(workspaceIdentity, "workspace ancestor");
-    assertDirectoryUnchanged(agentmeshIdentity, ".agentmesh ancestor");
-    assertDirectoryUnchanged(managedRootIdentity, `${kind} management root`);
-    try {
-      renameSync(target, isolatedTarget);
-      isolated = true;
-    } catch (error) {
-      throw new StudioActivityDeletionError(
-        400,
-        `${kind} directory could not be isolated safely: ${errorMessage(error)}`,
-      );
+    cleanAnchoredDirectory({
+      targetPath: target,
+      expectedDev: targetIdentity.dev,
+      expectedIno: targetIdentity.ino,
+      afterOpen: options.afterTargetOpen,
+    });
+  } catch (error) {
+    if (!isAnchoredDirectoryCleanupError(error)) {
+      throw error;
     }
+    const message = {
+      changed: `${kind} directory changed during deletion`,
+      unavailable: `${kind} directory anchor is unavailable`,
+      timeout: `${kind} directory cleanup timed out safely`,
+      cleanup_failed: `${kind} directory could not be cleaned safely`,
+    }[error.reason];
+    throw new StudioActivityDeletionError(400, message);
+  }
 
-    const isolatedIdentity = directoryIdentity(isolatedTarget, `isolated ${kind} directory`, 400);
-    if (!sameFileIdentity(targetIdentity, isolatedIdentity)) {
-      preserveQuarantine = true;
-      throw new StudioActivityDeletionError(400, `${kind} directory changed during deletion`);
-    }
-    assertDirectoryUnchanged(workspaceIdentity, "workspace ancestor");
-    assertDirectoryUnchanged(quarantineIdentity, "deletion quarantine");
-    assertContainedIdentity(quarantineIdentity, isolatedIdentity, `isolated ${kind} directory`);
-    rmSync(quarantine, { recursive: true, force: false });
-  } finally {
-    if (!isolated && !preserveQuarantine) {
-      try {
-        rmdirSync(quarantine);
-      } catch {
-        // An unexpected non-empty quarantine is preserved rather than recursively removed.
-      }
-    }
+  options.beforeFinalRmdir?.();
+  let finalIdentity: DirectoryIdentity;
+  try {
+    finalIdentity = directoryIdentity(target, `${kind} directory`, 400);
+  } catch {
+    throw new StudioActivityDeletionError(400, `${kind} directory changed during deletion`);
+  }
+  if (!sameDirectoryIdentity(targetIdentity, finalIdentity)) {
+    throw new StudioActivityDeletionError(400, `${kind} directory changed during deletion`);
+  }
+  try {
+    rmdirSync(target);
+  } catch {
+    throw new StudioActivityDeletionError(
+      400,
+      `${kind} directory could not remove empty directory safely`,
+    );
   }
   return {
     deleted: true,
@@ -158,18 +158,10 @@ function directoryIdentity(
     throw new StudioActivityDeletionError(400, `unsafe ${label}`);
   }
   return {
-    path: path.resolve(directory),
     realPath,
     dev: stat.dev,
     ino: stat.ino,
   };
-}
-
-function assertDirectoryUnchanged(identity: DirectoryIdentity, label: string): void {
-  const current = directoryIdentity(identity.path, label, 400);
-  if (!sameDirectoryIdentity(identity, current)) {
-    throw new StudioActivityDeletionError(400, `${label} changed during deletion`);
-  }
 }
 
 function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
@@ -189,10 +181,6 @@ function assertContainedIdentity(
   if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new StudioActivityDeletionError(400, `unsafe ${label}`);
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function isStudioActivityDeletionError(error: unknown): error is StudioActivityDeletionError {

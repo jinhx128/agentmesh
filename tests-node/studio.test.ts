@@ -1105,7 +1105,7 @@ test("Studio deletion rejects a symlinked .agentmesh ancestor without deleting e
   assert.equal(readFileSync(path.join(externalRun, "request.md"), "utf-8"), "# Request\n\noutside-ancestor-run\n");
 });
 
-test("Studio deletion fails closed when .agentmesh is replaced after validation", () => {
+test("Studio deletion fails closed when .agentmesh is replaced after target fd open", () => {
   const workspace = makeWorkspace();
   const externalRoot = makeWorkspace();
   test.after(() => {
@@ -1120,22 +1120,70 @@ test("Studio deletion fails closed when .agentmesh is replaced after validation"
 
   const options = {
     cwd: workspace,
-    beforeIsolation: () => {
+    afterTargetOpen: () => {
       hookCalled = true;
       renameSync(agentmesh, originalAgentmesh);
       symlinkSync(path.join(externalRoot, ".agentmesh"), agentmesh);
     },
-  } as Parameters<typeof deleteStudioActivity>[2] & { beforeIsolation: () => void };
+  } as Parameters<typeof deleteStudioActivity>[2] & { afterTargetOpen: () => void };
 
   assert.throws(
     () => deleteStudioActivity("run", "root-swap-run", options),
-    /changed during deletion|unsafe .* ancestor|could not be isolated/,
+    /changed during deletion|could not be cleaned safely|anchor is unavailable/,
   );
   assert.equal(hookCalled, true);
   assert.equal(existsSync(path.join(originalAgentmesh, "runs", "root-swap-run")), true);
   assert.equal(existsSync(managedRun), true, "the replacement path resolves to the preserved external run");
   assert.equal(existsSync(externalRun), true);
   assert.equal(readFileSync(path.join(externalRun, "request.md"), "utf-8"), "# Request\n\nroot-swap-run\n");
+});
+
+test("Studio deletion never recursively removes a replacement installed before final rmdir", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const managedRun = writeRun(workspace, "final-rmdir-swap", {}, []);
+  const emptiedOriginal = path.join(workspace, ".agentmesh", "runs", "final-rmdir-swap-original");
+  const replacementSentinel = path.join(managedRun, "external-sentinel.txt");
+  let hookCalled = false;
+
+  const options = {
+    cwd: workspace,
+    beforeFinalRmdir: () => {
+      hookCalled = true;
+      renameSync(managedRun, emptiedOriginal);
+      mkdirSync(managedRun);
+      writeFileSync(replacementSentinel, "must survive\n");
+    },
+  } as Parameters<typeof deleteStudioActivity>[2] & { beforeFinalRmdir: () => void };
+
+  assert.throws(
+    () => deleteStudioActivity("run", "final-rmdir-swap", options),
+    /changed during deletion|could not remove empty directory safely/,
+  );
+  assert.equal(hookCalled, true);
+  assert.equal(readFileSync(replacementSentinel, "utf-8"), "must survive\n");
+  assert.deepEqual(readdirSync(emptiedOriginal), []);
+});
+
+test("Studio activity deletion uses an inherited directory fd without shell or recursive target-path removal", () => {
+  const runtimeSource = readFileSync(
+    path.resolve("packages/runtime/src/fs/anchored-directory.ts"),
+    "utf-8",
+  );
+  const appServerSource = readFileSync(
+    path.resolve("packages/app-server/src/activity-deletion.ts"),
+    "utf-8",
+  );
+  assert.match(runtimeSource, /openSync\([\s\S]*O_DIRECTORY[\s\S]*O_NOFOLLOW/);
+  assert.match(runtimeSource, /fstatSync/);
+  assert.match(runtimeSource, /spawnSync\(process\.execPath/);
+  assert.match(runtimeSource, /const ANCHORED_DELETE_TIMEOUT_MS = 15_000/);
+  assert.match(runtimeSource, /cwd:\s*targetPath/);
+  assert.match(runtimeSource, /timeout:\s*ANCHORED_DELETE_TIMEOUT_MS/);
+  assert.doesNotMatch(runtimeSource, /mkdtempSync|renameSync\(target|rmSync\(quarantine/);
+  assert.doesNotMatch(runtimeSource, /shell:\s*true|execSync|\/bin\/(?:sh|bash)/);
+  assert.match(appServerSource, /cleanAnchoredDirectory/);
+  assert.doesNotMatch(appServerSource, /node:child_process|spawnSync|process\.execPath/);
 });
 
 test("Studio server exposes read-only direct call index and details", async () => {
