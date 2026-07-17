@@ -329,6 +329,23 @@ test("session-capable plugins build distinct fresh and resume commands", () => {
 
   assert.deepEqual(fresh.command.slice(-2), ["--fresh", "begin"]);
   assert.deepEqual(resumed.command.slice(-2), ["--resume", "session-test-123"]);
+
+  const resumeResult = spawnSync(resumed.command[0], resumed.command.slice(1), { encoding: "utf-8" });
+  const parsedResume = plugin.parseStructuredSessionResult?.({
+    exitCode: resumeResult.status ?? 1,
+    stdout: resumeResult.stdout,
+    stderr: resumeResult.stderr,
+  });
+  assert.equal(parsedResume?.outputText, "resumed");
+  assert.doesNotMatch(
+    JSON.stringify(
+      redactAdapterStructuredResult(parsedResume ?? { outputText: "" }, {
+        mode: "resume",
+        providerSessionId: "session-test-123",
+      }),
+    ),
+    /session-test-123/,
+  );
 });
 
 test("session-capable plugins parse only structured JSONL session IDs and redact returned diagnostics", () => {
@@ -377,6 +394,31 @@ test("session-capable plugins parse only structured JSONL session IDs and redact
       },
     },
   );
+});
+
+test("safe session results redact a known resume ID when a failure omits it", () => {
+  const safe = redactAdapterStructuredResult(
+    {
+      outputText: "resume session-test-123 failed",
+      failure: {
+        classification: "session_not_found",
+        message: "session-test-123 was not found",
+        retryable: false,
+        diagnostic: "provider diagnostic session-test-123",
+      },
+    },
+    { mode: "resume", providerSessionId: "session-test-123" },
+  );
+
+  assert.deepEqual(safe, {
+    outputText: "resume [REDACTED] failed",
+    failure: {
+      classification: "session_not_found",
+      message: "[REDACTED] was not found",
+      retryable: false,
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(safe), /session-test-123/);
 });
 
 test("session fixture maps documented failures without provider-specific public states", () => {

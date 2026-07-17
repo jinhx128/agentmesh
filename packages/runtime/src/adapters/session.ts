@@ -23,18 +23,29 @@ export function redactAdapterSessionText(value: string, providerSessionId: strin
 /** Creates a result that is safe to return in diagnostics, logs, and summaries. */
 export function redactAdapterStructuredResult(
   result: AdapterStructuredResult,
+  session?: AdapterSessionDirective,
 ): AdapterSessionSafeResult {
-  const providerSessionId = result.providerSessionId;
+  const providerSessionIds = [
+    result.providerSessionId,
+    ...(session?.mode === "resume" ? [session.providerSessionId] : []),
+  ];
   return {
-    outputText: redactAdapterSessionText(result.outputText, providerSessionId),
+    outputText: redactKnownSessionIds(result.outputText, providerSessionIds),
     ...(result.failure
       ? {
           failure: {
             classification: result.failure.classification,
-            message: redactAdapterSessionText(result.failure.message, providerSessionId),
+            message: redactKnownSessionIds(result.failure.message, providerSessionIds),
             retryable: result.failure.retryable,
           },
         }
       : {}),
   };
+}
+
+function redactKnownSessionIds(value: string, providerSessionIds: Array<string | undefined>): string {
+  return providerSessionIds.reduce<string>(
+    (redacted, providerSessionId) => redactAdapterSessionText(redacted, providerSessionId),
+    value,
+  );
 }
