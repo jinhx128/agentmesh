@@ -17,6 +17,11 @@ import {
   relaunchDesktopApp,
 } from "../apps/studio-web/src/api/desktop-updater.js";
 import {
+  isDesktopPreferencesAvailable,
+  loadDesktopPreferences,
+  saveDesktopAutoUpdatePreference,
+} from "../apps/studio-web/src/api/desktop-preferences.js";
+import {
   loadStudioAdvancedSettings,
   updateStudioAdvancedSettings,
   type StudioAdvancedSettingsPayload,
@@ -51,6 +56,7 @@ import {
   type StudioPresetLifecycleResponse,
 } from "../apps/studio-web/src/api/presets.js";
 import {
+  deleteStudioRun,
   loadStudioArtifactPreview,
   loadStudioRunDetail,
   loadStudioRuns,
@@ -61,6 +67,7 @@ import {
   type StudioRunSummary,
 } from "../apps/studio-web/src/api/runs.js";
 import {
+  deleteStudioCall,
   loadStudioCallDetail,
   loadStudioCalls,
   nextSelectedCallKey,
@@ -71,6 +78,7 @@ import {
 } from "../apps/studio-web/src/api/calls.js";
 import {
   App,
+  activitySelectionAfterDelete,
   runDetailTabAfterRunSelection,
 } from "../apps/studio-web/src/app/App.js";
 import {
@@ -97,7 +105,10 @@ import {
 } from "../apps/studio-web/src/features/navigation/AutoRefreshSelect.js";
 import {
   ACTIVITY_GROUP_PREVIEW_LIMIT,
+  ActivityDeleteDialog,
   ActivityNavigator,
+  activityExpandedGroupsAfterHeaderToggle,
+  activityStatusPresentation,
   activityCalls,
   activityGroupCollapsed,
   activityItems,
@@ -299,6 +310,11 @@ test("App uses one activity navigator without losing run and call detail routing
   assert.doesNotMatch(appSource, /setSelectedRunKey\(undefined\)|setSelectedCallKey\(undefined\)/);
   assert.match(appSource, /function refreshAfterMutation[\s\S]*loadRunsWithClient\(apiClient, \{ showLoading: false \}\)/);
   assert.match(appSource, /async function submitCallAdoption[\s\S]*loadCallsWithClient\(apiClient, \{ showLoading: false \}\)/);
+  assert.match(appSource, /loadDesktopPreferences\(\)/);
+  assert.match(appSource, /desktopStartupCheckStartedRef/);
+  assert.match(appSource, /preferences\.auto_check_updates[\s\S]*checkDesktopUpdater\(\)/);
+  assert.match(appSource, /desktopAutoUpdate:\s*isDesktopPreferencesAvailable\(\)/);
+  assert.doesNotMatch(appSource, /localStorage|sessionStorage|indexedDB/);
   assert.match(app, /aria-label="搜索活动"/);
   assert.match(app, /title="刷新活动"/);
   assert.doesNotMatch(app, /navigator-data-switch|studio-data-switch/);
@@ -555,6 +571,8 @@ test("Studio silver shell renders the approved brand hierarchy", () => {
   assert.doesNotMatch(viteConfigSource, /canonicalIconDir|studio-desktop\/src-tauri\/icons/);
   assert.match(viteConfigSource, /allow:\s*\[studioRoot\]/);
   assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
+  assert.match(frontendCss, /\.studio-activity-delete\s*\{[^}]*opacity:\s*1;/s);
+  assert.match(frontendCss, /@media \(hover:\s*hover\)[\s\S]*\.studio-activity-delete\s*\{[^}]*opacity:\s*0;/s);
 });
 
 test("Studio silver components map update and status semantics", () => {
@@ -571,6 +589,9 @@ test("Studio silver components map update and status semantics", () => {
     },
     onCheck: async () => {},
     onInstall: async () => {},
+  }, {
+    state: { status: "ready", enabled: true },
+    onChange: async () => {},
   });
   const frontendCss = readFileSync(
     path.resolve("apps/studio-web/src/styles.css"),
@@ -981,6 +1002,10 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.equal(visibleActivityGroupItems(items, false, "activity").length, 7);
   assert.equal(activityGroupCollapsed(true, ""), true);
   assert.equal(activityGroupCollapsed(true, "activity"), false);
+  assert.deepEqual(
+    [...activityExpandedGroupsAfterHeaderToggle(new Set(["2026-05-18", "2026-05-17"]), "2026-05-18")],
+    ["2026-05-17"],
+  );
   assert.equal(parseAutoRefreshSeconds("15"), 15);
   assert.equal(parseAutoRefreshSeconds("bad"), 0);
 
@@ -994,6 +1019,7 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(previewMarkup, /aria-expanded="true"/);
   assert.match(previewMarkup, /aria-expanded="false"/);
   assert.match(previewMarkup, /展开其余 2 条/);
+  assert.doesNotMatch(previewMarkup, /studio-nav-group-more-icon/);
   for (let index = 1; index <= 5; index += 1) {
     assert.match(previewMarkup, new RegExp(`activity-call-${index}`));
   }
@@ -1033,7 +1059,11 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(markup, /运行加载失败/);
   assert.match(markup, /run endpoint failed/);
   assert.match(markup, /可用调用记录/);
-  assert.match(markup, /\[调用\]/);
+  assert.match(markup, />调用</);
+  assert.doesNotMatch(markup, /\[调用\]/);
+  assert.match(markup, /失败/);
+  assert.match(markup, /title="failed"/);
+  assert.match(markup, /aria-label="删除调用：可用调用记录"/);
   assert.match(markup, new RegExp(formatLocalTime(call.created_at)));
   assert.doesNotMatch(markup, /internal-summary-must-not-render/);
 
@@ -1078,6 +1108,32 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(missingTimeMarkup, /无时间运行/);
   assert.match(missingTimeMarkup, /时间未知/);
   assert.doesNotMatch(missingTimeMarkup, /<time/);
+
+  assert.deepEqual(activityStatusPresentation("created"), { label: "等待中", tone: "blue" });
+  assert.deepEqual(activityStatusPresentation("completed"), { label: "成功", tone: "green" });
+  assert.deepEqual(activityStatusPresentation("error"), { label: "失败", tone: "red" });
+  assert.deepEqual(activityStatusPresentation("cancelled"), { label: "已中止", tone: "gray" });
+  assert.deepEqual(activityStatusPresentation("timeout"), { label: "超时", tone: "orange" });
+  assert.deepEqual(activityStatusPresentation("stale"), { label: "已失联", tone: "yellow" });
+  assert.deepEqual(activityStatusPresentation("future_state"), { label: "未知状态", tone: "gray" });
+
+  const deleteItem = activityItems([], [call])[0];
+  assert.ok(deleteItem);
+  const deleteDialog = renderStudioElement(React.createElement(ActivityDeleteDialog, {
+    opened: true,
+    item: deleteItem,
+    pending: true,
+    error: "目录暂时无法删除",
+    onCancel: () => {},
+    onConfirm: () => {},
+    withinPortal: false,
+  }));
+  assert.match(deleteDialog, /删除活动记录/);
+  assert.match(deleteDialog, /可用调用记录/);
+  assert.match(deleteDialog, /AgentMesh 管理的记录目录/);
+  assert.match(deleteDialog, /目录暂时无法删除/);
+  assert.match(deleteDialog, /正在删除/);
+  assert.match(deleteDialog, /disabled/);
 
 });
 
@@ -1772,20 +1828,20 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     },
     onCheck: async () => {},
     onInstall: async () => {},
+  }, {
+    state: { status: "ready", enabled: true },
+    onChange: async () => {},
   });
   assert.match(settings, /可读写/);
   assert.match(settings, /运行时版本/);
   assert.match(settings, /当前入口/);
   assert.match(settings, /Web 端（studio）/);
-  assert.match(settings, /兼容性文件/);
-  assert.match(settings, /\.agentmesh\/compatibility\.json/);
-  assert.match(settings, /元数据状态/);
-  assert.match(settings, /已记录/);
-  assert.match(settings, /Packet Schema 版本/);
-  assert.match(settings, /最低读取版本/);
+  assert.doesNotMatch(settings, /兼容性文件|\.agentmesh\/compatibility\.json/);
+  assert.doesNotMatch(settings, /元数据状态/);
+  assert.doesNotMatch(settings, /Packet Schema 版本/);
+  assert.doesNotMatch(settings, /最低读取版本/);
   assert.match(settings, /最低写入版本/);
-  assert.match(settings, /最后写入方/);
-  assert.match(settings, /Codex（codex） · 运行时 0\.1\.8/);
+  assert.doesNotMatch(settings, /最后写入方|Codex（codex） · 运行时 0\.1\.8/);
   assert.match(settings, /最后更新时间/);
   assert.match(settings, /2026-05-18/);
   assert.match(settings, /版本更新/);
@@ -1799,10 +1855,28 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /桌面端更新/);
   assert.match(settings, /AgentMesh_0\.1\.9_aarch64\.dmg/);
   assert.match(settings, /应用更新/);
+  assert.match(settings, /自动检测桌面端更新/);
+  assert.match(settings, /启动桌面应用时自动检查一次/);
+  assert.match(settings, /type="checkbox"[^>]*checked/);
   assert.match(settings, /安装并重启/);
   assert.match(settings, /0\.1\.10/);
   assert.match(settings, /0\.1\.11/);
   assert.doesNotMatch(settings, /Runtime 0\.1\.8|entrypoint|Last writer|Metadata ·/);
+  const preferenceError = renderSettingsAboutPanel({
+    status: "ready",
+    compatibility: compatibilityFixture(),
+    update: { status: "ready", report: updateFixture() },
+  }, {
+    state: { status: "current" },
+    onCheck: async () => {},
+    onInstall: async () => {},
+  }, {
+    state: { status: "error", enabled: false, message: "permission denied" },
+    onChange: async () => {},
+  });
+  assert.match(preferenceError, /桌面更新偏好读取或保存失败/);
+  assert.match(preferenceError, /permission denied/);
+  assert.doesNotMatch(preferenceError, /type="checkbox"[^>]*checked/);
   const updateError = renderSettingsAboutPanel({
     status: "ready",
     compatibility: compatibilityFixture(),
@@ -1818,15 +1892,12 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     update: { status: "loading" },
   });
   assert.match(legacySettings, /命令行/);
-  assert.match(legacySettings, /旧工作区：缺少兼容性元数据/);
   assert.match(legacySettings, /兼容性元数据/);
-  assert.match(legacySettings, /Packet Schema 版本/);
-  assert.match(legacySettings, /最低读取版本/);
+  assert.doesNotMatch(legacySettings, /元数据状态|Packet Schema 版本|最低读取版本/);
   assert.match(legacySettings, /最低写入版本/);
-  assert.match(legacySettings, /最后写入方/);
+  assert.doesNotMatch(legacySettings, /最后写入方/);
   assert.match(legacySettings, /最后更新时间/);
   assert.match(legacySettings, /尚未生成（旧工作区首次成功写入后补齐）/);
-  assert.match(legacySettings, /尚未生成兼容性元数据/);
   assert.match(legacySettings, /诊断说明/);
   assert.match(legacySettings, /当前按旧工作区可读写处理，下次成功写入后会自动补齐/);
   assert.doesNotMatch(legacySettings, /compatibility metadata is missing|legacy workspace|packet schema unknown|未知|未记录/);
@@ -2180,6 +2251,15 @@ test("browser Studio keeps native updater APIs unavailable", async () => {
     relaunchDesktopApp(),
     /Desktop app updater is only available from AgentMesh\.app/,
   );
+  assert.equal(isDesktopPreferencesAvailable(), false);
+  await assert.rejects(loadDesktopPreferences(), /desktop preferences are only available/i);
+  await assert.rejects(saveDesktopAutoUpdatePreference(false), /desktop preferences are only available/i);
+  const preferencesSource = readFileSync(
+    path.resolve("apps/studio-web/src/api/desktop-preferences.ts"),
+    "utf-8",
+  );
+  assert.match(preferencesSource, /get_desktop_preferences|set_desktop_preferences/);
+  assert.doesNotMatch(preferencesSource, /localStorage|sessionStorage|indexedDB/);
 });
 
 test("desktop updater errors preserve safe native diagnostics", () => {
@@ -2217,10 +2297,12 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
 
   await loadStudioRuns(client);
   await loadStudioRunDetail(client, "run-1", { eventOffset: 50, eventLimit: 25 });
+  await deleteStudioRun(client, "run-1", "workspace one");
   await loadStudioArtifactPreview(client, "run-1", "output.md");
   await loadStudioCatalog(client);
   await loadStudioCalls(client);
   await loadStudioCallDetail(client, "call-1");
+  await deleteStudioCall(client, "call-1", "workspace one");
   await submitStudioCallAdoption(client, "call-1", { status: "accepted", reason: "looks good" });
   await submitStudioMutation(client, { action: "retry", run_id: "run-1" });
   await loadStudioAdvancedSettings(client);
@@ -2256,10 +2338,12 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   assert.deepEqual(calls.map((call) => `${call.init?.method ?? "GET"} ${new URL(call.url).pathname}`), [
     "GET /api/runs",
     "GET /api/runs/run-1",
+    "DELETE /api/runs/run-1",
     "GET /api/runs/run-1/artifacts/output.md",
     "GET /api/catalog",
     "GET /api/calls",
     "GET /api/calls/call-1",
+    "DELETE /api/calls/call-1",
     "POST /api/calls/call-1/adoption",
     "POST /api/mutations",
     "GET /api/v1/settings/advanced",
@@ -2280,7 +2364,9 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "POST /api/desktop/integrations/skills",
     "GET /api/v1/update/check",
   ]);
-  assert.equal(new URL(calls[11].url).search, "?adapter=claude-code-cli");
+  assert.equal(new URL(calls[2].url).searchParams.get("workspace_id"), "workspace one");
+  assert.equal(new URL(calls[7].url).searchParams.get("workspace_id"), "workspace one");
+  assert.equal(new URL(calls[13].url).search, "?adapter=claude-code-cli");
   assert.equal((calls[0].init?.headers as Headers).get("authorization"), "Bearer secret-token");
 });
 
@@ -2344,6 +2430,18 @@ test("Selection helpers preserve current ids when still present", () => {
   assert.equal(runDetailTabAfterRunSelection("run-1", "run-1", "events"), "events");
   assert.equal(runDetailTabAfterRunSelection("run-1", "run-2", "events"), "details");
   assert.equal(runDetailTabAfterRunSelection(undefined, "run-1", "events"), "details");
+
+  const activities = activityItems(studioRunSummariesFixture(), studioCallSummariesFixture());
+  const selected = activities[0];
+  assert.ok(selected);
+  const next = activitySelectionAfterDelete(activities, selected, selected.kind, selected.key);
+  assert.deepEqual(next, { kind: activities[1]?.kind, key: activities[1]?.key });
+  const preserved = activities[2];
+  assert.ok(preserved);
+  assert.deepEqual(
+    activitySelectionAfterDelete(activities, selected, preserved.kind, preserved.key),
+    { kind: preserved.kind, key: preserved.key },
+  );
 });
 
 test("Agent model option cache preloads every Studio tool once", async () => {
@@ -2569,11 +2667,16 @@ function renderSafeActionsPanel(
   }));
 }
 
-function renderSettingsAboutPanel(state: SettingsAboutState, desktopUpdater?: unknown): string {
+function renderSettingsAboutPanel(
+  state: SettingsAboutState,
+  desktopUpdater?: unknown,
+  desktopAutoUpdate?: unknown,
+): string {
   return renderStudioElement(React.createElement(SettingsAboutPanel, {
     state,
     onRefreshUpdate: () => {},
     desktopUpdater,
+    desktopAutoUpdate,
   } as Parameters<typeof SettingsAboutPanel>[0]));
 }
 

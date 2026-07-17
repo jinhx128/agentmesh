@@ -402,6 +402,39 @@ button:not(:disabled),
   min-height: 20px;
 }
 
+.studio-activity-item-shell {
+  position: relative;
+}
+
+.studio-activity-item-shell .studio-nav-item {
+  padding-right: 36px;
+}
+
+.studio-activity-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  opacity: 1;
+  transition: opacity 120ms ease;
+}
+
+.studio-activity-delete svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (hover: hover) {
+  .studio-activity-delete {
+    opacity: 0;
+  }
+
+  .studio-activity-item-shell:hover .studio-activity-delete,
+  .studio-activity-item-shell:focus-within .studio-activity-delete {
+    opacity: 1;
+  }
+}
+
 .studio-activity-kind {
   flex: 0 0 auto;
   padding: 1px 6px;
@@ -411,6 +444,26 @@ button:not(:disabled),
   color: #667181;
   font-weight: 650;
   line-height: 1.4;
+}
+
+.studio-activity-kind[data-kind="run"] {
+  border-color: #8ec5ff;
+  background: #dff0ff;
+  color: #075a9c;
+}
+
+.studio-activity-kind[data-kind="call"] {
+  border-color: #d8a9ff;
+  background: #f3e6ff;
+  color: #7132a8;
+}
+
+.studio-activity-item-state {
+  min-width: 0;
+}
+
+.studio-activity-status .mantine-Badge-label {
+  text-transform: none;
 }
 
 .studio-nav-item .mantine-Button-inner,
@@ -471,12 +524,6 @@ button:not(:disabled),
 
 .studio-nav-group-more .mantine-Button-label {
   gap: 4px;
-}
-
-.studio-nav-group-more-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
 }
 
 .studio-nav-group-more:not(:disabled):hover {

@@ -1,7 +1,10 @@
 import {
   ActionIcon,
+  Alert,
+  Badge,
   Button,
   Group,
+  Modal,
   Paper,
   ScrollArea,
   Stack,
@@ -68,6 +71,12 @@ export interface ActivityNavigatorProps {
   onRefresh: () => void;
   onSelectRun: (runKey: string) => void;
   onSelectCall: (callKey: string) => void;
+  onDeleteActivity?: (item: StudioActivityItem) => Promise<void>;
+}
+
+export interface ActivityStatusPresentation {
+  label: string;
+  tone: "blue" | "cyan" | "green" | "red" | "gray" | "orange" | "yellow";
 }
 
 export const ACTIVITY_GROUP_PREVIEW_LIMIT = 5;
@@ -149,6 +158,32 @@ export function visibleActivityGroupItems(
   return items.slice(0, ACTIVITY_GROUP_PREVIEW_LIMIT);
 }
 
+export function activityExpandedGroupsAfterHeaderToggle(
+  expandedGroups: Set<string>,
+  date: string,
+): Set<string> {
+  const next = new Set(expandedGroups);
+  next.delete(date);
+  return next;
+}
+
+export function activityStatusPresentation(status: string | undefined): ActivityStatusPresentation {
+  switch (status?.trim().toLocaleLowerCase()) {
+    case "running": return { label: "运行中", tone: "cyan" };
+    case "created":
+    case "pending": return { label: "等待中", tone: "blue" };
+    case "success":
+    case "completed": return { label: "成功", tone: "green" };
+    case "failed":
+    case "error": return { label: "失败", tone: "red" };
+    case "aborted":
+    case "cancelled": return { label: "已中止", tone: "gray" };
+    case "timeout": return { label: "超时", tone: "orange" };
+    case "stale": return { label: "已失联", tone: "yellow" };
+    default: return { label: "未知状态", tone: "gray" };
+  }
+}
+
 export function ActivityNavigator({
   runsState,
   callsState,
@@ -162,6 +197,7 @@ export function ActivityNavigator({
   onRefresh,
   onSelectRun,
   onSelectCall,
+  onDeleteActivity,
 }: ActivityNavigatorProps): ReactElement {
   return (
     <Paper
@@ -225,6 +261,7 @@ export function ActivityNavigator({
             query={query}
             onSelectRun={onSelectRun}
             onSelectCall={onSelectCall}
+            onDeleteActivity={onDeleteActivity}
           />
         </ScrollArea>
       </Stack>
@@ -241,6 +278,7 @@ function ActivityListContent({
   query,
   onSelectRun,
   onSelectCall,
+  onDeleteActivity,
 }: Pick<
   ActivityNavigatorProps,
   | "runsState"
@@ -251,9 +289,13 @@ function ActivityListContent({
   | "query"
   | "onSelectRun"
   | "onSelectCall"
+  | "onDeleteActivity"
 >): ReactElement {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedItemGroups, setExpandedItemGroups] = useState<Set<string>>(() => new Set());
+  const [deleteItem, setDeleteItem] = useState<StudioActivityItem | undefined>(undefined);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
   const runs = activityRuns(runsState);
   const calls = activityCalls(callsState);
   const allItems = activityItems(runs, calls);
@@ -269,6 +311,7 @@ function ActivityListContent({
 
   function toggleGroup(date: string): void {
     setCollapsedGroups((current) => toggledSet(current, date));
+    setExpandedItemGroups((current) => activityExpandedGroupsAfterHeaderToggle(current, date));
   }
 
   function toggleGroupItems(date: string): void {
@@ -278,6 +321,7 @@ function ActivityListContent({
   const loading = runsState.status === "loading" || callsState.status === "loading";
   const noSourceItems = runs.length === 0 && calls.length === 0;
   return (
+    <>
     <Stack gap="xs">
       {issues.map((issue) => (
         <NavEmpty
@@ -317,6 +361,10 @@ function ActivityListContent({
                     )}
                     onSelectRun={onSelectRun}
                     onSelectCall={onSelectCall}
+                    onDelete={() => {
+                      setDeleteError(undefined);
+                      setDeleteItem(item);
+                    }}
                   />
                 ))}
                 {showMoreControl ? (
@@ -332,6 +380,36 @@ function ActivityListContent({
         );
       })}
     </Stack>
+    <ActivityDeleteDialog
+      opened={deleteItem !== undefined}
+      item={deleteItem}
+      pending={deletePending}
+      error={deleteError}
+      onCancel={() => {
+        if (!deletePending) {
+          setDeleteItem(undefined);
+          setDeleteError(undefined);
+        }
+      }}
+      onConfirm={() => {
+        if (!deleteItem || !onDeleteActivity) {
+          return;
+        }
+        setDeletePending(true);
+        setDeleteError(undefined);
+        void onDeleteActivity(deleteItem)
+          .then(() => {
+            setDeleteItem(undefined);
+          })
+          .catch((error: unknown) => {
+            setDeleteError(error instanceof Error ? error.message : "删除失败，请重试");
+          })
+          .finally(() => {
+            setDeletePending(false);
+          });
+      }}
+    />
+    </>
   );
 }
 
@@ -340,14 +418,20 @@ function ActivityButton({
   selected,
   onSelectRun,
   onSelectCall,
+  onDelete,
 }: {
   item: StudioActivityItem;
   selected: boolean;
   onSelectRun: (runKey: string) => void;
   onSelectCall: (callKey: string) => void;
+  onDelete: () => void;
 }): ReactElement {
-  const typeLabel = item.kind === "run" ? "[运行]" : "[调用]";
+  const typeLabel = item.kind === "run" ? "运行" : "调用";
+  const status = item.kind === "run" ? item.run.status : item.call.status;
+  const statusPresentation = activityStatusPresentation(status);
+  const deleteLabel = `删除${typeLabel}：${item.title}`;
   return (
+    <div className="studio-activity-item-shell">
     <Button
       className="studio-nav-item studio-activity-item"
       variant={selected ? "light" : "subtle"}
@@ -374,19 +458,93 @@ function ActivityButton({
           {item.title}
         </Text>
         <Group className="studio-activity-item-meta" justify="space-between" gap="xs" wrap="nowrap">
-          <Text className="studio-activity-kind" component="span" size="xs">
+          <Text className="studio-activity-kind" data-kind={item.kind} component="span" size="xs">
             {typeLabel}
           </Text>
-          {item.timestampMs === null ? (
-            <Text component="span" size="xs" c="dimmed" aria-label="时间未知">—</Text>
-          ) : (
-            <Text component="time" dateTime={item.timestamp} size="xs" c="dimmed">
-              {formatLocalTime(item.timestamp)}
-            </Text>
-          )}
+          <Group className="studio-activity-item-state" gap={6} wrap="nowrap">
+            <Badge
+              className="studio-activity-status"
+              size="xs"
+              variant="light"
+              color={statusPresentation.tone}
+              title={status || "unknown"}
+              aria-label={`状态：${statusPresentation.label}（${status || "unknown"}）`}
+            >
+              {statusPresentation.label}
+            </Badge>
+            {item.timestampMs === null ? (
+              <Text component="span" size="xs" c="dimmed" aria-label="时间未知">—</Text>
+            ) : (
+              <Text component="time" dateTime={item.timestamp} size="xs" c="dimmed">
+                {formatLocalTime(item.timestamp)}
+              </Text>
+            )}
+          </Group>
         </Group>
       </Stack>
     </Button>
+    <ActionIcon
+      className="studio-activity-delete"
+      variant="subtle"
+      color="red"
+      size={24}
+      title={deleteLabel}
+      aria-label={deleteLabel}
+      onClick={(event) => {
+        event.stopPropagation();
+        onDelete();
+      }}
+    >
+      <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <path d="M4.5 5.5h9M7 5.5V4h4v1.5m-5.5 0 .5 8h6l.5-8M7.5 8v3.5m3-3v3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </ActionIcon>
+    </div>
+  );
+}
+
+export function ActivityDeleteDialog({
+  opened,
+  item,
+  pending,
+  error,
+  onCancel,
+  onConfirm,
+  withinPortal = true,
+}: {
+  opened: boolean;
+  item: StudioActivityItem | undefined;
+  pending: boolean;
+  error?: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  withinPortal?: boolean;
+}): ReactElement {
+  return (
+    <Modal
+      opened={opened}
+      onClose={onCancel}
+      title="删除活动记录"
+      centered
+      size="sm"
+      closeOnClickOutside={!pending}
+      closeOnEscape={!pending}
+      withCloseButton={!pending}
+      withinPortal={withinPortal}
+    >
+      <Stack gap="md">
+        <Text size="sm">
+          将删除“{item?.title ?? "这条活动"}”对应的 AgentMesh 管理的记录目录及其中全部文件。外部输出和关联记录不会被删除。
+        </Text>
+        {error ? <Alert color="red" variant="light" role="alert">{error}</Alert> : null}
+        <Group justify="flex-end" gap="sm">
+          <Button variant="default" size="xs" disabled={pending} onClick={onCancel}>取消</Button>
+          <Button color="red" size="xs" loading={pending} onClick={onConfirm}>
+            {pending ? "正在删除" : "确认删除"}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -475,20 +633,6 @@ function NavGroupMoreButton({
       aria-expanded={expanded}
       onClick={onToggle}
     >
-      <svg
-        className="studio-nav-group-more-icon"
-        viewBox="0 0 18 18"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d={expanded ? "M5.5 10.5 9 7l3.5 3.5" : "M5.5 7.5 9 11l3.5-3.5"}
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
       {expanded
         ? `收起到 ${ACTIVITY_GROUP_PREVIEW_LIMIT} 条`
         : `展开其余 ${hiddenCount} 条`}

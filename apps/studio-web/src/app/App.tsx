@@ -74,6 +74,7 @@ import {
   type StudioMutationResponse,
 } from "../api/mutations.js";
 import {
+  deleteStudioRun,
   loadStudioArtifactPreview,
   loadStudioRunDetail,
   loadStudioRuns,
@@ -81,6 +82,7 @@ import {
   studioRunKey,
 } from "../api/runs.js";
 import {
+  deleteStudioCall,
   loadStudioCallDetail,
   loadStudioCalls,
   nextSelectedCallKey,
@@ -105,6 +107,7 @@ import {
   type AgentLifecycleState,
 } from "../features/agents/AgentLifecyclePanel.js";
 import {
+  type DesktopAutoUpdatePreferenceState,
   type SettingsAboutState,
 } from "../features/settings/SettingsAboutPanel.js";
 import {
@@ -115,6 +118,12 @@ import {
   relaunchDesktopApp,
   type DesktopAppUpdaterState,
 } from "../api/desktop-updater.js";
+import {
+  isDesktopPreferencesAvailable,
+  loadDesktopPreferences,
+  normalizeDesktopPreferenceError,
+  saveDesktopAutoUpdatePreference,
+} from "../api/desktop-preferences.js";
 import {
   type AgentIntegrationsState,
 } from "../features/settings/AgentIntegrationsPanel.js";
@@ -142,9 +151,11 @@ import {
 import {
   ActivityNavigator,
   activityCalls,
+  activityItems,
   activityRuns,
   type ActivityCallsState,
   type ActivityRunsState,
+  type StudioActivityItem,
 } from "../features/navigation/ActivityNavigator.js";
 import {
   CallDetailView,
@@ -183,6 +194,9 @@ export function App(): ReactElement {
   const [desktopUpdaterState, setDesktopUpdaterState] = useState<DesktopAppUpdaterState>(
     isDesktopUpdaterAvailable() ? { status: "idle" } : { status: "unavailable" },
   );
+  const [desktopAutoUpdateState, setDesktopAutoUpdateState] = useState<DesktopAutoUpdatePreferenceState>({
+    status: "loading",
+  });
   const [advancedSettingsState, setAdvancedSettingsState] = useState<AdvancedSettingsState>({ status: "loading" });
   const [agentIntegrationsState, setAgentIntegrationsState] = useState<AgentIntegrationsState>({ status: "loading" });
   const [agentLifecycleState, setAgentLifecycleState] = useState<AgentLifecycleState>({ status: "loading" });
@@ -202,6 +216,7 @@ export function App(): ReactElement {
   const [runDetailTab, setRunDetailTab] = useState<RunDetailTab>("details");
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
   const previousSelectedRunKeyRef = useRef<string | undefined>(undefined);
+  const desktopStartupCheckStartedRef = useRef(false);
 
   function loadRunsWithClient(client: StudioApiClient, options: NavigatorLoadOptions = {}): void {
     if (options.showLoading !== false) {
@@ -324,6 +339,79 @@ export function App(): ReactElement {
     }
   }
 
+  async function saveDesktopAutoUpdate(enabled: boolean): Promise<void> {
+    const previousEnabled = desktopAutoUpdateState.status === "loading"
+      ? true
+      : desktopAutoUpdateState.enabled;
+    setDesktopAutoUpdateState({ status: "saving", enabled });
+    try {
+      const saved = await saveDesktopAutoUpdatePreference(enabled);
+      setDesktopAutoUpdateState({ status: "ready", enabled: saved.auto_check_updates });
+    } catch (error) {
+      setDesktopAutoUpdateState({
+        status: "error",
+        enabled: previousEnabled,
+        message: normalizeDesktopPreferenceError(error),
+      });
+    }
+  }
+
+  async function deleteActivity(item: StudioActivityItem): Promise<void> {
+    if (!apiClient) {
+      throw new Error("AgentMesh API 尚未就绪，请稍后重试。");
+    }
+    const response = item.kind === "run"
+      ? await deleteStudioRun(apiClient, item.run.run_id, item.run.workspace.id)
+      : await deleteStudioCall(apiClient, item.call.id, item.call.workspace.id);
+    if (!response.ok) {
+      const message = "error" in response.payload ? response.payload.error : "删除失败，请重试";
+      throw new Error(message);
+    }
+
+    const selectedKind = workspaceView === "runs"
+      ? "run"
+      : workspaceView === "calls"
+        ? "call"
+        : undefined;
+    const selectedKey = selectedKind === "run"
+      ? selectedRunKey
+      : selectedKind === "call"
+        ? selectedCallKey
+        : undefined;
+    const nextSelection = activitySelectionAfterDelete(
+      activityItems(activityRuns(runsState), activityCalls(callsState)),
+      item,
+      selectedKind,
+      selectedKey,
+    );
+
+    if (item.kind === "run") {
+      setRunsState({
+        status: "ready",
+        runs: activityRuns(runsState).filter((run) => studioRunKey(run) !== item.key),
+      });
+    } else {
+      setCallsState({
+        status: "ready",
+        calls: activityCalls(callsState).filter((call) => studioCallKey(call) !== item.key),
+      });
+    }
+
+    if (selectedKind === item.kind && selectedKey === item.key) {
+      setSelectedRunKey(nextSelection?.kind === "run" ? nextSelection.key : undefined);
+      setSelectedCallKey(nextSelection?.kind === "call" ? nextSelection.key : undefined);
+      if (nextSelection) {
+        setWorkspaceView(nextSelection.kind === "run" ? "runs" : "calls");
+      }
+      setRunDetailState({ status: "empty" });
+      setCallDetailState({ status: "empty" });
+      setSelectedArtifactName(undefined);
+      setArtifactPreviewState({ status: "idle" });
+      setArtifactDrawerOpened(false);
+    }
+    loadActivitiesWithClient(apiClient, { showLoading: false });
+  }
+
   function loadAgentIntegrationsWithClient(client: StudioApiClient): void {
     setAgentIntegrationsState({ status: "loading" });
     void loadStudioIntegrations(client)
@@ -345,6 +433,36 @@ export function App(): ReactElement {
         setAdvancedSettingsState({ status: "error", message: normalizeStudioApiError(error).message });
       });
   }
+
+  useEffect(() => {
+    if (!isDesktopPreferencesAvailable()) {
+      return undefined;
+    }
+    let active = true;
+    void loadDesktopPreferences()
+      .then((preferences) => {
+        if (!active) {
+          return;
+        }
+        setDesktopAutoUpdateState({ status: "ready", enabled: preferences.auto_check_updates });
+        if (preferences.auto_check_updates && !desktopStartupCheckStartedRef.current) {
+          desktopStartupCheckStartedRef.current = true;
+          void checkDesktopUpdater();
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setDesktopAutoUpdateState({
+            status: "error",
+            enabled: true,
+            message: normalizeDesktopPreferenceError(error),
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -810,6 +928,7 @@ export function App(): ReactElement {
                 setSelectedCallKey(callKey);
                 setWorkspaceView("calls");
               }}
+              onDeleteActivity={deleteActivity}
             />
           </Box>
         </Stack>
@@ -939,6 +1058,10 @@ export function App(): ReactElement {
                     onCheck: checkDesktopUpdater,
                     onInstall: installDesktopUpdater,
                   },
+                  desktopAutoUpdate: isDesktopPreferencesAvailable() ? {
+                    state: desktopAutoUpdateState,
+                    onChange: saveDesktopAutoUpdate,
+                  } : undefined,
                   onRefreshUpdate: () => {
                     if (apiClient) {
                       loadUpdateWithClient(apiClient);
@@ -956,6 +1079,28 @@ export function App(): ReactElement {
       </AppShell.Main>
     </AppShell>
   );
+}
+
+export function activitySelectionAfterDelete(
+  items: StudioActivityItem[],
+  deleted: StudioActivityItem,
+  selectedKind: StudioActivityItem["kind"] | undefined,
+  selectedKey: string | undefined,
+): { kind: StudioActivityItem["kind"]; key: string } | undefined {
+  if (!selectedKind || !selectedKey) {
+    return undefined;
+  }
+  if (selectedKind !== deleted.kind || selectedKey !== deleted.key) {
+    return { kind: selectedKind, key: selectedKey };
+  }
+  const deletedIndex = items.findIndex((item) => item.kind === deleted.kind && item.key === deleted.key);
+  const remaining = items.filter((item) => item.kind !== deleted.kind || item.key !== deleted.key);
+  if (remaining.length === 0) {
+    return undefined;
+  }
+  const nextIndex = deletedIndex < 0 ? 0 : Math.min(deletedIndex, remaining.length - 1);
+  const next = remaining[nextIndex];
+  return next ? { kind: next.kind, key: next.key } : undefined;
 }
 
 function RunDetailPlaceholder({ state }: { state: RunOverviewState }): ReactElement {

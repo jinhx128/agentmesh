@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -944,6 +945,144 @@ test("Studio server aggregates runs from registered workspaces", async () => {
   } finally {
     restoreHome();
   }
+});
+
+test("Studio server deletes only the selected AgentMesh run or call directory", async () => {
+  const workspace = makeWorkspace();
+  const remoteWorkspace = makeWorkspace();
+  const externalRoot = makeWorkspace();
+  test.after(() => {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(remoteWorkspace, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
+  });
+  const restoreHome = isolateHome(workspace);
+
+  try {
+    const runDir = writeRun(workspace, "delete-run", {
+      related_call_ids: ["cross-linked-call"],
+      output_path: path.join(externalRoot, "run-output.md"),
+    }, []);
+    mkdirSync(path.join(runDir, "nested", "evidence"), { recursive: true });
+    writeFileSync(path.join(runDir, "nested", "evidence", "result.md"), "managed evidence\n");
+    const preservedRunDir = writeRun(workspace, "preserved-run", {}, []);
+    const externalRunOutput = path.join(externalRoot, "run-output.md");
+    const userSource = path.join(workspace, "src", "owned-by-user.ts");
+    mkdirSync(path.dirname(userSource), { recursive: true });
+    writeFileSync(externalRunOutput, "external run output\n");
+    writeFileSync(userSource, "export const userOwned = true;\n");
+
+    const linkedCall = createCallRecord({
+      workspace,
+      cwd: workspace,
+      agentId: "reviewer",
+      adapter: "command",
+      purpose: "review",
+      promptSource: "inline",
+      promptContent: "linked call",
+    });
+    writeCallRecordPatch(linkedCall.callDir, { related_run_ids: ["delete-run"] });
+
+    const externalCallOutput = path.join(workspace, "outputs", "call-output.md");
+    mkdirSync(path.dirname(externalCallOutput), { recursive: true });
+    writeFileSync(externalCallOutput, "external call output\n");
+    const deletedCall = createCallRecord({
+      workspace,
+      cwd: workspace,
+      agentId: "worker",
+      adapter: "command",
+      purpose: "general",
+      promptSource: "inline",
+      promptContent: "delete this call record only",
+    });
+    completeCallRecord(deletedCall, {
+      status: "success",
+      stdout: "done\n",
+      outputFile: externalCallOutput,
+    });
+    mkdirSync(path.join(deletedCall.callDir, "nested"), { recursive: true });
+    writeFileSync(path.join(deletedCall.callDir, "nested", "managed.txt"), "managed\n");
+
+    const remoteEntry = registerWorkspace(remoteWorkspace, {
+      registryPath: path.join(workspace, ".home", ".config", "agentmesh", "workspaces.json"),
+      label: "Remote Delete Target",
+      now: "2026-06-10T09:00:00.000Z",
+    });
+    const localTarget = writeRun(workspace, "targeted-run", {}, []);
+    const remoteTarget = writeRun(remoteWorkspace, "targeted-run", {}, []);
+
+    const escapedRun = writeRun(externalRoot, "escaped-run", {}, []);
+    symlinkSync(escapedRun, path.join(workspace, ".agentmesh", "runs", "symlink-run"));
+
+    const { server, url } = await listen(createStudioServer({ cwd: workspace }));
+    test.after(() => server.close());
+
+    const deleteRun = await fetch(`${url}/api/runs/delete-run`, { method: "DELETE" });
+    assert.equal(deleteRun.status, 200, await deleteRun.clone().text());
+    assert.deepEqual(await deleteRun.json(), {
+      deleted: true,
+      kind: "run",
+      id: "delete-run",
+      workspace_id: (await fetchJson(`${url}/api/runs`) as { workspaces: Array<{ id: string; current: boolean }> })
+        .workspaces.find((entry) => entry.current)?.id,
+    });
+    assert.equal(existsSync(runDir), false);
+    assert.equal(existsSync(preservedRunDir), true);
+    assert.equal(existsSync(linkedCall.callDir), true);
+    assert.equal(readFileSync(externalRunOutput, "utf-8"), "external run output\n");
+    assert.equal(readFileSync(userSource, "utf-8"), "export const userOwned = true;\n");
+
+    const deleteCall = await fetch(`${url}/api/calls/${encodeURIComponent(deletedCall.record.id)}`, {
+      method: "DELETE",
+    });
+    assert.equal(deleteCall.status, 200, await deleteCall.text());
+    assert.equal(existsSync(deletedCall.callDir), false);
+    assert.equal(existsSync(linkedCall.callDir), true);
+    assert.equal(readFileSync(externalCallOutput, "utf-8"), "external call output\n");
+
+    const targeted = await fetch(
+      `${url}/api/runs/targeted-run?workspace_id=${encodeURIComponent(remoteEntry.id)}`,
+      { method: "DELETE" },
+    );
+    assert.equal(targeted.status, 200, await targeted.text());
+    assert.equal(existsSync(remoteTarget), false);
+    assert.equal(existsSync(localTarget), true);
+
+    for (const [requestPath, expectedStatus] of [
+      ["/api/runs/missing-run", 404],
+      ["/api/calls/missing-call", 404],
+      ["/api/runs/%2E%2E%2Fescape", 400],
+      ["/api/calls/%2E%2E%2Fescape", 400],
+      ["/api/runs/%E0%A4%A", 400],
+      ["/api/runs/symlink-run", 400],
+      ["/api/runs/preserved-run?workspace_id=missing-workspace", 404],
+    ] as const) {
+      const response = await fetch(`${url}${requestPath}`, { method: "DELETE" });
+      assert.equal(response.status, expectedStatus, `${requestPath}: ${await response.text()}`);
+    }
+    assert.equal(existsSync(escapedRun), true);
+    assert.equal(existsSync(preservedRunDir), true);
+  } finally {
+    restoreHome();
+  }
+});
+
+test("Studio deletion rejects a symlinked AgentMesh management root", async () => {
+  const workspace = makeWorkspace();
+  const externalRoot = makeWorkspace();
+  test.after(() => {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(externalRoot, { recursive: true, force: true });
+  });
+  const externalRun = writeRun(externalRoot, "outside-run", {}, []);
+  mkdirSync(path.join(workspace, ".agentmesh"), { recursive: true });
+  symlinkSync(path.join(externalRoot, ".agentmesh", "runs"), path.join(workspace, ".agentmesh", "runs"));
+
+  const { server, url } = await listen(createStudioServer({ cwd: workspace }));
+  test.after(() => server.close());
+  const response = await fetch(`${url}/api/runs/outside-run`, { method: "DELETE" });
+  assert.equal(response.status, 400, await response.text());
+  assert.equal(existsSync(externalRun), true);
 });
 
 test("Studio server exposes read-only direct call index and details", async () => {

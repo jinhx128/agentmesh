@@ -131,8 +131,33 @@ export type StudioCallAdoptionResponse = StudioApiJsonResponse<
   StudioCallDetail | StudioCallAdoptionError
 >;
 
+export interface StudioCallDeletePayload {
+  deleted: true;
+  kind: "call";
+  id: string;
+  workspace_id: string;
+}
+
+export interface StudioCallDeleteError {
+  error: string;
+}
+
+export type StudioCallDeleteResponse = StudioApiJsonResponse<
+  StudioCallDeletePayload | StudioCallDeleteError
+>;
+
 export function loadStudioCalls(client: StudioApiClient): Promise<StudioCallsPayload> {
   return client.getJson<StudioCallsPayload>("/api/calls");
+}
+
+export function deleteStudioCall(
+  client: StudioApiClient,
+  callId: string,
+  workspaceId: string,
+): Promise<StudioCallDeleteResponse> {
+  return client.deleteJsonWithStatus<StudioCallDeletePayload | StudioCallDeleteError>(
+    withWorkspaceId(`/api/calls/${encodeURIComponent(callId)}`, workspaceId),
+  );
 }
 
 export function loadStudioCallDetail(

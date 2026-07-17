@@ -8,6 +8,7 @@ import {
   Paper,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
   Title,
 } from "@mantine/core";
@@ -40,9 +41,19 @@ export interface SettingsAboutPanelProps {
     onCheck: () => Promise<void>;
     onInstall: () => Promise<void>;
   };
+  desktopAutoUpdate?: {
+    state: DesktopAutoUpdatePreferenceState;
+    onChange: (enabled: boolean) => Promise<void>;
+  };
 }
 
-export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater }: SettingsAboutPanelProps): ReactElement {
+export type DesktopAutoUpdatePreferenceState =
+  | { status: "loading" }
+  | { status: "ready"; enabled: boolean }
+  | { status: "saving"; enabled: boolean }
+  | { status: "error"; enabled: boolean; message: string };
+
+export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater, desktopAutoUpdate }: SettingsAboutPanelProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "loading") {
     return (
@@ -79,14 +90,7 @@ export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater }: S
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
             <InfoItem label={t("runtimeVersion")} value={compatibility.current_runtime_version} />
             <InfoItem label={t("currentEntrypoint")} value={entrypointLabel(compatibility.current_entrypoint)} />
-            <InfoItem label={t("compatibilityFile")} value={compatibility.compatibility_path} />
-            <InfoItem label={t("metadataState")} value={metadataStateLabel(compatibility.metadata_state)} />
-            <InfoItem label={t("packetSchemaVersion")} value={metadata?.packet_schema_version ?? missingMetadataValue(compatibility)} />
-            <InfoItem label={t("minReadRuntimeVersion")} value={metadata?.min_read_runtime_version ?? missingMetadataValue(compatibility)} />
             <InfoItem label={t("minWriteRuntimeVersion")} value={metadata?.min_write_runtime_version ?? missingMetadataValue(compatibility)} />
-            <InfoItem label={t("lastWriter")} value={metadata
-              ? `${entrypointLabel(metadata.last_writer_entrypoint)} · 运行时 ${metadata.last_writer_runtime_version}`
-              : "尚未生成兼容性元数据"} />
             <InfoItem label={t("lastUpdatedAt")} value={metadata ? formatLocalDateTime(metadata.updated_at) : missingMetadataValue(compatibility)} />
           </SimpleGrid>
           {compatibility.decision !== "read_write" ? (
@@ -97,7 +101,7 @@ export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater }: S
         </Stack>
       </Card>
       <UpdateCard state={state.update ?? { status: "loading" }} onRefresh={onRefreshUpdate} />
-      {desktopUpdater ? <DesktopUpdaterCard {...desktopUpdater} /> : null}
+      {desktopUpdater ? <DesktopUpdaterCard {...desktopUpdater} autoUpdate={desktopAutoUpdate} /> : null}
       {reasonItems.length > 0 ? (
         <Stack mt="md" gap="xs">
           <Text fw={800} mb="xs">{t("compatibilityDiagnostics")}</Text>
@@ -114,10 +118,12 @@ function DesktopUpdaterCard({
   state,
   onCheck,
   onInstall,
+  autoUpdate,
 }: {
   state: DesktopAppUpdaterState;
   onCheck: () => Promise<void>;
   onInstall: () => Promise<void>;
+  autoUpdate?: NonNullable<SettingsAboutPanelProps["desktopAutoUpdate"]>;
 }): ReactElement {
   const checking = state.status === "checking";
   const downloading = state.status === "downloading" || state.status === "restarting";
@@ -150,6 +156,7 @@ function DesktopUpdaterCard({
             : ""}</Text>
         ) : null}
         {state.status === "error" ? <Alert color="red" variant="light" role="alert">{state.message}</Alert> : null}
+        {autoUpdate ? <DesktopAutoUpdateSwitch {...autoUpdate} /> : null}
         {state.status !== "unavailable" ? (
           <Group gap="sm">
             <Button size="xs" variant="light" disabled={checking || downloading} onClick={() => void onCheck()}>
@@ -164,6 +171,29 @@ function DesktopUpdaterCard({
         ) : null}
       </Stack>
     </Card>
+  );
+}
+
+function DesktopAutoUpdateSwitch({
+  state,
+  onChange,
+}: NonNullable<SettingsAboutPanelProps["desktopAutoUpdate"]>): ReactElement {
+  const enabled = state.status === "loading" ? true : state.enabled;
+  const busy = state.status === "loading" || state.status === "saving";
+  return (
+    <Stack gap={4}>
+      <Switch
+        size="sm"
+        label="自动检测桌面端更新"
+        description="启动桌面应用时自动检查一次；手动检查始终可用。"
+        checked={enabled}
+        disabled={busy}
+        onChange={(event) => void onChange(event.currentTarget.checked)}
+      />
+      {state.status === "error" ? (
+        <Alert color="red" variant="light" role="alert">桌面更新偏好读取或保存失败：{state.message}</Alert>
+      ) : null}
+    </Stack>
   );
 }
 
@@ -336,15 +366,6 @@ function entrypointLabel(entrypoint: string): string {
   };
   const label = labels[entrypoint] ?? entrypoint;
   return label === entrypoint ? entrypoint : `${label}（${entrypoint}）`;
-}
-
-function metadataStateLabel(state: StudioCompatibilityDiagnostics["metadata_state"]): string {
-  return {
-    ok: "已记录",
-    missing_legacy: "旧工作区：缺少兼容性元数据",
-    newer_schema: "新版本 Schema：当前版本只能只读",
-    invalid: "无效：无法解析兼容性元数据",
-  }[state];
 }
 
 function localizeCompatibilityReason(reason: string): string {

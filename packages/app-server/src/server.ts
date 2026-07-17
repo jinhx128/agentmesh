@@ -61,6 +61,10 @@ import {
 } from "./integrations.js";
 import { checkAgentMeshUpdate } from "@agentmesh/runtime/src/update/check.js";
 import { STUDIO_CSS, STUDIO_HTML, STUDIO_JS } from "./assets.js";
+import {
+  deleteStudioActivity,
+  isStudioActivityDeletionError,
+} from "./activity-deletion.js";
 
 export interface StudioServerOptions {
   cwd?: string;
@@ -682,13 +686,35 @@ function handleStudioRequest(
     sendJson(response, 405, { error: "method not allowed" });
     return;
   }
-  const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+  const runMatch = rawPathname.match(/^\/api\/runs\/([^/]+)$/);
   if (runMatch) {
+    let runId: string;
+    try {
+      runId = decodeURIComponent(runMatch[1]);
+    } catch {
+      sendJson(response, 400, { error: "invalid run id" });
+      return;
+    }
+    if (request.method === "DELETE") {
+      try {
+        sendJson(response, 200, deleteStudioActivity("run", runId, {
+          cwd,
+          ...studioWorkspaceQueryOptions(url.searchParams),
+        }));
+      } catch (error) {
+        if (isStudioActivityDeletionError(error)) {
+          sendJson(response, error.status, { error: error.message });
+          return;
+        }
+        sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     if (!requireMethod(request, response, "GET")) {
       return;
     }
     try {
-      sendJson(response, 200, readStudioRun(decodeURIComponent(runMatch[1]), {
+      sendJson(response, 200, readStudioRun(runId, {
         cwd,
         ...eventPageOptions(url.searchParams),
         ...studioWorkspaceQueryOptions(url.searchParams),
@@ -743,14 +769,29 @@ function handleStudioRequest(
   }
   const callMatch = rawPathname.match(/^\/api\/calls\/([^/]+)$/);
   if (callMatch) {
-    if (!requireMethod(request, response, "GET")) {
-      return;
-    }
     let callId: string;
     try {
       callId = decodeURIComponent(callMatch[1]);
     } catch {
       sendJson(response, 400, { error: "invalid call id" });
+      return;
+    }
+    if (request.method === "DELETE") {
+      try {
+        sendJson(response, 200, deleteStudioActivity("call", callId, {
+          cwd,
+          ...studioWorkspaceQueryOptions(url.searchParams),
+        }));
+      } catch (error) {
+        if (isStudioActivityDeletionError(error)) {
+          sendJson(response, error.status, { error: error.message });
+          return;
+        }
+        sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+    if (!requireMethod(request, response, "GET")) {
       return;
     }
     try {

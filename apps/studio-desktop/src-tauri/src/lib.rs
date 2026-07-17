@@ -1,8 +1,13 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 use tauri::{
     webview::{cookie::SameSite, Cookie},
-    Manager, WebviewWindow,
+    AppHandle, Manager, WebviewWindow,
 };
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
@@ -12,18 +17,93 @@ struct StudioReadyEvent {
     webview_url: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct DesktopPreferences {
+    #[serde(default = "default_auto_check_updates")]
+    auto_check_updates: bool,
+}
+
+impl Default for DesktopPreferences {
+    fn default() -> Self {
+        Self {
+            auto_check_updates: true,
+        }
+    }
+}
+
+fn default_auto_check_updates() -> bool {
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![
+            get_desktop_preferences,
+            set_desktop_preferences,
+        ])
         .setup(|app| {
             start_app_server_sidecar(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("failed to run AgentMesh desktop shell");
+}
+
+#[tauri::command]
+fn get_desktop_preferences(app: AppHandle) -> Result<DesktopPreferences, String> {
+    read_desktop_preferences(&desktop_preferences_path(&app)?)
+}
+
+#[tauri::command]
+fn set_desktop_preferences(
+    app: AppHandle,
+    auto_check_updates: bool,
+) -> Result<DesktopPreferences, String> {
+    let preferences = DesktopPreferences { auto_check_updates };
+    write_desktop_preferences(&desktop_preferences_path(&app)?, &preferences)?;
+    Ok(preferences)
+}
+
+fn desktop_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("preferences.json"))
+        .map_err(|error| format!("desktop preferences directory is unavailable: {error}"))
+}
+
+fn read_desktop_preferences(path: &Path) -> Result<DesktopPreferences, String> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Ok(DesktopPreferences::default())
+        }
+        Err(error) => return Err(format!("desktop preferences could not be read: {error}")),
+    };
+    serde_json::from_str(&content)
+        .map_err(|error| format!("desktop preferences are invalid: {error}"))
+}
+
+fn write_desktop_preferences(
+    path: &Path,
+    preferences: &DesktopPreferences,
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "desktop preferences path has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("desktop preferences directory could not be created: {error}"))?;
+    let temporary = path.with_extension("json.tmp");
+    let mut content = serde_json::to_string_pretty(preferences)
+        .map_err(|error| format!("desktop preferences could not be serialized: {error}"))?;
+    content.push('\n');
+    fs::write(&temporary, content)
+        .map_err(|error| format!("desktop preferences could not be written: {error}"))?;
+    fs::rename(&temporary, path)
+        .map_err(|error| format!("desktop preferences could not be saved: {error}"))
 }
 
 fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -214,7 +294,17 @@ fn generate_launch_token() -> Result<String, getrandom::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::sidecar_launch_config_from_args;
+    use super::{
+        read_desktop_preferences,
+        sidecar_launch_config_from_args,
+        write_desktop_preferences,
+        DesktopPreferences,
+    };
+    use std::{
+        fs::{create_dir_all, remove_dir_all, write},
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn sidecar_uses_explicit_workspace_as_its_working_directory() {
@@ -234,5 +324,73 @@ mod tests {
                 workspace.to_string(),
             ],
         );
+    }
+
+    #[test]
+    fn desktop_preferences_default_to_auto_update_enabled() {
+        let dir = test_dir("default");
+        let path = dir.join("preferences.json");
+
+        assert_eq!(
+            read_desktop_preferences(&path).expect("missing preferences should use defaults"),
+            DesktopPreferences {
+                auto_check_updates: true,
+            },
+        );
+        let _ = remove_dir_all(dir);
+    }
+
+    #[test]
+    fn desktop_preferences_read_and_write_native_json() {
+        let dir = test_dir("roundtrip");
+        create_dir_all(&dir).expect("create preference test directory");
+        let path = dir.join("preferences.json");
+        write(&path, r#"{"auto_check_updates":false}"#)
+            .expect("seed desktop preferences");
+        assert_eq!(
+            read_desktop_preferences(&path).expect("read disabled preference"),
+            DesktopPreferences {
+                auto_check_updates: false,
+            },
+        );
+
+        write_desktop_preferences(
+            &path,
+            &DesktopPreferences {
+                auto_check_updates: true,
+            },
+        )
+        .expect("persist enabled preference");
+        assert_eq!(
+            read_desktop_preferences(&path).expect("read persisted preference"),
+            DesktopPreferences {
+                auto_check_updates: true,
+            },
+        );
+        let _ = remove_dir_all(dir);
+    }
+
+    #[test]
+    fn corrupt_desktop_preferences_return_an_actionable_error() {
+        let dir = test_dir("corrupt");
+        create_dir_all(&dir).expect("create preference test directory");
+        let path = dir.join("preferences.json");
+        write(&path, "not-json").expect("seed corrupt desktop preferences");
+
+        let error = read_desktop_preferences(&path)
+            .expect_err("corrupt preferences must not be accepted");
+        assert!(error.contains("desktop preferences are invalid"), "{error}");
+        let _ = remove_dir_all(dir);
+    }
+
+    fn test_dir(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "agentmesh-desktop-preferences-{label}-{}-{nonce}",
+            std::process::id(),
+        ))
     }
 }

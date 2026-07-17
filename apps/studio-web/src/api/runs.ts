@@ -1,4 +1,4 @@
-import type { StudioApiClient } from "./client.js";
+import type { StudioApiClient, StudioApiJsonResponse } from "./client.js";
 
 export interface StudioRunsPayload {
   schema_version?: 1;
@@ -167,8 +167,33 @@ export interface StudioRunDetailOptions {
   workspaceId?: string;
 }
 
+export interface StudioRunDeletePayload {
+  deleted: true;
+  kind: "run";
+  id: string;
+  workspace_id: string;
+}
+
+export interface StudioRunDeleteError {
+  error: string;
+}
+
+export type StudioRunDeleteResponse = StudioApiJsonResponse<
+  StudioRunDeletePayload | StudioRunDeleteError
+>;
+
 export function loadStudioRuns(client: StudioApiClient): Promise<StudioRunsPayload> {
   return client.getJson<StudioRunsPayload>("/api/runs");
+}
+
+export function deleteStudioRun(
+  client: StudioApiClient,
+  runId: string,
+  workspaceId: string,
+): Promise<StudioRunDeleteResponse> {
+  return client.deleteJsonWithStatus<StudioRunDeletePayload | StudioRunDeleteError>(
+    withWorkspaceId(`/api/runs/${encodeURIComponent(runId)}`, workspaceId),
+  );
 }
 
 export function loadStudioRunDetail(
@@ -217,3 +242,8 @@ export function nextSelectedRunKey(
 }
 
 export const nextSelectedRunId = nextSelectedRunKey;
+
+function withWorkspaceId(url: string, workspaceId: string): string {
+  const params = new URLSearchParams({ workspace_id: workspaceId });
+  return `${url}?${params.toString()}`;
+}
