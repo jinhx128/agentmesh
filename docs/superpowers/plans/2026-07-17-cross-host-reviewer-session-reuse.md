@@ -317,7 +317,7 @@
 
 - [ ] P2 阶段完成门禁：scope 不串线、registry 权限/原子性/TTL/epoch 正确、锁与 CLI 管理闭环。
 
-### P2.1 / Task 6：实现 Host Scope Resolver
+### ~~P2.1 / Task 6：实现 Host Scope Resolver~~ ✅
 
 **Files:**
 - Create: `packages/runtime/src/reviewer-sessions/scope.ts`
@@ -327,8 +327,8 @@
 **Interfaces:**
 - Produces: `resolveHostScope(input, cwd): ResolvedHostScope`。
 
-- [ ] 写失败测试：native 优先、propagated token、missing fresh、非法 token、symlink workspace、两个 linked worktree、raw ID 不出现在返回值。
-- [ ] 实现接口：
+- [x] 写失败测试：native 优先、propagated token、missing fresh、非法 token、symlink workspace、两个 linked worktree、raw ID 不出现在返回值。
+- [x] 实现接口：
 
   ```ts
   export interface ResolvedHostScope {
@@ -347,9 +347,18 @@
   ```
 
   HMAC key 0600，ref 前缀 `cs-`；workspace/worktree 使用 realpath 和 Git dir identity。
-- [ ] Run: `npm run build:node && node --test dist-node/tests-node/reviewer-session-scope.test.js && git diff --check`; Expected: PASS。
+- [x] Run: `npm run build:node && node --test dist-node/tests-node/reviewer-session-scope.test.js && git diff --check`; Expected: PASS。
 
 审查方式：外审；涉及 ID 隔离和本机密钥。失败策略：重试，不能降级。证据：测试、权限检查、审查。Commit: `功能(runtime)：实现宿主会话作用域`
+
+**进度记录（2026-07-17 16:50）：**
+
+- 状态：完成。实现闭集 HostKind、native/propagated/missing 解析、HMAC-SHA256 `cs-` ref、0600 本机 key、canonical workspace/worktree identity 与 non-git fallback；raw ID/token 不进入返回值或错误。
+- TDD/验证：resolver 10/10，包含 symlink、linked worktree、0/31/33-byte key recovery、16 独立进程首次创建、dead/legacy/live-owner lock；全量 `npm test` 与 `git diff --check` 通过。
+- 审查修复：四笔提交依次关闭 atomic publish、32-byte validation、并发/损坏恢复、stale lock、cleanup override 与 live-owner split-brain。最终 AgentMesh Review Gate `workflow-20260717164518` 为 0 Must / 0 Should / 3 Nit，Approved，decision 已完成。
+- 残余 Nit：PID reuse 的保守 repair 可用性、用户主动删除 repair lock 的防御上限、Git <2.31 降级；均不泄漏/串线，记录最终 branch triage。
+- 提交：`1db39d0`、`7ec298b`、`00a4107`、`7f923ab`；日志与完成记录单独提交。
+- 下一步：P2.2 实现 reviewer session registry、TTL/epoch/GC 与 context headroom；不开始 lease/CLI。
 
 ### P2.2 / Task 7：实现 Reviewer Session Registry 与生命周期
 
@@ -741,4 +750,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P2.1` 实现 Host Scope Resolver；先完成 native/propagated/missing、HMAC ref 与 linked-worktree 隔离，不开始 registry/lease。
+- 当前下一步：`P2.2` 实现 Reviewer Session Registry 与生命周期；先完成权限、原子写、TTL/epoch/GC/context headroom，不开始 lease/CLI。
