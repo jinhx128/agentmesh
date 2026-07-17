@@ -58,7 +58,7 @@
 
 ## P0. 五 CLI 能力实测与计划校准
 
-- [ ] P0 阶段完成门禁：P0.1 与 P0.Z 完成、能力矩阵有版本与脱敏证据、计划按事实校准。
+- [x] P0 阶段完成门禁：P0.1 与 P0.Z 完成、能力矩阵有版本与脱敏证据、计划按事实校准。
 - 阶段目标：在不读取 provider 私有 store 的前提下，确认每个 CLI 是否能从非交互结构化输出取得 session ID 并显式 resume。
 - 阶段门禁：只有矩阵标记 `structured_start=true` 且 `explicit_resume=true` 的 adapter 才进入 P3 session 实现。
 
@@ -138,7 +138,7 @@
 - 提交：`7aa0577`（能力矩阵）、`a36dc02`（收敛 session 能力表述）。日志同步至 `changelog/2026-07-17.md`。
 - 下一步：P0.Z 按矩阵把 P3.2 收敛为仅 Claude Code 与 OpenCode enabled adapter，并完成 P0 阶段外审门禁。
 
-### P0.Z / Task 2：P0 阶段收尾校准
+### ~~P0.Z / Task 2：P0 阶段收尾校准~~ ✅
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-17-cross-host-reviewer-session-reuse.md`
@@ -148,12 +148,20 @@
 - Consumes: P0.1 能力矩阵。
 - Produces: P3.2 明确的 enabled adapter 列表；未通过者保持 fresh-only。
 
-- [ ] 对照矩阵，将每个 adapter 的 enablement 和 parser 输入字段写回 P3.2 进度记录；不得为失败 provider 编造 parser。
-- [ ] Run: `git diff --check && git status --short`；Expected: 仅计划/矩阵/当日日志相关变更。
-- [ ] 外审能力矩阵和后续任务是否仍可执行；接受的问题写回计划，拒绝项记录依据。
-- [ ] 同步当日 changelog 的“能力调研”事实并提交。
+- [x] 对照矩阵，将每个 adapter 的 enablement 和 parser 输入字段写回 P3.2 进度记录；不得为失败 provider 编造 parser。
+- [x] Run: `git diff --check && git status --short`；Expected: 仅计划/矩阵/当日日志相关变更。
+- [x] 外审能力矩阵和后续任务是否仍可执行；接受的问题写回计划，拒绝项记录依据。
+- [x] 同步当日 changelog 的“能力调研”事实并提交。
 
 审查方式：外审；阶段门禁不能降级普通自审。外审失败策略：重试或换 reviewer；仍失败标记 `needs_decision`。证据：矩阵、计划 diff、审查输出、commit。进度记录：执行时补齐。Commit: `计划：按 CLI 能力校准 session 实现`
+
+**进度记录（2026-07-17 15:10）：**
+
+- 状态：完成。P3.2 已冻结为仅 `claude-code-cli/session_id` 与 `opencode-cli/sessionID` 启用 V1 session parser/fixture/builder；Codex、Cursor、Antigravity 明确 capability false 并沿用 fresh invocation。
+- 验证：`git diff --check` 通过；校准提交仅修改计划与 `changelog/2026-07-17.md`，字段大小写、fixture 范围和三项 fresh-only 原因均与矩阵一致。
+- 审查：Cursor 在 `workflow-20260717150556` 中 exit 1、无技术 finding；按外审失败策略换 Claude 4.8 fresh reviewer，`workflow-20260717150733` 返回 spec/quality Approved、LGTM、0 Must / 0 Should / 0 Nit，decision 已完成。
+- 提交：`b181f9d`（按 CLI 能力校准 P3.2）；阶段完成记录与下一步单独提交。
+- 下一步：进入 P1.1，先扩展 Core 与 Workflow Session Contract；P1 阶段所有 adapter 仍保持 fresh-only。
 
 ---
 
@@ -706,4 +714,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P0.Z` 按已外审能力矩阵校准 P3.2 enabled adapter 与 parser 字段，完成 P0 阶段门禁；P0.Z 完成前不开始 P1。
+- 当前下一步：`P1.1` 扩展 Core 与 Workflow Session Contract；本 slice 只冻结 optional schema/capability/workflow policy，所有 adapter 继续保持 fresh-only。
