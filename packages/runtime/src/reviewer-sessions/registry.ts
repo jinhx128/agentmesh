@@ -31,7 +31,6 @@ const TEMPORARY_ARTIFACT_STALE_MS = 30_000;
 const MUTATION_LOCK_LEGACY_STALE_MS = 30_000;
 const MUTATION_LOCK_WAIT_MS = 5;
 const MUTATION_LOCK_ATTEMPTS = 40;
-const RECOVERY_EPOCH_FLOOR = 2 ** 40;
 const MAX_PERSISTED_EPOCH = Number.MAX_SAFE_INTEGER - 1;
 const lockWaitArray = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
 
@@ -508,10 +507,11 @@ export function shouldRotateForContext(input: {
   reasoningHeadroom: number;
   providerLimit?: number;
 }): "keep" | "warn" | "rotate" {
-  for (const [label, value] of Object.entries(input)) {
-    if (value !== undefined) {
-      nonNegativeFinite(value, label);
-    }
+  for (const label of ["estimatedHistory", "currentPacket", "reservedOutput", "reasoningHeadroom"] as const) {
+    nonNegativeFinite(input[label], label);
+  }
+  if (input.providerLimit !== undefined) {
+    nonNegativeFinite(input.providerLimit, "providerLimit");
   }
   if (input.providerLimit === undefined) {
     return "keep";
@@ -797,6 +797,7 @@ function acquireMutationLock(
       const stat = fstatSync(descriptor);
       identity = fileIdentity(stat);
       assertRegistryDirectoryIdentity(directory);
+      beforeDirectoryOperation(directory, "mutation-lock-before-metadata");
       writeFully(descriptor, Buffer.from(JSON.stringify({
         schema_version: 1,
         pid: process.pid,
@@ -804,6 +805,13 @@ function acquireMutationLock(
         nonce: randomBytes(12).toString("hex"),
       })));
       fsyncSync(descriptor);
+      beforeDirectoryOperation(directory, "mutation-lock-owner-revalidate");
+      if (!lockPathStillOwned(lockPath, identity)) {
+        bestEffortClose(descriptor);
+        descriptor = undefined;
+        identity = undefined;
+        continue;
+      }
       return { descriptor, identity };
     } catch (error: unknown) {
       if (descriptor !== undefined) {
@@ -1012,7 +1020,7 @@ function purgeReviewerSessionKey(
   ];
   const highestKnownEpoch = knownEpochs.length > 0 ? Math.max(...knownEpochs) : undefined;
   const tombstoneEpoch = highestKnownEpoch === undefined
-    ? recoveryEpoch(options.now)
+    ? MAX_PERSISTED_EPOCH
     : canAdvanceEpoch(highestKnownEpoch)
       ? nextEpoch(highestKnownEpoch)
       : highestKnownEpoch;
@@ -1057,8 +1065,15 @@ function canAdvanceEpoch(epoch: number): boolean {
   return Number.isSafeInteger(epoch) && epoch >= 0 && epoch < MAX_PERSISTED_EPOCH;
 }
 
-function recoveryEpoch(now: Date | string | undefined): number {
-  return Math.max(RECOVERY_EPOCH_FLOOR, instantMilliseconds(now));
+function lockPathStillOwned(lockPath: string, expectedIdentity: FileIdentity): boolean {
+  try {
+    const stat = lstatSync(lockPath);
+    return stat.isFile()
+      && hasSafeModeAndOwner(stat, 0o600)
+      && sameFileIdentity(fileIdentity(stat), expectedIdentity);
+  } catch {
+    return false;
+  }
 }
 
 function removeIfCurrent(
