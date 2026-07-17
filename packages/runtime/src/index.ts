@@ -16,8 +16,13 @@ export {
   REVIEWER_SESSION_MAX_SUCCESSFUL_RESUMES,
   REVIEWER_SESSION_SCHEMA_VERSION,
   closeReviewerSession,
+  closeReviewerSessionReference,
+  closeReviewerSessionScope,
   evaluateReviewerSessionLifecycle,
   purgeReviewerSessions,
+  inspectReviewerSessionSummary,
+  listReviewerSessionSummaries,
+  readReviewerSessionEpochEvidence,
   readReviewerSession,
   reviewerSessionInvocationFingerprint,
   reviewerSessionRef,
@@ -32,7 +37,15 @@ export type {
   ReviewerSessionRegistryOptions,
   SessionRegistryKeyInput,
   UpsertReviewerSessionInput,
+  ReviewerSessionSafeSummary,
+  ReviewerSessionSummaryInput,
 } from "./reviewer-sessions/registry.js";
+export {
+  REVIEWER_SESSION_HEARTBEAT_MS,
+  REVIEWER_SESSION_LEASE_WAIT_MS,
+  REVIEWER_SESSION_LOCK_ORDER,
+  withReviewerSessionLease,
+} from "./reviewer-sessions/lease.js";
 export * from "./reviewer-sessions/scope.js";
 export * from "./spec/index.js";
 export * from "./workflow/registry.js";

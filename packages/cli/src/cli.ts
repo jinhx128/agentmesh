@@ -45,6 +45,7 @@ import {
 } from "./commands/preset.js";
 import { releaseCheckSummary } from "./commands/release-check.js";
 import { reviewersList } from "./commands/reviewers.js";
+import { sessionsCommand } from "./commands/sessions.js";
 import { skillExport, skillInstall, skillShow, skillVerify } from "./commands/skill.js";
 import { specCheck } from "./commands/spec.js";
 import { studio } from "./commands/studio.js";
@@ -111,6 +112,12 @@ const COMMAND_USAGE_LINES = [
   "mcp inventory [--json]",
   "release-check summary <run> [--write] [--json]",
   "reviewers list [--json]",
+  "sessions scope create --host <host> [--json]",
+  "sessions list [--json]",
+  "sessions inspect <session-ref> [--json]",
+  "sessions close <session-ref> [--json]",
+  "sessions close --scope <scope-ref> [--json]",
+  "sessions purge --expired [--json]",
   "doctor [--agent <agent-id> ...] [--skip-auth-probe] [--probe-timeout-secs <n>] [--json]",
   "skill show",
   "skill export [--format markdown]",
@@ -287,6 +294,9 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
     }
     if (command === "reviewers" && subcommand === "list") {
       return reviewersList(rest, parsed.configPath);
+    }
+    if (command === "sessions") {
+      return sessionsCommand([subcommand, ...rest].filter((arg): arg is string => Boolean(arg)));
     }
     if (command === "doctor") {
       return doctor([subcommand, ...rest].filter((arg): arg is string => Boolean(arg)), parsed.configPath);

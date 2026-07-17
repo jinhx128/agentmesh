@@ -46,6 +46,30 @@ export interface ReviewerSessionEntry {
   successful_resumes: number;
   invocation_fingerprint: string;
   estimated_context_tokens?: number;
+  scope_ref?: string;
+  host_kind?: string;
+  reviewer_id?: string;
+  session_mode?: string;
+}
+
+export interface ReviewerSessionSummaryInput {
+  scopeRef: string;
+  hostKind?: string;
+  reviewerId?: string;
+  mode?: string;
+}
+
+export interface ReviewerSessionSafeSummary {
+  session_ref: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  epoch: number;
+  resume_count: number;
+  scope_ref?: string;
+  host?: string;
+  reviewer?: string;
+  mode?: string;
 }
 
 export interface ReviewerSessionInvocationFingerprintInput {
@@ -101,6 +125,7 @@ export interface UpsertReviewerSessionInput {
   estimatedContextTokens?: number;
   providerRetentionMs?: number;
   providerSafetyMarginMs?: number;
+  summary?: ReviewerSessionSummaryInput;
 }
 
 export type ReviewerSessionUnavailableReason =
@@ -138,6 +163,27 @@ export type ReviewerSessionLifecycle = "reusable" | "expired_idle" | "expired_ab
 export type ReviewerSessionPurgeResult =
   | { status: "purged"; removed: number }
   | { status: "unavailable"; reason: "unsafe_directory"; diagnostic: string };
+
+export type ReviewerSessionSummaryListResult =
+  | { status: "ok"; sessions: ReviewerSessionSafeSummary[] }
+  | { status: "unavailable"; diagnostic: string };
+
+export type ReviewerSessionSummaryLookupResult =
+  | { status: "found"; session: ReviewerSessionSafeSummary }
+  | { status: "not_found" }
+  | { status: "ambiguous" }
+  | { status: "unavailable"; diagnostic: string };
+
+export type ReviewerSessionManagementCloseResult =
+  | { status: "closed"; closed: number }
+  | { status: "not_found" }
+  | { status: "ambiguous" }
+  | { status: "conflict" }
+  | { status: "unavailable"; diagnostic: string };
+
+export type ReviewerSessionEpochEvidence =
+  | { status: "available"; epoch: number }
+  | { status: "unavailable"; diagnostic: string };
 
 interface FileIdentity {
   device: number | bigint;
@@ -196,6 +242,10 @@ const reviewerSessionEntrySchema = z.object({
   successful_resumes: z.number().int().nonnegative().max(REVIEWER_SESSION_MAX_SUCCESSFUL_RESUMES),
   invocation_fingerprint: z.string().regex(INVOCATION_FINGERPRINT_PATTERN),
   estimated_context_tokens: z.number().finite().nonnegative().optional(),
+  scope_ref: z.string().regex(/^cs-[a-f0-9]{16}$/).optional(),
+  host_kind: z.string().min(1).optional(),
+  reviewer_id: z.string().min(1).optional(),
+  session_mode: z.string().min(1).optional(),
 }).strict();
 
 const reviewerSessionEpochSchema = z.object({
@@ -476,6 +526,199 @@ export function purgeReviewerSessions(
   return { status: "purged", removed };
 }
 
+/** Returns only lifecycle metadata that is safe to render in management UIs. */
+export function listReviewerSessionSummaries(
+  options: ReviewerSessionRegistryOptions = {},
+): ReviewerSessionSummaryListResult {
+  const records = safeSummaryRecords(options);
+  if (!Array.isArray(records)) {
+    return records;
+  }
+  return {
+    status: "ok",
+    sessions: records
+      .map((record) => record.summary)
+      .sort((left, right) => right.last_used_at.localeCompare(left.last_used_at)),
+  };
+}
+
+export function inspectReviewerSessionSummary(
+  sessionRef: string,
+  options: ReviewerSessionRegistryOptions = {},
+): ReviewerSessionSummaryLookupResult {
+  if (!SESSION_REF_PATTERN.test(sessionRef)) {
+    return { status: "not_found" };
+  }
+  const records = safeSummaryRecords(options);
+  if (!Array.isArray(records)) {
+    return records;
+  }
+  const matches = records.filter((record) => record.summary.session_ref === sessionRef);
+  if (matches.length === 0) {
+    return { status: "not_found" };
+  }
+  if (matches.length > 1) {
+    return { status: "ambiguous" };
+  }
+  return { status: "found", session: matches[0].summary };
+}
+
+export function closeReviewerSessionReference(
+  sessionRef: string,
+  options: ReviewerSessionRegistryOptions = {},
+): ReviewerSessionManagementCloseResult {
+  if (!SESSION_REF_PATTERN.test(sessionRef)) {
+    return { status: "not_found" };
+  }
+  const candidates = safeRegistryKeys(options);
+  if (!Array.isArray(candidates)) {
+    return candidates;
+  }
+  const matches = candidates.filter((key) => reviewerSessionRef(key) === sessionRef);
+  if (matches.length === 0) {
+    return { status: "not_found" };
+  }
+  if (matches.length > 1) {
+    return { status: "ambiguous" };
+  }
+  const key = matches[0];
+  const records = safeSummaryRecords(options);
+  if (!Array.isArray(records)) {
+    return records;
+  }
+  const current = records.find((record) => record.key === key);
+  const result = closeReviewerSession(key, {
+    ...options,
+    ...(current ? { expectedEpoch: current.summary.epoch } : {}),
+  });
+  if (result.status === "closed") {
+    return { status: "closed", closed: 1 };
+  }
+  if (result.status === "already_absent") {
+    return { status: "closed", closed: 0 };
+  }
+  if (result.status === "conflict" || result.status === "busy") {
+    return { status: "conflict" };
+  }
+  return { status: "unavailable", diagnostic: result.diagnostic };
+}
+
+export function closeReviewerSessionScope(
+  scopeRef: string,
+  options: ReviewerSessionRegistryOptions = {},
+): ReviewerSessionManagementCloseResult {
+  if (!/^cs-[a-f0-9]{16}$/.test(scopeRef)) {
+    return { status: "not_found" };
+  }
+  const records = safeSummaryRecords(options);
+  if (!Array.isArray(records)) {
+    return records;
+  }
+  const matches = records.filter((record) => record.summary.scope_ref === scopeRef);
+  if (matches.length === 0) {
+    return { status: "closed", closed: 0 };
+  }
+  let closed = 0;
+  for (const record of matches) {
+    const result = closeReviewerSession(record.key, { ...options, expectedEpoch: record.summary.epoch });
+    if (result.status === "closed") {
+      closed += 1;
+      continue;
+    }
+    if (result.status === "already_absent") {
+      continue;
+    }
+    if (result.status === "conflict" || result.status === "busy") {
+      return { status: "conflict" };
+    }
+    return { status: "unavailable", diagnostic: result.diagnostic };
+  }
+  return { status: "closed", closed };
+}
+
+/** Captures the current CAS marker without exposing entry/provider state. */
+export function readReviewerSessionEpochEvidence(
+  key: string,
+  options: ReviewerSessionRegistryOptions = {},
+): ReviewerSessionEpochEvidence {
+  assertRegistryKey(key);
+  const directory = ensureRegistryDirectory(options.registryPath ?? reviewerSessionRegistryPath());
+  if (!directory.safe) {
+    return { status: "unavailable", diagnostic: directory.diagnostic };
+  }
+  const marker = inspectEpoch(directory, key);
+  if (marker.kind === "missing") {
+    return { status: "available", epoch: 0 };
+  }
+  if (marker.kind === "valid") {
+    return { status: "available", epoch: marker.epoch };
+  }
+  return { status: "unavailable", diagnostic: "reviewer session epoch is unavailable" };
+}
+
+function safeRegistryKeys(
+  options: ReviewerSessionRegistryOptions,
+): string[] | { status: "unavailable"; diagnostic: string } {
+  const directory = ensureRegistryDirectory(options.registryPath ?? reviewerSessionRegistryPath());
+  if (!directory.safe) {
+    return { status: "unavailable", diagnostic: directory.diagnostic };
+  }
+  try {
+    const keys = new Set<string>();
+    for (const name of readRegistryDirectory(directory)) {
+      const match = /^(rk-[a-f0-9]{32})(?:\.epoch)?\.json$/.exec(name);
+      if (match) {
+        keys.add(match[1]);
+      }
+    }
+    return [...keys].sort();
+  } catch {
+    return { status: "unavailable", diagnostic: "reviewer session registry is unavailable" };
+  }
+}
+
+function safeSummaryRecords(
+  options: ReviewerSessionRegistryOptions,
+): Array<{ key: string; summary: ReviewerSessionSafeSummary }>
+  | { status: "unavailable"; diagnostic: string } {
+  const directory = ensureRegistryDirectory(options.registryPath ?? reviewerSessionRegistryPath());
+  if (!directory.safe) {
+    return { status: "unavailable", diagnostic: directory.diagnostic };
+  }
+  const keys = safeRegistryKeys(options);
+  if (!Array.isArray(keys)) {
+    return keys;
+  }
+  const records: Array<{ key: string; summary: ReviewerSessionSafeSummary }> = [];
+  for (const key of keys) {
+    const entry = inspectEntry(directory, key);
+    const marker = inspectEpoch(directory, key);
+    if (entry.kind === "unsafe" || marker.kind === "unsafe") {
+      return { status: "unavailable", diagnostic: "reviewer session registry contains unsafe state" };
+    }
+    if (entry.kind !== "valid" || marker.kind !== "valid" || marker.epoch !== entry.entry.epoch) {
+      continue;
+    }
+    records.push({ key, summary: safeSummary(entry.entry) });
+  }
+  return records;
+}
+
+function safeSummary(entry: ReviewerSessionEntry): ReviewerSessionSafeSummary {
+  return {
+    session_ref: entry.session_ref,
+    created_at: entry.created_at,
+    last_used_at: entry.last_used_at,
+    expires_at: entry.expires_at,
+    epoch: entry.epoch,
+    resume_count: entry.successful_resumes,
+    ...(entry.scope_ref === undefined ? {} : { scope_ref: entry.scope_ref }),
+    ...(entry.host_kind === undefined ? {} : { host: entry.host_kind }),
+    ...(entry.reviewer_id === undefined ? {} : { reviewer: entry.reviewer_id }),
+    ...(entry.session_mode === undefined ? {} : { mode: entry.session_mode }),
+  };
+}
+
 export function evaluateReviewerSessionLifecycle(
   entry: Pick<ReviewerSessionEntry, "created_at" | "last_used_at" | "expires_at" | "successful_resumes">,
   options: Pick<ReviewerSessionRegistryOptions, "now"> = {},
@@ -572,6 +815,20 @@ function validateUpsertInput(input: UpsertReviewerSessionInput): void {
       throw new Error("provider safety margin requires provider retention");
     }
   }
+  if (input.summary !== undefined) {
+    if (!/^cs-[a-f0-9]{16}$/.test(input.summary.scopeRef)) {
+      throw new Error("reviewer session scope reference is invalid");
+    }
+    for (const [value, label] of [
+      [input.summary.hostKind, "host kind"],
+      [input.summary.reviewerId, "reviewer id"],
+      [input.summary.mode, "session mode"],
+    ] as const) {
+      if (value !== undefined) {
+        requiredString(value, `${label} is invalid`);
+      }
+    }
+  }
 }
 
 function freshEntry(
@@ -594,6 +851,12 @@ function freshEntry(
     ...(input.estimatedContextTokens !== undefined
       ? { estimated_context_tokens: input.estimatedContextTokens }
       : {}),
+    ...(input.summary === undefined ? {} : {
+      scope_ref: input.summary.scopeRef,
+      ...(input.summary.hostKind === undefined ? {} : { host_kind: input.summary.hostKind }),
+      ...(input.summary.reviewerId === undefined ? {} : { reviewer_id: input.summary.reviewerId }),
+      ...(input.summary.mode === undefined ? {} : { session_mode: input.summary.mode }),
+    }),
   };
 }
 
