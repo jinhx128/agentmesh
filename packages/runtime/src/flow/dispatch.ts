@@ -1111,7 +1111,7 @@ function reviewerSessionKey(
 
 function reviewerSessionAttemptFields(session: Awaited<ReturnType<typeof invokeReviewerWithSession>>["session"]) {
   return {
-    sessionMode: session.mode,
+    ...(session.mode ? { sessionMode: session.mode } : {}),
     ...(session.sessionRef ? { sessionRef: session.sessionRef } : {}),
     ...(session.conversationScopeRef ? { conversationScopeRef: session.conversationScopeRef } : {}),
     ...(session.scopeSource ? { scopeSource: session.scopeSource } : {}),

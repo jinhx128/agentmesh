@@ -320,7 +320,7 @@ export async function runAgentCallAsync(options: {
   const configLoadMs = elapsedMs(configStartedAt);
   const agent = resolveAgent(agents, options.agentName);
   const prepared = options.session
-    ? prepareAdapterSessionInvocation(resolveInvokableAgent(agent, cwd), options, options.session)
+    ? prepareAdapterSessionInvocation(resolveInvokableAgent(agent, cwd), { ...options, workspace: cwd }, options.session)
     : prepareAdapterInvocation(resolveInvokableAgent(agent, cwd), options);
   const command = prepared.command;
   const stdin = prepared.stdin;

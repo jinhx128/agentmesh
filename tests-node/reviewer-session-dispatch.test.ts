@@ -395,6 +395,51 @@ test("retryable network resume sleeps once through injected jitter then updates 
   assert.equal(result.session.mode, "resumed");
   assert.equal(result.session.registryWrite, true);
   assert.deepEqual(writes, ["resume:4:session-test-123"]);
+  assert.deepEqual(events.map(({ event }) => event), ["reviewer_session.resumed"]);
+});
+
+test("retry followed by a recoverable resume failure rotates once into fallback fresh", async () => {
+  const writes: string[] = [];
+  const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const dependencies = continuousDependencies({
+    entry: { providerSessionId: "session-test-123", sessionRef: "rs-0123456789abcdef", epoch: 4 },
+    writes,
+    events,
+  });
+  const matrix = dependencies as typeof dependencies & {
+    close: (key: string, epoch: number) => boolean;
+    jitter: (baseMs: number) => number;
+    sleep: (delayMs: number) => Promise<void>;
+    remainingBudgetMs: () => number;
+  };
+  matrix.close = () => true;
+  matrix.jitter = () => 900;
+  matrix.sleep = async () => undefined;
+  matrix.remainingBudgetMs = () => 5_000;
+  const directives: string[] = [];
+  let invocation = 0;
+  const result = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => { throw new Error("fallback must use structured fresh"); },
+    invokeStructured: async (directive) => {
+      directives.push(directive.mode);
+      invocation += 1;
+      if (invocation === 1) return { exitCode: 1, result: { outputText: "", failure: { classification: "unknown", message: "network", retryable: true } } };
+      if (invocation === 2) return { exitCode: 1, result: { outputText: "", failure: { classification: "session_expired", message: "expired", retryable: false } } };
+      return { exitCode: 0, result: { providerSessionId: "session-test-123", outputText: "replacement" } };
+    },
+    sessionDependencies: matrix,
+  });
+  assert.deepEqual(directives, ["resume", "resume", "fresh"]);
+  assert.equal(result.session.mode, "fallback_fresh");
+  assert.deepEqual(writes, ["fresh:session-test-123"]);
+  assert.deepEqual(events.map(({ event }) => event), [
+    "reviewer_session.resume_failed",
+    "reviewer_session.expired",
+    "reviewer_session.closed",
+    "reviewer_session.rotated",
+    "reviewer_session.fallback_fresh",
+  ]);
 });
 
 test("hard resume failures do not retry, recover fresh, or write the registry", async () => {
@@ -686,6 +731,21 @@ test("unavailable registry and structured invocation exceptions never become pro
   assert.equal(exceptionFresh, 0);
   assert.equal(exceptionalResult.exitCode, 1);
   assert.equal(exceptionalResult.session.mode, "resumed");
+});
+
+test("lease action exception without a provider spawn omits session invocation provenance", async () => {
+  const dependencies = continuousDependencies({ writes: [], events: [] });
+  dependencies.read = () => { throw new Error("registry read failed"); };
+  let providerCalls = 0;
+  const result = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => { providerCalls += 1; return { exitCode: 0, outputText: "" }; },
+    invokeStructured: async () => { providerCalls += 1; return { exitCode: 0, result: { outputText: "" } }; },
+    sessionDependencies: dependencies,
+  });
+  assert.equal(providerCalls, 0);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.session.mode, undefined);
 });
 
 test("a small remaining budget is passed to resume and prevents an unbounded retry", async () => {

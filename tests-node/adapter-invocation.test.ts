@@ -704,6 +704,42 @@ test("async agent invocation carries opaque idempotency metadata only through th
   assert.equal(readFileSync(outputFile, "utf-8"), "run-42:review:backup:2");
 });
 
+test("async OpenCode session invocation uses the caller workspace for --dir", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const linkedWorktree = path.join(workspace, "linked-worktree");
+  mkdirSync(linkedWorktree, { recursive: true });
+  const agent = path.join(workspace, "fake-opencode.sh");
+  const argvFile = path.join(workspace, "opencode-argv.txt");
+  writeFileSync(agent, [
+    "#!/usr/bin/env bash",
+    `printf '%s\\n' \"$@\" > ${JSON.stringify(argvFile)}`,
+    "session='session-test-123'",
+    "printf '%s\\n' \\",
+    "  \"{\\\"type\\\":\\\"step_start\\\",\\\"sessionID\\\":\\\"$session\\\",\\\"part\\\":{}}\" \\",
+    "  \"{\\\"type\\\":\\\"text\\\",\\\"sessionID\\\":\\\"$session\\\",\\\"part\\\":{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review\\\"}}\" \\",
+    "  \"{\\\"type\\\":\\\"step_finish\\\",\\\"sessionID\\\":\\\"$session\\\",\\\"part\\\":{}}\"",
+    "",
+  ].join("\n"), { mode: 0o755 });
+  const configPath = path.join(workspace, "agentmesh.toml");
+  writeFileSync(configPath, [
+    "schema_version = 1", "", "[agents.review]", 'adapter = "opencode-cli"',
+    `command = ${JSON.stringify(agent)}`, "args = []", 'model = "openai/gpt-5.5"',
+    'reasoning_effort = "high"', 'capabilities = ["review"]', "",
+  ].join("\n"));
+  const result = await runAgentCallAsync({
+    configPath,
+    cwd: linkedWorktree,
+    agentName: "review",
+    prompt: "review from linked worktree",
+    session: { mode: "fresh" },
+  });
+  assert.equal(result.exitCode, 0);
+  const argv = readFileSync(argvFile, "utf-8").trim().split("\n");
+  assert.deepEqual(argv.slice(argv.indexOf("--dir"), argv.indexOf("--dir") + 2), ["--dir", linkedWorktree]);
+  assert.notEqual(linkedWorktree, process.cwd());
+});
+
 test("agent calls discover provider CLIs installed outside PATH", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

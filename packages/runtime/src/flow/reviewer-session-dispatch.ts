@@ -39,7 +39,7 @@ export interface ReviewerSessionInvocationResult {
   timedOut?: boolean;
   timing?: ReviewerSessionInvocationTiming;
   session: {
-    mode: ReviewerSessionMode;
+    mode?: ReviewerSessionMode;
     hermetic: boolean;
     nonHermeticReason?: "session_resume";
     registryWrite: boolean;
@@ -166,7 +166,7 @@ export async function invokeReviewerWithSession(
   if (leased.acquired) {
     return leased.value.kind === "result"
       ? leased.value.result
-      : { exitCode: 1, outputText: "Reviewer session invocation failed safely.", session: scopeSession("fresh", scope, false) };
+      : { exitCode: 1, outputText: "Reviewer session invocation failed safely.", session: noInvocationSession() };
   }
   if (leased.reason === "unavailable") return freshWithoutRegistry(options, true);
 
@@ -247,19 +247,38 @@ async function resumeExisting(
   if (structuredSuccess(invocation)) return completedResume(options, scope, key, entry, invocation);
 
   const failure = invocation.result.failure;
-  emitResumeFailure(options, scope, entry, failure?.classification);
-  if (!failure || !hasRemainingBudget(options)) return failedResume(scope, entry, invocation);
+  if (!failure || !hasRemainingBudget(options)) {
+    emitResumeFailure(options, scope, entry, failure?.classification);
+    return failedResume(scope, entry, invocation);
+  }
 
   const retryDelay = retryDelayFor(options, invocation);
   if (retryDelay !== undefined) {
     await options.sessionDependencies.sleep?.(retryDelay);
-    if (!hasRemainingBudget(options)) return failedResume(scope, entry, invocation);
+    if (!hasRemainingBudget(options)) {
+      emitResumeFailure(options, scope, entry, failure.classification);
+      return failedResume(scope, entry, invocation);
+    }
     const retried = await invokeResume(options, entry);
     if (structuredSuccess(retried)) return completedResume(options, scope, key, entry, retried);
-    return failedResume(scope, entry, retried);
+    return finalizeResumeFailure(options, scope, key, entry, retried, true);
   }
 
-  if (allowsFreshRecovery(failure.classification)) {
+  return finalizeResumeFailure(options, scope, key, entry, invocation, false);
+}
+
+async function finalizeResumeFailure(
+  options: ReviewerSessionInvocationOptions,
+  scope: ResolvedReviewerSessionScope,
+  key: string,
+  entry: ReviewerSessionDispatchEntry,
+  invocation: StructuredSessionInvocation,
+  afterRetry: boolean,
+): Promise<ReviewerSessionInvocationResult> {
+  const failure = invocation.result.failure;
+  emitResumeFailure(options, scope, entry, failure?.classification);
+  if (failure && (allowsFreshRecovery(failure.classification)
+    || (afterRetry && failure.classification === "non_interactive_unsupported"))) {
     closeStaleEntry(options, scope, key, entry, failure.classification);
     return fallbackFresh(options, scope, key, entry.providerSessionId);
   }
@@ -521,9 +540,13 @@ function scopeSession(
   };
 }
 
+function noInvocationSession(): ReviewerSessionInvocationResult["session"] {
+  return { hermetic: true, registryWrite: false };
+}
+
 function safeEventPayload(session: ReviewerSessionInvocationResult["session"]): Record<string, unknown> {
   return {
-    session_mode: session.mode,
+    ...(session.mode ? { session_mode: session.mode } : {}),
     ...(session.sessionRef ? { session_ref: session.sessionRef } : {}),
     ...(session.conversationScopeRef ? { conversation_scope_ref: session.conversationScopeRef } : {}),
     ...(session.scopeSource ? { scope_source: session.scopeSource } : {}),
