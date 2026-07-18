@@ -67,11 +67,6 @@ export interface StudioReviewerSessionSummary {
   hermetic: boolean;
 }
 
-export interface StudioReviewerSessionsPayload {
-  schema_version: 1;
-  sessions: StudioReviewerSessionSummary[];
-}
-
 export interface StudioReviewerSessionClosePayload {
   schema_version: 1;
   status: "closed";
@@ -224,12 +219,6 @@ export type StudioRunDeleteResponse = StudioApiJsonResponse<
 
 export function loadStudioRuns(client: StudioApiClient): Promise<StudioRunsPayload> {
   return client.getJson<StudioRunsPayload>("/api/runs");
-}
-
-export function loadStudioReviewerSessions(
-  client: StudioApiClient,
-): Promise<StudioReviewerSessionsPayload> {
-  return client.getJson<StudioReviewerSessionsPayload>("/api/v1/reviewer-sessions");
 }
 
 export function closeStudioReviewerSession(

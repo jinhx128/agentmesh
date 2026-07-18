@@ -975,14 +975,6 @@ test("Studio exposes and mutates only safe local reviewer session summaries", as
   assert.doesNotMatch(detailText, new RegExp(STUDIO_PROVIDER_SESSION_SECRET));
   assert.doesNotMatch(detailText, /provider_session_id|registry_key|scope_ref/i);
 
-  const sessionsResponse = await fetch(`${url}/api/v1/reviewer-sessions`, { headers });
-  assert.equal(sessionsResponse.status, 200, await sessionsResponse.clone().text());
-  const sessionsText = await sessionsResponse.text();
-  const sessions = JSON.parse(sessionsText) as { sessions: Array<Record<string, unknown>> };
-  assert.equal(sessions.sessions[0]?.session_ref, sessionRef);
-  assert.doesNotMatch(sessionsText, new RegExp(STUDIO_PROVIDER_SESSION_SECRET));
-  assert.doesNotMatch(sessionsText, /provider_session_id|registry_key|scope_ref/i);
-
   const unauthenticated = await fetch(`${url}/api/v1/reviewer-sessions/${sessionRef}`, {
     method: "DELETE",
   });
@@ -1011,6 +1003,7 @@ test("Studio exposes and mutates only safe local reviewer session summaries", as
   });
   assert.equal(purged.status, 200, await purged.clone().text());
   const purgedPayload = await purged.json() as { schema_version: number; status: string; removed: number };
+  assert.deepEqual(Object.keys(purgedPayload).sort(), ["removed", "schema_version", "status"]);
   assert.equal(purgedPayload.schema_version, 1);
   assert.equal(purgedPayload.status, "purged");
   assert.ok(purgedPayload.removed >= 1);

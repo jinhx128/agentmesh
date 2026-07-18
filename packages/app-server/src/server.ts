@@ -373,17 +373,6 @@ function handleStudioRequest(
     sendJson(response, 405, { error: "method not allowed" });
     return;
   }
-  if (url.pathname === "/api/v1/reviewer-sessions") {
-    if (!requireMethod(request, response, "GET")) {
-      return;
-    }
-    const sessions = studioReviewerSessionMetadata().map((session) => ({
-      ...session,
-      hermetic: false,
-    }));
-    sendJson(response, 200, { schema_version: 1, sessions });
-    return;
-  }
   if (url.pathname === "/api/v1/reviewer-sessions/purge-expired") {
     if (!requireMethod(request, response, "POST")) {
       return;
@@ -393,7 +382,11 @@ function handleStudioRequest(
       sendJson(response, 503, { error: result.diagnostic });
       return;
     }
-    sendJson(response, 200, { schema_version: 1, ...result });
+    sendJson(response, 200, {
+      schema_version: 1,
+      status: "purged",
+      removed: result.removed,
+    });
     return;
   }
   const reviewerSessionMatch = rawPathname.match(/^\/api\/v1\/reviewer-sessions\/([^/]+)$/);
@@ -410,7 +403,11 @@ function handleStudioRequest(
     }
     const result = closeReviewerSessionReference(sessionRef);
     if (result.status === "closed") {
-      sendJson(response, 200, { schema_version: 1, ...result });
+      sendJson(response, 200, {
+        schema_version: 1,
+        status: "closed",
+        closed: result.closed,
+      });
       return;
     }
     if (result.status === "not_found") {

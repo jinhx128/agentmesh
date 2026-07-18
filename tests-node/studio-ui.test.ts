@@ -59,7 +59,6 @@ import {
   closeStudioReviewerSession,
   deleteStudioRun,
   loadStudioArtifactPreview,
-  loadStudioReviewerSessions,
   loadStudioRunDetail,
   loadStudioRuns,
   nextSelectedRunKey,
@@ -2385,7 +2384,6 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   await loadStudioRunDetail(client, "run-1", { eventOffset: 50, eventLimit: 25 });
   await deleteStudioRun(client, "run-1", "workspace one");
   await loadStudioArtifactPreview(client, "run-1", "output.md");
-  await loadStudioReviewerSessions(client);
   await closeStudioReviewerSession(client, "rs-0123456789abcdef");
   await purgeExpiredStudioReviewerSessions(client);
   await loadStudioCatalog(client);
@@ -2429,7 +2427,6 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/runs/run-1",
     "DELETE /api/runs/run-1",
     "GET /api/runs/run-1/artifacts/output.md",
-    "GET /api/v1/reviewer-sessions",
     "DELETE /api/v1/reviewer-sessions/rs-0123456789abcdef",
     "POST /api/v1/reviewer-sessions/purge-expired",
     "GET /api/catalog",
@@ -2457,8 +2454,8 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/v1/update/check",
   ]);
   assert.equal(new URL(calls[2].url).searchParams.get("workspace_id"), "workspace one");
-  assert.equal(new URL(calls[10].url).searchParams.get("workspace_id"), "workspace one");
-  assert.equal(new URL(calls[16].url).search, "?adapter=claude-code-cli");
+  assert.equal(new URL(calls[9].url).searchParams.get("workspace_id"), "workspace one");
+  assert.equal(new URL(calls[15].url).search, "?adapter=claude-code-cli");
   assert.equal((calls[0].init?.headers as Headers).get("authorization"), "Bearer secret-token");
 });
 
