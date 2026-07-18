@@ -113,3 +113,12 @@ git diff --check 920c4f0
 - OpenCode workspace propagation is adapter-local argv construction from the explicit caller cwd; no process-global cwd fallback is used when the caller supplies a worktree.
 - No-spawn lease-action failure omits only the optional `session_mode`; existing packet schema and consumers remain compatible, while `hermetic=true` and `registry_write=false` stay truthful.
 - No P3.4 prompt/provenance presentation or real provider/user state access was added.
+
+## Controller final gate after `99d6035`
+
+- Fresh Node build and the 18-file P3 targeted selection passed **315/315**, with 0 failed, skipped, cancelled, or todo.
+- The disposable fake-CLI E2E passed again with cleanup complete, one active registry entry, exact safe lifecycle events, and zero generated-artifact matches for fake provider IDs or the raw propagated scope token.
+- Fresh `npm test` passed **694/694**, including the Node build and Studio frontend build; 0 failed, skipped, cancelled, or todo.
+- `git diff --check` and `git diff --check 920c4f0` passed.
+- Cursor closure gate `workflow-20260718203342` and Claude function-level gate `workflow-20260718203944` both returned LGTM with 0 Must/Should/Nit and reached `decide_completed`.
+- GLM function-level gate `workflow-20260718203944-1` timed out at 240 seconds with no review output. This is retained as reviewer availability evidence only; it is not treated as a technical approval or finding.

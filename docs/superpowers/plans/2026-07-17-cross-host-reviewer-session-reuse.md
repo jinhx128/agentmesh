@@ -486,7 +486,7 @@
 
 ## P3. Adapter Session 与 Dispatch 编排
 
-- [ ] P3 阶段完成门禁：fake CLI 合约、矩阵允许的 adapters、resume/failure/fresh fallback、packet provenance 和 non-hermetic 传播全部通过。
+- [x] P3 阶段完成门禁：fake CLI 合约、矩阵允许的 adapters、resume/failure/fresh fallback、packet provenance 和 non-hermetic 传播全部通过。
 
 ### ~~P3.1 / Task 10：定义 Adapter Session Contract 与 Fake CLI~~ ✅
 
@@ -657,14 +657,24 @@
 - 提交：`3b13a9b`、`b60960d`、`a18bd6c`；本条日志与阶段记录由收尾 commit 固化。
 - 下一步：P3.Z 使用 fake CLI 完成 start→resume→expired→fresh recovery E2E、全量 targeted/泄漏扫描和阶段总门禁。
 
-### P3.Z / Task 14：P3 阶段收尾校准
+### ~~P3.Z / Task 14：P3 阶段收尾校准~~ ✅
 
-- [ ] Run: `npm run build:node`、所有 adapter/session/flow/review/release targeted tests、`git diff --check`。
-- [ ] 使用 fake CLI 完成 start→resume→expired→fresh recovery E2E，确认 logs 不含 ID。
-- [ ] AgentMesh 多 reviewer 外审核心状态机；review prompt 禁止无关仓库探索、240s per lane。
-- [ ] 修复 accepted findings、同步 changelog、提交。
+- [x] Run: `npm run build:node`、所有 adapter/session/flow/review/release targeted tests、`git diff --check`。
+- [x] 使用 fake CLI 完成 start→resume→expired→fresh recovery E2E，确认 logs 不含 ID。
+- [x] AgentMesh 多 reviewer 外审核心状态机；review prompt 禁止无关仓库探索、240s per lane。
+- [x] 修复 accepted findings、同步 changelog、提交。
 
 审查方式：外审；失败不可降级。Commit: `收尾：校准 reviewer session dispatch 链路`
+
+**进度记录（2026-07-18 20:49）：**
+
+- 状态：完成。Disposable fake CLI 完整覆盖 fresh→resume→resume failure→fresh recovery；attempt modes 为 `fresh`、`resumed`、`fallback_fresh`，registry 最终仅一条 active entry，packet/workflow schema 保持 v1。
+- 安全：E2E 在临时 workspace/HOME/config/registry 中运行且 `finally` 清理；生成 packet、artifact、prompt、event、log、output、error 和 fake sidecar 对 fake provider ID、原始 propagated scope 的匹配均为 0；未访问真实 provider 登录态、私有 store 或用户 reviewer registry。
+- 修复：Cursor 总审提出的 1 Must/2 Should/1 Nit 已在 `99d6035` 关闭，包括 retry 终态单次 fresh recovery、成功 retry 不发 `resume_failed`、OpenCode 使用 caller worktree、no-spawn 不伪造 `session_mode`。
+- 验证：`99d6035` 后 fresh Node build 与 18 文件 P3 targeted 315/315；E2E cleanup=true 且泄漏计数为 0；完整 `npm test` 694/694（含 Studio frontend build）；`git diff --check` 与 `git diff --check 920c4f0` 通过。
+- 审查：Cursor closure gate `workflow-20260718203342` 与 Claude 函数级 gate `workflow-20260718203944` 均为 LGTM、0 Must/0 Should/0 Nit 且 `decide_completed`。GLM gate `workflow-20260718203944-1` 在 240 秒超时、无 review output；此前两次 GLM scoped 尝试也超时，记录为 reviewer 可用性残余证据，不继续无限重试。
+- 提交：实现与外审修复截至 `99d6035`；本阶段记录由 `收尾：校准 reviewer session dispatch 链路` 固化。
+- 下一步：P4.1 更新 Canonical Skill 的跨宿主 propagated scope 协议。
 
 ---
 
@@ -817,4 +827,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P3.Z` 完成 fake CLI E2E、P3 全 targeted/泄漏扫描与阶段总门禁。
+- 当前下一步：`P4.1` 更新 Canonical Skill 的跨宿主 propagated scope 协议。
