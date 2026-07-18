@@ -228,6 +228,44 @@ specific run.
 Do not claim MCP context was attached unless the current CLI help and packet
 artifacts prove it.
 
+## Cross-Host Reviewer Session Continuity
+
+Use the same propagated scope workflow for entry hosts `codex`, `cursor`,
+`claude`, `antigravity`, and `opencode`. When AgentMesh can consume a safe
+native host conversation identity, native host conversation identity takes precedence.
+Do not copy that native value into a command, packet, or propagated token.
+
+For an ordinary continuous review without native identity, the first review in
+the current host conversation creates one opaque `amscope_v1` token and passes
+it to the run:
+
+```bash
+agentmesh sessions scope create --host codex --json
+agentmesh run --workflow w-9d94d0db \
+  --host-kind codex \
+  --conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111 \
+  --review-session-mode interactive_continuous \
+  --review a-reviewer --decide current --task "复审当前改动"
+```
+
+Read `correlation_token` from the JSON response and substitute it for the
+example token; do not persist the raw token in a workspace file or packet.
+Keep the token in entry-agent conversation context only. For later ordinary
+reviews in that same host conversation, reuse the exact same opaque `amscope_v1` token
+and keep the same `--host-kind`. For another supported host, replace only
+`--host-kind` with `cursor`, `claude`, `antigravity`, or `opencode`.
+Never copy a provider/native session ID.
+
+If the entry agent no longer has the token, omit `--conversation-scope` and run fresh;
+create a new token only for later continuity. AgentMesh and entry agents must not derive or recover a scope from the workspace,
+repository path, worktree, previous packets, provider state, or another host
+conversation. A missing or invalid scope always degrades to fresh invocation.
+
+Formal review and release gates must use `independent`, even when earlier
+ordinary reviews reused a continuous reviewer session. Continuous review is a
+latency optimization and its non-hermetic evidence must not silently satisfy a
+formal independent gate.
+
 ## Current Participant
 
 `current` means the entry agent that is reading this skill. It is a real role

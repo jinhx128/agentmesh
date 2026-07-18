@@ -104,6 +104,31 @@ test("active product surfaces contain no Copilot integration", () => {
   }
 });
 
+test("canonical AgentMesh skill defines safe cross-host reviewer scope continuity", () => {
+  const skill = readFileSync(
+    path.join(process.cwd(), "packages", "skills", "agentmesh-skill", "SKILL.md"),
+    "utf-8",
+  );
+
+  for (const host of ["codex", "cursor", "claude", "antigravity", "opencode"]) {
+    assert.ok(skill.includes(`\`${host}\``), `missing documented host: ${host}`);
+  }
+  for (const requiredContract of [
+    "## Cross-Host Reviewer Session Continuity",
+    "agentmesh sessions scope create --host codex --json",
+    "--conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111",
+    "--review-session-mode interactive_continuous",
+    "reuse the exact same opaque `amscope_v1` token",
+    "omit `--conversation-scope` and run fresh",
+    "native host conversation identity takes precedence",
+    "must not derive or recover a scope from the workspace",
+    "Formal review and release gates must use `independent`",
+    "Never copy a provider/native session ID",
+  ]) {
+    assert.ok(skill.includes(requiredContract), `missing Skill contract: ${requiredContract}`);
+  }
+});
+
 test("release publish wrappers expose npm and GitHub one-command flows", () => {
   const root = process.cwd();
   const packageJson = JSON.parse(
