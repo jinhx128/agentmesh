@@ -574,7 +574,7 @@
 - 提交：`b646012`、`689d721`；本条日志与阶段记录由收尾 commit 固化。
 - 残余限制：只证明 immediate resume；dispatch/fallback 编排留给 P3.3。
 
-### P3.3 / Task 12：接入 Dispatch Resume、锁与 Failure Matrix
+### ~~P3.3 / Task 12：接入 Dispatch Resume、锁与 Failure Matrix~~ ✅
 
 **Files:**
 - Modify: `packages/runtime/src/adapters.ts`
@@ -587,8 +587,8 @@
 - Consumes: scope/policy/registry/lease/adapter session contract。
 - Produces: `fresh|resumed|fallback_fresh|fresh_isolated` attempts。
 
-- [ ] 写失败测试：same scope second run resume、different scope/worktree fresh、independent no registry I/O、busy lock fresh isolated、expired fresh once、network retry、rate-limit Retry-After、auth hard fail、invalid output recovery once、无循环。
-- [ ] 实现单一编排函数：
+- [x] 写失败测试：same scope second run resume、different scope/worktree fresh、independent no registry I/O、busy lock fresh isolated、expired fresh once、network retry、rate-limit Retry-After、auth hard fail、invalid output recovery once、无循环。
+- [x] 实现单一编排函数：
 
   ```ts
   async function invokeReviewerWithSession(
@@ -600,11 +600,22 @@
   ```
 
   `independent` 在函数入口立即走现有 fresh invocation；continuous 才解析 scope/registry/lease。
-- [ ] Failure actions 精确实现：expired/not_found/overflow/unsupported→fresh once；network→1 jitter retry；rate-limit→Retry-After/budget；busy→bounded retry then lane fallback；auth/permission/trust/incompatible→hard fail。
-- [ ] 写 `reviewer_session.created/resumed/fallback_fresh/fresh_isolated/rotated/resume_failed/closed/expired` events，禁止使用 `stage.agent_reused`。
-- [ ] Run targeted tests; Expected: PASS。
+- [x] Failure actions 精确实现：expired/not_found/overflow/unsupported→fresh once；network→1 jitter retry；rate-limit→Retry-After/budget；busy→bounded retry then lane fallback；auth/permission/trust/incompatible→hard fail。
+- [x] 写 `reviewer_session.created/resumed/fallback_fresh/fresh_isolated/rotated/resume_failed/closed/expired` events，禁止使用 `stage.agent_reused`。
+- [x] Run targeted tests; Expected: PASS。
 
 审查方式：外审；核心状态机和并发行为。外审失败不可降级。Commit: `功能(flow)：编排 reviewer session resume 与回退`
+
+**进度记录（2026-07-18 13:21）：**
+
+- 状态：完成。run creation 仅在 continuous policy 下冻结 safe host scope；independent 在 create/dispatch 均零 scope-key/registry/lease/provider-session I/O。review worker 统一进入 canonical session boundary，`current` 和非 review stage 保持旧路径。
+- 编排：同 scope/worktree/reviewer/model/fingerprint 首次 fresh 写 entry、后续 lease 内 resume；different scope/worktree fresh 隔离；busy 走带 lane-attempt 幂等键的 fresh-isolated；锁序固定 run mutation→entry lease→provider spawn，epoch close race 禁止 stale write-back。
+- Failure matrix：expired/not-found/overflow/invalid/unsupported 只 fallback fresh 一次；network/rate-limit/busy 有界 retry 且使用 remaining budget；auth/permission/config/incompatible hard fail；无 resume→fresh→resume 循环。structured timeout 保留 StageAttempt `timed_out/error_kind=timeout`。
+- 安全/兼容：raw native/provider ID、propagation token、registry key 与 provider diagnostics 不进入 packet/events/log/error/sidecar；classifier 只看 verified diagnostic channel，opaque idempotency key 仅 adapter-local env；legacy packet/fallback/fanout 兼容。
+- 验证：首轮完整组合 167/167；累计修复后 171/171；最终 production-wiring directed 3/3，controller fresh 重跑完整七文件组合 exit 0；Node build、`git diff --check` 通过。
+- 审查：累计 review 的 6 Must/1 Should 与两轮 follow-up 3 Must 均关闭；最终 Spec/Quality PASS、LGTM、0 Must/0 Should/0 Nit；AgentMesh gate `workflow-20260718132006` 已 `decide_completed`。
+- 提交：`d0d223c`、`12d1e69`、`a7543c6`、`261cd5d`；本条日志与阶段记录由收尾 commit 固化。
+- 残余限制：当前没有 verified Retry-After extractor，无 structured metadata 时使用有界 jitter；P3.4 再传播 delta/non-hermetic/release 语义。
 
 ### P3.4 / Task 13：Structured Delta、Packet Provenance 与 Decide 传播
 
@@ -795,4 +806,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P3.3` 接入 Dispatch Resume、锁与 Failure Matrix；先保证 independent 零 registry I/O，再接 continuous 状态机。
+- 当前下一步：`P3.4` 实现 structured delta、attempt/findings/decide/release provenance 与 independent release 边界。
