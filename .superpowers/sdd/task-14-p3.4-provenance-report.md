@@ -65,3 +65,15 @@ git diff --check f219886
 - Findings recomposition strips generated raw/provenance sections in a stable order, writes provenance before raw outputs, filters to completed attempts with non-empty matching raw review output, and applies deterministic reviewer/lane plus UTF-8 bounds with a truncation marker.
 - Decide and release use the same safe usable-raw projection.
 - Disposable dispatch integration covers data correction resume plus persona add/supersede/removal and system add rotations; only the data correction run resumes, and generated packet artifacts never contain `session-test-123`.
+
+## Final Review Follow-up
+
+### RED
+
+- A 22 KB diff + verification + multiple 22 KB project corrections regression proved the prior overall head/tail excerpt could omit the verification category entirely and duplicate `Current Authoritative Evidence` after re-preparation.
+
+### GREEN
+
+- Current authoritative evidence and the since-last delta now share one AgentMesh-owned terminal sentinel block. Re-entry replaces the entire owned block while preserving request/prior artifacts with same-named headings.
+- Diff, verification, and corrections each receive independent bounded excerpts before composition. Corrections are sorted by safe correction ID, bounded per entry and in total, and report deterministic omitted-count/ID summaries; the fixed category budgets remain below the terminal evidence total budget, so no present category disappears under a later global trim.
+- The large-evidence regression asserts per-category original byte counts and truncation markers for 22 KB diff/verification/correction payloads, deterministic multi-correction omission metadata, and one owned terminal block after repeated preparation.

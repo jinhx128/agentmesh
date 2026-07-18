@@ -128,6 +128,39 @@ test("resumed delta only replaces the terminal AgentMesh-owned sentinel block", 
   assert.equal(twice.match(/## Since Last Reviewer Session Turn/g)?.length, 2);
   assert.equal(twice.match(/agentmesh:reviewer-session-delta:start/g)?.length, 1);
   assert.equal(twice.match(/agentmesh:reviewer-session-delta:end/g)?.length, 1);
+  assert.equal(twice.match(/^## Current Authoritative Evidence$/gm)?.length, 1);
+});
+
+test("resumed authoritative evidence bounds each category without losing verification or early corrections", () => {
+  const prompt = ["## Request", "", "REQUEST_SURVIVES", "", "## Current Authoritative Evidence", "", "user-authored same heading survives"].join("\n");
+  const context = [
+    "## Diff", "", "DIFF_MARKER", "d".repeat(22_000),
+    "", "## Verification", "", "VERIFICATION_MARKER", "v".repeat(22_000),
+    "", "## Project Correction", "", "Correction ID: alpha", "ALPHA_MARKER", "a".repeat(22_000),
+    "", "## Project Correction", "", "Correction ID: beta", "BETA_MARKER", "b".repeat(22_000),
+    "", "## Project Correction", "", "Correction ID: gamma", "GAMMA_MARKER", "g".repeat(22_000),
+    "", "## Project Correction", "", "Correction ID: omega", "OMEGA_MARKER", "o".repeat(22_000),
+  ].join("\n");
+  const once = withReviewerSessionDelta(prompt, context);
+  const twice = withReviewerSessionDelta(once, context);
+
+  assert.match(twice, /DIFF_MARKER/);
+  assert.match(twice, /VERIFICATION_MARKER/);
+  assert.match(twice, /### Scoped Git Diff[\s\S]*?- original_bytes: 22012/);
+  assert.match(twice, /### Verification[\s\S]*?- original_bytes: 22020/);
+  assert.match(twice, /### Project Correction[\s\S]*?- original_bytes: [0-9]+/);
+  assert.match(twice, /Correction ID: alpha/);
+  assert.match(twice, /Correction ID: beta|omitted_correction_ids: beta/);
+  assert.match(twice, /omitted_correction_count: [1-9]/);
+  assert.match(twice, /omitted_correction_ids: (gamma|omega)/);
+  assert.match(twice, /AgentMesh prompt assembly truncated current diff evidence/);
+  assert.match(twice, /AgentMesh prompt assembly truncated current verification evidence/);
+  assert.match(twice, /AgentMesh prompt assembly truncated current correction alpha/);
+  assert.equal(twice.match(/^## Current Authoritative Evidence$/gm)?.length, 2);
+  assert.equal(twice.match(/^## Since Last Reviewer Session Turn$/gm)?.length, 1);
+  assert.equal(twice.match(/agentmesh:reviewer-session-delta:start/g)?.length, 1);
+  assert.equal(twice.match(/agentmesh:reviewer-session-delta:end/g)?.length, 1);
+  assert.ok(Buffer.byteLength(twice, "utf-8") < 32_000);
 });
 
 test("decide prompt preserves packet-derived non-hermetic risk when prior findings are bounded", () => {

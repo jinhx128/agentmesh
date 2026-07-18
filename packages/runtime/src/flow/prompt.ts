@@ -33,7 +33,11 @@ const PRIOR_RAW_REVIEW_OUTPUT_MAX_BYTES = 2_500;
 const RELEASE_SUMMARY_PROMPT_CONTENT_MAX_BYTES = 24_000;
 const REVIEWER_SESSION_DELTA_MAX_FILES = 64;
 const REVIEWER_SESSION_DELTA_MAX_BYTES = 4_000;
-const RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES = 12_000;
+const RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES = 18_000;
+const RESUMED_DIFF_EVIDENCE_MAX_BYTES = 4_000;
+const RESUMED_VERIFICATION_EVIDENCE_MAX_BYTES = 4_000;
+const RESUMED_CORRECTIONS_MAX_BYTES = 6_000;
+const RESUMED_CORRECTION_ENTRY_MAX_BYTES = 2_000;
 const REVIEWER_SESSION_DELTA_START = "<!-- agentmesh:reviewer-session-delta:start -->";
 const REVIEWER_SESSION_DELTA_END = "<!-- agentmesh:reviewer-session-delta:end -->";
 
@@ -166,11 +170,11 @@ export function withReviewerSessionDelta(prompt: string, context: string): strin
   return [
     base.trimEnd(),
     "",
+    REVIEWER_SESSION_DELTA_START,
     "## Current Authoritative Evidence",
     "",
     resumedAuthoritativeEvidence(context),
     "",
-    REVIEWER_SESSION_DELTA_START,
     "## Since Last Reviewer Session Turn",
     "",
     `- changed_files: ${files}${truncation}`,
@@ -232,18 +236,96 @@ function withoutReviewerSessionDelta(prompt: string): string {
 }
 
 function resumedAuthoritativeEvidence(context: string): string {
-  const headings = ["Scoped Git Diff", "Diff", "Verification", "Project Correction"];
-  const sections = headings.flatMap((heading) => markdownSections(context, heading).map((content) => [
+  const diff = markdownSections(context, "Scoped Git Diff");
+  const fallbackDiff = diff.length ? diff : markdownSections(context, "Diff");
+  const categories = [
+    authoritativeCategory("Scoped Git Diff", fallbackDiff, "current diff evidence", RESUMED_DIFF_EVIDENCE_MAX_BYTES),
+    authoritativeCategory("Verification", markdownSections(context, "Verification"), "current verification evidence", RESUMED_VERIFICATION_EVIDENCE_MAX_BYTES),
+    authoritativeCorrections(markdownSections(context, "Project Correction")),
+  ].filter((section): section is string => Boolean(section));
+  const combined = categories.join("\n\n");
+  // Category budgets sum below this total; retain this guard against future changes.
+  return Buffer.byteLength(combined, "utf-8") <= RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES
+    ? combined
+    : categories.map((section) => boundedPromptContent(
+      section,
+      "current authoritative evidence category",
+      Math.floor(RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES / categories.length),
+    )).join("\n\n");
+}
+
+function authoritativeCategory(
+  heading: string,
+  entries: string[],
+  source: string,
+  maxBytes: number,
+): string | undefined {
+  if (entries.length === 0) return undefined;
+  return [
     `### ${heading}`,
     "",
-    content || "- none recorded",
+    `- original_bytes: ${entries.reduce((total, entry) => total + Buffer.byteLength(entry, "utf-8"), 0)}`,
     "",
-  ].join("\n")));
-  return boundedPromptContent(
-    sections.length ? sections.join("\n").trimEnd() : "- no current diff, verification, or correction evidence recorded",
-    "current authoritative evidence",
-    RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES,
-  );
+    ...entries.map((entry, index) => boundedPromptContent(
+      entry || "- none recorded",
+      entries.length === 1 ? source : `${source} ${index + 1}`,
+      maxBytes,
+    )),
+  ].join("\n\n");
+}
+
+function authoritativeCorrections(entries: string[]): string | undefined {
+  if (entries.length === 0) return undefined;
+  const normalized = entries.map((content, index) => ({
+    id: correctionId(content, index),
+    content,
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const included: string[] = [];
+  let bytes = 0;
+  let index = 0;
+  for (; index < normalized.length; index += 1) {
+    const entry = normalized[index]!;
+    const rendered = [
+      `#### Correction: ${entry.id}`,
+      "",
+      boundedPromptContent(entry.content || "- none recorded", `current correction ${entry.id}`, RESUMED_CORRECTION_ENTRY_MAX_BYTES),
+    ].join("\n");
+    const separatorBytes = included.length ? 2 : 0;
+    if (bytes + separatorBytes + Buffer.byteLength(rendered, "utf-8") > RESUMED_CORRECTIONS_MAX_BYTES) break;
+    included.push(rendered);
+    bytes += separatorBytes + Buffer.byteLength(rendered, "utf-8");
+  }
+  const omitted = normalized.slice(index).map((entry) => entry.id);
+  const omittedSummary = omitted.length ? correctionOmissionSummary(omitted) : "";
+  return [
+    "### Project Correction",
+    "",
+    `- original_bytes: ${normalized.reduce((total, entry) => total + Buffer.byteLength(entry.content, "utf-8"), 0)}`,
+    "",
+    ...included,
+    ...(omittedSummary ? ["", omittedSummary] : []),
+  ].join("\n");
+}
+
+function correctionId(content: string, index: number): string {
+  const id = /^Correction ID: ([A-Za-z0-9._-]+)$/m.exec(content)?.[1];
+  return id ?? `entry-${String(index + 1).padStart(4, "0")}`;
+}
+
+function correctionOmissionSummary(ids: string[]): string {
+  const selected: string[] = [];
+  let bytes = 0;
+  for (const id of ids) {
+    const next = Buffer.byteLength(id, "utf-8") + (selected.length ? 2 : 0);
+    if (bytes + next > 800) break;
+    selected.push(id);
+    bytes += next;
+  }
+  return [
+    `- omitted_correction_count: ${ids.length}`,
+    `- omitted_correction_ids: ${selected.join(", ") || "(byte-bound)"}`,
+    ...(selected.length < ids.length ? ["- omitted_correction_ids_truncated: true"] : []),
+  ].join("\n");
 }
 
 function changedFilesFromPacketContext(context: string): {
