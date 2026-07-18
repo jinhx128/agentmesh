@@ -78,11 +78,13 @@ import {
   type StudioMutationResponse,
 } from "../api/mutations.js";
 import {
+  closeStudioReviewerSession,
   deleteStudioRun,
   loadStudioArtifactPreview,
   loadStudioRunDetail,
   loadStudioRuns,
   nextSelectedRunKey,
+  purgeExpiredStudioReviewerSessions,
   studioRunKey,
 } from "../api/runs.js";
 import {
@@ -685,6 +687,28 @@ export function App(): ReactElement {
     }
   }
 
+  async function closeReviewerSession(sessionRef: string): Promise<void> {
+    if (!apiClient) {
+      throw new Error("AgentMesh API is not ready.");
+    }
+    const response = await closeStudioReviewerSession(apiClient, sessionRef);
+    if (!response.ok) {
+      throw new Error("error" in response.payload ? response.payload.error : "关闭会话失败");
+    }
+    refreshAfterMutation();
+  }
+
+  async function purgeExpiredReviewerSessions(): Promise<void> {
+    if (!apiClient) {
+      throw new Error("AgentMesh API is not ready.");
+    }
+    const response = await purgeExpiredStudioReviewerSessions(apiClient);
+    if (!response.ok) {
+      throw new Error("error" in response.payload ? response.payload.error : "清理会话失败");
+    }
+    refreshAfterMutation();
+  }
+
   async function createAgent(request: StudioAgentCreateRequest): Promise<void> {
     if (!apiClient) {
       throw new Error("AgentMesh API is not ready.");
@@ -996,6 +1020,8 @@ export function App(): ReactElement {
                         view="details"
                         agentLabels={agentDisplayNames}
                         workflowLabels={workflowDisplayNames}
+                        onCloseReviewerSession={closeReviewerSession}
+                        onPurgeExpiredReviewerSessions={purgeExpiredReviewerSessions}
                       />
                     </Tabs.Panel>
                     <Tabs.Panel value="actions" pt="md">

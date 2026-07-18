@@ -100,6 +100,7 @@ export function listStudioRunIndex(options: StudioReadOptions = {}): StudioRunIn
         eventTail: options.eventTail ?? 1,
         page: 1,
         pageSize: Number.MAX_SAFE_INTEGER,
+        reviewerSessions: options.reviewerSessions,
       }).runs.map((run) => studioRunSummary(run, workspace));
     } catch (error) {
       diagnostics.push({

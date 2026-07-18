@@ -54,7 +54,47 @@ export interface StudioRunDetailSummary extends StudioRunSummary {
   current_stage?: string;
   resolved_context_policy?: Record<string, unknown>;
   resolved_execution_policy?: Record<string, unknown>;
+  reviewer_sessions?: StudioReviewerSessionSummary[];
 }
+
+export interface StudioReviewerSessionSummary {
+  session_ref: string;
+  host_kind: string;
+  agent_id: string;
+  mode: string;
+  last_used_at: string;
+  expires_at: string;
+  hermetic: boolean;
+}
+
+export interface StudioReviewerSessionsPayload {
+  schema_version: 1;
+  sessions: StudioReviewerSessionSummary[];
+}
+
+export interface StudioReviewerSessionClosePayload {
+  schema_version: 1;
+  status: "closed";
+  closed: number;
+}
+
+export interface StudioReviewerSessionPurgePayload {
+  schema_version: 1;
+  status: "purged";
+  removed: number;
+}
+
+export interface StudioReviewerSessionMutationError {
+  error: string;
+}
+
+export type StudioReviewerSessionCloseResponse = StudioApiJsonResponse<
+  StudioReviewerSessionClosePayload | StudioReviewerSessionMutationError
+>;
+
+export type StudioReviewerSessionPurgeResponse = StudioApiJsonResponse<
+  StudioReviewerSessionPurgePayload | StudioReviewerSessionMutationError
+>;
 
 export interface StudioStageNodeSummary {
   id: string;
@@ -184,6 +224,29 @@ export type StudioRunDeleteResponse = StudioApiJsonResponse<
 
 export function loadStudioRuns(client: StudioApiClient): Promise<StudioRunsPayload> {
   return client.getJson<StudioRunsPayload>("/api/runs");
+}
+
+export function loadStudioReviewerSessions(
+  client: StudioApiClient,
+): Promise<StudioReviewerSessionsPayload> {
+  return client.getJson<StudioReviewerSessionsPayload>("/api/v1/reviewer-sessions");
+}
+
+export function closeStudioReviewerSession(
+  client: StudioApiClient,
+  sessionRef: string,
+): Promise<StudioReviewerSessionCloseResponse> {
+  return client.deleteJsonWithStatus<
+    StudioReviewerSessionClosePayload | StudioReviewerSessionMutationError
+  >(`/api/v1/reviewer-sessions/${encodeURIComponent(sessionRef)}`);
+}
+
+export function purgeExpiredStudioReviewerSessions(
+  client: StudioApiClient,
+): Promise<StudioReviewerSessionPurgeResponse> {
+  return client.postJsonWithStatus<
+    StudioReviewerSessionPurgePayload | StudioReviewerSessionMutationError
+  >("/api/v1/reviewer-sessions/purge-expired", {});
 }
 
 export function deleteStudioRun(

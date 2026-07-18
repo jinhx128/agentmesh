@@ -56,11 +56,14 @@ import {
   type StudioPresetLifecycleResponse,
 } from "../apps/studio-web/src/api/presets.js";
 import {
+  closeStudioReviewerSession,
   deleteStudioRun,
   loadStudioArtifactPreview,
+  loadStudioReviewerSessions,
   loadStudioRunDetail,
   loadStudioRuns,
   nextSelectedRunKey,
+  purgeExpiredStudioReviewerSessions,
   studioRunKey,
   type StudioArtifactPreview,
   type StudioRunDetail,
@@ -1688,6 +1691,63 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.doesNotMatch(namedEventHtml, /智能体: reviewer-id/);
   assert.doesNotMatch(namedEventHtml, /实际智能体: worker/);
 
+  const reviewerSessionDetail: StudioRunDetail = {
+    ...detail,
+    summary: {
+      ...detail.summary,
+      reviewer_sessions: [{
+        session_ref: "rs-0123456789abcdef",
+        host_kind: "claude-code",
+        agent_id: "reviewer-id",
+        mode: "interactive_continuous",
+        last_used_at: "2026-05-18T07:02:00.000Z",
+        expires_at: "2026-05-18T09:02:00.000Z",
+        hermetic: false,
+      }],
+    },
+    events: [
+      { event: "reviewer_session.created", timestamp: "2026-05-18T06:50:00.000Z" },
+      { event: "reviewer_session.resumed", timestamp: "2026-05-18T06:51:00.000Z" },
+      { event: "reviewer_session.resume_failed", timestamp: "2026-05-18T06:52:00.000Z" },
+      { event: "reviewer_session.fallback_fresh", timestamp: "2026-05-18T06:53:00.000Z" },
+      { event: "reviewer_session.fresh_isolated", timestamp: "2026-05-18T06:54:00.000Z" },
+      { event: "reviewer_session.rotated", timestamp: "2026-05-18T06:55:00.000Z" },
+      { event: "reviewer_session.closed", timestamp: "2026-05-18T06:56:00.000Z" },
+      { event: "reviewer_session.expired", timestamp: "2026-05-18T06:57:00.000Z" },
+    ],
+    events_page: { offset: 0, limit: 50, total: 8 },
+  };
+  const reviewerSessionOverview = renderStudioElement(React.createElement(RunOverview, {
+    state: { status: "ready", detail: reviewerSessionDetail },
+    view: "details",
+    agentLabels: { "reviewer-id": "Claude Reviewer" },
+    onCloseReviewerSession: async () => {},
+    onPurgeExpiredReviewerSessions: async () => {},
+  }));
+  assert.match(reviewerSessionOverview, /Reviewer Session/);
+  assert.match(reviewerSessionOverview, /Claude Reviewer/);
+  assert.match(reviewerSessionOverview, /Claude Code/);
+  assert.match(reviewerSessionOverview, /上次使用[\s\S]*2026-05-18 15:02:00/);
+  assert.match(reviewerSessionOverview, /过期时间[\s\S]*2026-05-18 17:02:00/);
+  assert.match(reviewerSessionOverview, /关闭会话/);
+  assert.match(reviewerSessionOverview, /清理已过期会话/);
+  assert.doesNotMatch(reviewerSessionOverview, /provider_session_id|registry_key|scope_ref/i);
+
+  const reviewerSessionEvents = renderEventLogView(reviewerSessionDetail);
+  for (const label of [
+    "会话已创建",
+    "会话已恢复",
+    "会话恢复失败",
+    "已回退到新会话",
+    "已使用隔离新会话",
+    "会话已轮换",
+    "会话已关闭",
+    "会话已过期",
+  ]) {
+    assert.match(reviewerSessionEvents, new RegExp(label));
+  }
+  assert.doesNotMatch(reviewerSessionEvents, /reviewer_session\./);
+
   const releaseHtml = renderReviewReleaseView(detail);
   assert.match(releaseHtml, /审查 \/ 发布/);
   assert.match(releaseHtml, /needs_decision/);
@@ -2325,6 +2385,9 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   await loadStudioRunDetail(client, "run-1", { eventOffset: 50, eventLimit: 25 });
   await deleteStudioRun(client, "run-1", "workspace one");
   await loadStudioArtifactPreview(client, "run-1", "output.md");
+  await loadStudioReviewerSessions(client);
+  await closeStudioReviewerSession(client, "rs-0123456789abcdef");
+  await purgeExpiredStudioReviewerSessions(client);
   await loadStudioCatalog(client);
   await loadStudioCalls(client);
   await loadStudioCallDetail(client, "call-1");
@@ -2366,6 +2429,9 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/runs/run-1",
     "DELETE /api/runs/run-1",
     "GET /api/runs/run-1/artifacts/output.md",
+    "GET /api/v1/reviewer-sessions",
+    "DELETE /api/v1/reviewer-sessions/rs-0123456789abcdef",
+    "POST /api/v1/reviewer-sessions/purge-expired",
     "GET /api/catalog",
     "GET /api/calls",
     "GET /api/calls/call-1",
@@ -2391,8 +2457,8 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/v1/update/check",
   ]);
   assert.equal(new URL(calls[2].url).searchParams.get("workspace_id"), "workspace one");
-  assert.equal(new URL(calls[7].url).searchParams.get("workspace_id"), "workspace one");
-  assert.equal(new URL(calls[13].url).search, "?adapter=claude-code-cli");
+  assert.equal(new URL(calls[10].url).searchParams.get("workspace_id"), "workspace one");
+  assert.equal(new URL(calls[16].url).search, "?adapter=claude-code-cli");
   assert.equal((calls[0].init?.headers as Headers).get("authorization"), "Bearer secret-token");
 });
 

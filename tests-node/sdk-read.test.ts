@@ -391,6 +391,86 @@ test("read SDK exposes current packet schema stage node assignments and executio
   });
 });
 
+test("read SDK projects only safe reviewer session summaries for a run", () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  writeConfig(workspace);
+  writeRun(
+    workspace,
+    "session-run",
+    "2026-05-16T00:00:06.000Z",
+    [{ schema_version: 1, timestamp: "2026-05-16T00:00:06.000Z", event: "reviewer_session.resumed" }],
+    {
+      stages: ["review", "decide"],
+      completed_stages: ["review"],
+      stage_attempts: {
+        review: [{
+          lane_id: "review:a-reviewer",
+          primary_agent: "a-reviewer",
+          requested_agent: "a-reviewer",
+          actual_agent: "a-reviewer",
+          lane_attempt: 1,
+          attempt: 1,
+          timeout_seconds: 240,
+          status: "completed",
+          session_mode: "resumed",
+          session_ref: "rs-0123456789abcdef",
+          hermetic: false,
+          non_hermetic_reason: "session_resume",
+          registry_write: true,
+        }],
+      },
+    },
+  );
+
+  const detail = getRun("session-run", {
+    cwd: workspace,
+    reviewerSessions: [{
+      session_ref: "rs-0123456789abcdef",
+      host_kind: "claude-code",
+      agent_id: "a-reviewer",
+      mode: "interactive_continuous",
+      last_used_at: "2026-05-16T00:00:05.000Z",
+      expires_at: "2026-05-16T02:00:00.000Z",
+      provider_session_id: "provider-session-must-not-project",
+    } as unknown as {
+      session_ref: string;
+      host_kind: string;
+      agent_id: string;
+      mode: string;
+      last_used_at: string;
+      expires_at: string;
+    }],
+  });
+
+  assert.deepEqual(detail.summary.reviewer_sessions, [{
+    session_ref: "rs-0123456789abcdef",
+    host_kind: "claude-code",
+    agent_id: "a-reviewer",
+    mode: "interactive_continuous",
+    last_used_at: "2026-05-16T00:00:05.000Z",
+    expires_at: "2026-05-16T02:00:00.000Z",
+    hermetic: false,
+  }]);
+  assert.deepEqual(Object.keys(detail.summary.reviewer_sessions?.[0] ?? {}).sort(), [
+    "agent_id",
+    "expires_at",
+    "hermetic",
+    "host_kind",
+    "last_used_at",
+    "mode",
+    "session_ref",
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(detail.summary.reviewer_sessions),
+    /provider-session-must-not-project|provider_session_id|native|registry_key/i,
+  );
+});
+
 test("read SDK paginates runs and events while keeping artifact content out of indexes", () => {
   const workspace = makeWorkspace();
   const restoreHome = isolateHome(workspace);

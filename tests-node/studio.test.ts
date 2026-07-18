@@ -33,6 +33,12 @@ import {
   readStudioRun,
 } from "../packages/app-server/src/packet-browser.js";
 import { writeWorkspaceCompatibilityMetadata } from "../packages/runtime/src/packet/compatibility.js";
+import {
+  reviewerSessionInvocationFingerprint,
+  reviewerSessionRef,
+  sessionRegistryKey,
+  upsertReviewerSession,
+} from "../packages/runtime/src/reviewer-sessions/registry.js";
 import { readStudioCatalog } from "../packages/app-server/src/catalog.js";
 import {
   bootstrapStudio,
@@ -65,6 +71,56 @@ function isolateHome(workspace: string): () => void {
       process.env.HOME = previousHome;
     }
   };
+}
+
+const STUDIO_PROVIDER_SESSION_SECRET = "studio-provider-session-secret";
+
+function seedStudioReviewerSession(
+  overrides: {
+    scopeRef?: string;
+    reviewerId?: string;
+    hostKind?: string;
+    now?: string;
+  } = {},
+): string {
+  const invocation = {
+    command: "provider",
+    args: ["review"],
+    capabilities: ["resume"],
+    permissionMode: "read-only",
+    contextMode: "packet",
+    reviewerPersonaVersion: "v1",
+    promptSchemaVersion: "v1",
+    adapterPluginVersion: "v1",
+    providerCliVersion: "v1",
+    environmentVariableNames: ["PATH"],
+  };
+  const scopeRef = overrides.scopeRef ?? "cs-1111111111111111";
+  const reviewerId = overrides.reviewerId ?? "a-reviewer";
+  const key = sessionRegistryKey({
+    conversationScopeRef: scopeRef,
+    workspaceId: "ws-2222222222222222",
+    worktreeId: "wt-3333333333333333",
+    agentId: reviewerId,
+    adapterId: "provider",
+    model: "review-model",
+    reasoningEffort: "high",
+    invocation,
+  });
+  const result = upsertReviewerSession({
+    key,
+    sessionRef: reviewerSessionRef(key),
+    providerSessionId: STUDIO_PROVIDER_SESSION_SECRET,
+    invocationFingerprint: reviewerSessionInvocationFingerprint(invocation),
+    summary: {
+      scopeRef,
+      hostKind: overrides.hostKind ?? "claude-code",
+      reviewerId,
+      mode: "interactive_continuous",
+    },
+  }, { now: overrides.now ?? new Date().toISOString() });
+  assert.equal(result.status, "written");
+  return result.entry.session_ref;
 }
 
 function writeFakeProviderCli(binDir: string, command: string, output: string): string {
@@ -849,6 +905,115 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
     content: string;
   };
   assert.match(preview.content, /server-run/);
+});
+
+test("Studio exposes and mutates only safe local reviewer session summaries", async () => {
+  const workspace = makeWorkspace();
+  const restoreHome = isolateHome(workspace);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const sessionRef = seedStudioReviewerSession();
+  writeRun(
+    workspace,
+    "session-run",
+    {
+      status: "review_completed",
+      stages: ["review", "decide"],
+      completed_stages: ["review"],
+      stage_attempts: {
+        review: [{
+          lane_id: "review:a-reviewer",
+          primary_agent: "a-reviewer",
+          requested_agent: "a-reviewer",
+          actual_agent: "a-reviewer",
+          lane_attempt: 1,
+          attempt: 1,
+          timeout_seconds: 240,
+          status: "completed",
+          session_mode: "resumed",
+          session_ref: sessionRef,
+          hermetic: false,
+          non_hermetic_reason: "session_resume",
+          registry_write: true,
+        }],
+      },
+    },
+    [{
+      schema_version: 1,
+      timestamp: "2026-07-19T00:00:00.000Z",
+      event: "reviewer_session.resumed",
+      session_ref: sessionRef,
+      hermetic: false,
+    }],
+  );
+  const { server, url } = await listen(createStudioServer({
+    cwd: workspace,
+    authToken: "studio-session-token",
+  }));
+  test.after(() => server.close());
+  const headers = { authorization: "Bearer studio-session-token" };
+
+  const detailResponse = await fetch(`${url}/api/runs/session-run`, { headers });
+  assert.equal(detailResponse.status, 200, await detailResponse.clone().text());
+  const detailText = await detailResponse.text();
+  const detail = JSON.parse(detailText) as {
+    summary: { reviewer_sessions?: Array<Record<string, unknown>> };
+  };
+  assert.deepEqual(detail.summary.reviewer_sessions?.map((session) => Object.keys(session).sort()), [[
+    "agent_id",
+    "expires_at",
+    "hermetic",
+    "host_kind",
+    "last_used_at",
+    "mode",
+    "session_ref",
+  ]]);
+  assert.equal(detail.summary.reviewer_sessions?.[0]?.session_ref, sessionRef);
+  assert.equal(detail.summary.reviewer_sessions?.[0]?.hermetic, false);
+  assert.doesNotMatch(detailText, new RegExp(STUDIO_PROVIDER_SESSION_SECRET));
+  assert.doesNotMatch(detailText, /provider_session_id|registry_key|scope_ref/i);
+
+  const sessionsResponse = await fetch(`${url}/api/v1/reviewer-sessions`, { headers });
+  assert.equal(sessionsResponse.status, 200, await sessionsResponse.clone().text());
+  const sessionsText = await sessionsResponse.text();
+  const sessions = JSON.parse(sessionsText) as { sessions: Array<Record<string, unknown>> };
+  assert.equal(sessions.sessions[0]?.session_ref, sessionRef);
+  assert.doesNotMatch(sessionsText, new RegExp(STUDIO_PROVIDER_SESSION_SECRET));
+  assert.doesNotMatch(sessionsText, /provider_session_id|registry_key|scope_ref/i);
+
+  const unauthenticated = await fetch(`${url}/api/v1/reviewer-sessions/${sessionRef}`, {
+    method: "DELETE",
+  });
+  assert.equal(unauthenticated.status, 401);
+  const crossOrigin = await fetch(`${url}/api/v1/reviewer-sessions/${sessionRef}`, {
+    method: "DELETE",
+    headers: { ...headers, origin: "https://attacker.invalid" },
+  });
+  assert.equal(crossOrigin.status, 403);
+
+  const closed = await fetch(`${url}/api/v1/reviewer-sessions/${sessionRef}`, {
+    method: "DELETE",
+    headers,
+  });
+  assert.equal(closed.status, 200, await closed.clone().text());
+  assert.deepEqual(await closed.json(), { schema_version: 1, status: "closed", closed: 1 });
+
+  seedStudioReviewerSession({
+    scopeRef: "cs-4444444444444444",
+    reviewerId: "expired-reviewer",
+    now: "2026-01-01T00:00:00.000Z",
+  });
+  const purged = await fetch(`${url}/api/v1/reviewer-sessions/purge-expired`, {
+    method: "POST",
+    headers,
+  });
+  assert.equal(purged.status, 200, await purged.clone().text());
+  const purgedPayload = await purged.json() as { schema_version: number; status: string; removed: number };
+  assert.equal(purgedPayload.schema_version, 1);
+  assert.equal(purgedPayload.status, "purged");
+  assert.ok(purgedPayload.removed >= 1);
 });
 
 test("Studio server aggregates runs from registered workspaces", async () => {

@@ -153,6 +153,7 @@ export interface AgentMeshRunReadOptions extends AgentMeshReadOptions {
   eventOffset?: number;
   eventLimit?: number;
   previewBytes?: number;
+  reviewerSessions?: Array<Omit<ReviewerSessionSummary, "hermetic">>;
 }
 
 export interface AgentMeshCallReadOptions extends AgentMeshReadOptions {}
@@ -164,6 +165,7 @@ export interface AgentMeshPageOptions extends AgentMeshReadOptions {
 
 export interface AgentMeshRunListOptions extends AgentMeshPageOptions {
   eventTail?: number;
+  reviewerSessions?: Array<Omit<ReviewerSessionSummary, "hermetic">>;
 }
 
 export interface AgentMeshRunEventListOptions extends AgentMeshPageOptions {}
@@ -275,6 +277,17 @@ export interface AgentMeshRunSummary {
   latest_event_timestamp?: string;
   resolved_context_policy?: Record<string, unknown>;
   resolved_execution_policy?: Record<string, unknown>;
+  reviewer_sessions?: ReviewerSessionSummary[];
+}
+
+export interface ReviewerSessionSummary {
+  session_ref: string;
+  host_kind: string;
+  agent_id: string;
+  mode: string;
+  last_used_at: string;
+  expires_at: string;
+  hermetic: boolean;
 }
 
 export function getWorkspaceCompatibility(
@@ -720,7 +733,11 @@ function optionalAgentLabelMap(options: AgentMeshReadOptions): Map<string, strin
 }
 
 export function listRuns(options: AgentMeshRunListOptions = {}): AgentMeshRunPage {
-  const runs = readRunSummaries(options.cwd, options.eventTail ?? 1);
+  const runs = readRunSummaries(
+    options.cwd,
+    options.eventTail ?? 1,
+    options.reviewerSessions,
+  );
   const pageSize = normalizePageSize(options.pageSize, DEFAULT_RUN_PAGE_SIZE, MAX_RUN_PAGE_SIZE);
   const page = normalizePage(options.page);
   const offset = (page - 1) * pageSize;
@@ -744,7 +761,7 @@ export function getRun(
   const status = loadStatus(runDir) as Record<string, unknown>;
   const agentLabels = optionalAgentLabelMap(options);
   return {
-    summary: runSummary(runDir, 1),
+    summary: runSummary(runDir, 1, options.reviewerSessions),
     status,
     events: eventPage.events,
     events_page: eventPage.page,
@@ -1135,7 +1152,11 @@ function latestRunByWorkflow(options: AgentMeshReadOptions): Map<string, AgentMe
   return latest;
 }
 
-function readRunSummaries(cwd = process.cwd(), eventTail: number): AgentMeshRunSummary[] {
+function readRunSummaries(
+  cwd = process.cwd(),
+  eventTail: number,
+  reviewerSessions: Array<Omit<ReviewerSessionSummary, "hermetic">> = [],
+): AgentMeshRunSummary[] {
   const runsDir = path.resolve(cwd, RUNS_RELATIVE_DIR);
   if (!isDirectory(runsDir)) {
     return [];
@@ -1150,7 +1171,7 @@ function readRunSummaries(cwd = process.cwd(), eventTail: number): AgentMeshRunS
       continue;
     }
     try {
-      runs.push(runSummary(runDir, eventTail));
+      runs.push(runSummary(runDir, eventTail, reviewerSessions));
     } catch (error) {
       if (isUnsupportedPacketSchemaVersionError(error)) {
         continue;
@@ -1161,13 +1182,18 @@ function readRunSummaries(cwd = process.cwd(), eventTail: number): AgentMeshRunS
   return runs.sort(compareRuns);
 }
 
-function runSummary(runDir: string, eventTail: number): AgentMeshRunSummary {
+function runSummary(
+  runDir: string,
+  eventTail: number,
+  reviewerSessions: Array<Omit<ReviewerSessionSummary, "hermetic">> = [],
+): AgentMeshRunSummary {
   const status = loadStatus(runDir) as Record<string, unknown>;
   const events = readEventTail(runDir, eventTail);
   const latestEvent = events.at(-1) as Record<string, unknown> | undefined;
   const stages = stringArray(status.stages);
   const stageNodes = stageNodeSummaries(status.stage_nodes);
   const orderedStageIds = stageNodes.length > 0 ? stageNodes.map((node) => node.id) : stages;
+  const safeReviewerSessions = reviewerSessionSummaries(status, reviewerSessions);
   return {
     run_id: stringValue(status.run_id) ?? path.basename(runDir),
     run_dir: runDir,
@@ -1194,11 +1220,62 @@ function runSummary(runDir: string, eventTail: number): AgentMeshRunSummary {
     ...(isRecord(status.resolved_execution_policy)
       ? { resolved_execution_policy: status.resolved_execution_policy }
       : {}),
+    ...(safeReviewerSessions.length > 0 ? { reviewer_sessions: safeReviewerSessions } : {}),
     ...(stringValue(latestEvent?.event) ? { latest_event: stringValue(latestEvent?.event) } : {}),
     ...(stringValue(latestEvent?.timestamp)
       ? { latest_event_timestamp: stringValue(latestEvent?.timestamp) }
       : {}),
   };
+}
+
+function reviewerSessionSummaries(
+  status: Record<string, unknown>,
+  metadata: Array<Omit<ReviewerSessionSummary, "hermetic">>,
+): ReviewerSessionSummary[] {
+  const metadataByRef = new Map(
+    metadata
+      .filter(isSafeReviewerSessionMetadata)
+      .map((session) => [session.session_ref, session] as const),
+  );
+  const sessions = new Map<string, ReviewerSessionSummary>();
+  for (const attempts of Object.values(recordArrayMap(status.stage_attempts))) {
+    for (const attempt of attempts) {
+      const sessionRef = stringValue(attempt.session_ref);
+      const actualAgent = stringValue(attempt.actual_agent);
+      const session = sessionRef ? metadataByRef.get(sessionRef) : undefined;
+      if (
+        !session
+        || attempt.status !== "completed"
+        || typeof attempt.hermetic !== "boolean"
+        || actualAgent !== session.agent_id
+      ) {
+        continue;
+      }
+      sessions.set(session.session_ref, {
+        session_ref: session.session_ref,
+        host_kind: session.host_kind,
+        agent_id: session.agent_id,
+        mode: session.mode,
+        last_used_at: session.last_used_at,
+        expires_at: session.expires_at,
+        hermetic: attempt.hermetic,
+      });
+    }
+  }
+  return [...sessions.values()].sort((left, right) =>
+    right.last_used_at.localeCompare(left.last_used_at)
+      || left.session_ref.localeCompare(right.session_ref));
+}
+
+function isSafeReviewerSessionMetadata(
+  value: Omit<ReviewerSessionSummary, "hermetic">,
+): boolean {
+  return /^rs-[a-f0-9]{16}$/.test(value.session_ref)
+    && value.host_kind.length > 0
+    && value.agent_id.length > 0
+    && value.mode.length > 0
+    && Number.isFinite(Date.parse(value.last_used_at))
+    && Number.isFinite(Date.parse(value.expires_at));
 }
 
 function stageNodeSummaries(value: unknown): AgentMeshStageNodeSummary[] {

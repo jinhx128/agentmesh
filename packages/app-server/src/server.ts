@@ -60,6 +60,12 @@ import {
   type StudioIntegrationOptions,
 } from "./integrations.js";
 import { checkAgentMeshUpdate } from "@agentmesh/runtime/src/update/check.js";
+import {
+  closeReviewerSessionReference,
+  listReviewerSessionSummaries,
+  purgeReviewerSessions,
+} from "@agentmesh/runtime/src/reviewer-sessions/registry.js";
+import type { ReviewerSessionSummary } from "@agentmesh/sdk";
 import { STUDIO_CSS, STUDIO_HTML, STUDIO_JS } from "./assets.js";
 import {
   deleteStudioActivity,
@@ -236,6 +242,7 @@ function handleStudioRequest(
     }
     sendJson(response, 200, listStudioRunIndex({
       cwd,
+      reviewerSessions: studioReviewerSessionMetadata(),
       ...studioWorkspaceQueryOptions(url.searchParams),
     }));
     return;
@@ -364,6 +371,57 @@ function handleStudioRequest(
         });
     }
     sendJson(response, 405, { error: "method not allowed" });
+    return;
+  }
+  if (url.pathname === "/api/v1/reviewer-sessions") {
+    if (!requireMethod(request, response, "GET")) {
+      return;
+    }
+    const sessions = studioReviewerSessionMetadata().map((session) => ({
+      ...session,
+      hermetic: false,
+    }));
+    sendJson(response, 200, { schema_version: 1, sessions });
+    return;
+  }
+  if (url.pathname === "/api/v1/reviewer-sessions/purge-expired") {
+    if (!requireMethod(request, response, "POST")) {
+      return;
+    }
+    const result = purgeReviewerSessions();
+    if (result.status === "unavailable") {
+      sendJson(response, 503, { error: result.diagnostic });
+      return;
+    }
+    sendJson(response, 200, { schema_version: 1, ...result });
+    return;
+  }
+  const reviewerSessionMatch = rawPathname.match(/^\/api\/v1\/reviewer-sessions\/([^/]+)$/);
+  if (reviewerSessionMatch) {
+    if (!requireMethod(request, response, "DELETE")) {
+      return;
+    }
+    let sessionRef: string;
+    try {
+      sessionRef = decodeURIComponent(reviewerSessionMatch[1]);
+    } catch {
+      sendJson(response, 400, { error: "invalid reviewer session reference" });
+      return;
+    }
+    const result = closeReviewerSessionReference(sessionRef);
+    if (result.status === "closed") {
+      sendJson(response, 200, { schema_version: 1, ...result });
+      return;
+    }
+    if (result.status === "not_found") {
+      sendJson(response, 404, { error: "reviewer session not found" });
+      return;
+    }
+    if (result.status === "ambiguous" || result.status === "conflict") {
+      sendJson(response, 409, { error: "reviewer session state changed; refresh and retry" });
+      return;
+    }
+    sendJson(response, 503, { error: result.diagnostic });
     return;
   }
   if (url.pathname === "/api/v1/agents/models") {
@@ -716,6 +774,7 @@ function handleStudioRequest(
     try {
       sendJson(response, 200, readStudioRun(runId, {
         cwd,
+        reviewerSessions: studioReviewerSessionMetadata(),
         ...eventPageOptions(url.searchParams),
         ...studioWorkspaceQueryOptions(url.searchParams),
       }));
@@ -871,6 +930,26 @@ function handleStudioRequest(
     return;
   }
   sendJson(response, 404, { error: "not found" });
+}
+
+function studioReviewerSessionMetadata(): Array<Omit<ReviewerSessionSummary, "hermetic">> {
+  const result = listReviewerSessionSummaries();
+  if (result.status !== "ok") {
+    return [];
+  }
+  return result.sessions.flatMap((session) => {
+    if (!session.host || !session.reviewer || !session.mode) {
+      return [];
+    }
+    return [{
+      session_ref: session.session_ref,
+      host_kind: session.host,
+      agent_id: session.reviewer,
+      mode: session.mode,
+      last_used_at: session.last_used_at,
+      expires_at: session.expires_at,
+    }];
+  });
 }
 
 function studioWorkspaceQueryOptions(searchParams: URLSearchParams): {

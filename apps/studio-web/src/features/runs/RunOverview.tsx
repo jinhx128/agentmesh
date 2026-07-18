@@ -19,6 +19,7 @@ import { formatLocalDateTime, formatLocalTime } from "../../app/time.js";
 import type {
   StudioRunDetail,
   StudioRunDetailSummary,
+  StudioReviewerSessionSummary,
   StudioStageTimingSummary,
 } from "../../api/runs.js";
 import { ReviewReleaseStageEvidence } from "../review-release/ReviewReleaseView.js";
@@ -39,12 +40,30 @@ export interface RunOverviewProps {
   view?: "all" | "details" | "summary" | "stages" | "diagnostics";
   agentLabels?: AgentDisplayNames;
   workflowLabels?: WorkflowDisplayNames;
+  onCloseReviewerSession?: (sessionRef: string) => Promise<void>;
+  onPurgeExpiredReviewerSessions?: () => Promise<void>;
 }
 
-export function RunOverview({ state, view = "all", agentLabels, workflowLabels }: RunOverviewProps): ReactElement {
+export function RunOverview({
+  state,
+  view = "all",
+  agentLabels,
+  workflowLabels,
+  onCloseReviewerSession,
+  onPurgeExpiredReviewerSessions,
+}: RunOverviewProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "ready") {
-    return <ReadyRunOverview detail={state.detail} view={view} agentLabels={agentLabels} workflowLabels={workflowLabels} />;
+    return (
+      <ReadyRunOverview
+        detail={state.detail}
+        view={view}
+        agentLabels={agentLabels}
+        workflowLabels={workflowLabels}
+        onCloseReviewerSession={onCloseReviewerSession}
+        onPurgeExpiredReviewerSessions={onPurgeExpiredReviewerSessions}
+      />
+    );
   }
   const message = runOverviewMessage(state, t);
   return (
@@ -81,11 +100,15 @@ function ReadyRunOverview({
   view,
   agentLabels,
   workflowLabels,
+  onCloseReviewerSession,
+  onPurgeExpiredReviewerSessions,
 }: {
   detail: StudioRunDetail;
   view: NonNullable<RunOverviewProps["view"]>;
   agentLabels?: AgentDisplayNames;
   workflowLabels?: WorkflowDisplayNames;
+  onCloseReviewerSession?: (sessionRef: string) => Promise<void>;
+  onPurgeExpiredReviewerSessions?: () => Promise<void>;
 }): ReactElement {
   const { t } = useStudioCopy();
   const summary = detail.summary;
@@ -103,7 +126,15 @@ function ReadyRunOverview({
   return (
     <Stack data-studio-section="react-run-overview" gap="md">
       {shouldRenderRunPanel(view, "summary") ? (
-        <RunSummaryPanel detail={detail} stages={stages} workflowLabels={workflowLabels} />
+        <>
+          <RunSummaryPanel detail={detail} stages={stages} workflowLabels={workflowLabels} />
+          <ReviewerSessionsPanel
+            sessions={detail.summary.reviewer_sessions ?? []}
+            agentLabels={agentLabels}
+            onClose={onCloseReviewerSession}
+            onPurgeExpired={onPurgeExpiredReviewerSessions}
+          />
+        </>
       ) : null}
       {shouldRenderRunPanel(view, "stages") ? (
         <Paper className="studio-panel" data-studio-section="workflow-flow" withBorder radius="md" p="lg">
@@ -147,6 +178,99 @@ function ReadyRunOverview({
       ) : null}
     </Stack>
   );
+}
+
+function ReviewerSessionsPanel({
+  sessions,
+  agentLabels,
+  onClose,
+  onPurgeExpired,
+}: {
+  sessions: StudioReviewerSessionSummary[];
+  agentLabels?: AgentDisplayNames;
+  onClose?: (sessionRef: string) => Promise<void>;
+  onPurgeExpired?: () => Promise<void>;
+}): ReactElement {
+  const { t } = useStudioCopy();
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function runAction(action: string, operation: (() => Promise<void>) | undefined): Promise<void> {
+    if (!operation) {
+      return;
+    }
+    setPendingAction(action);
+    setActionError(null);
+    try {
+      await operation();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  return (
+    <Paper className="studio-panel" data-studio-section="reviewer-sessions" withBorder radius="md" p="lg">
+      <Group justify="space-between" align="flex-start" gap="md">
+        <Title order={2} size="h3">{t("reviewerSessions")}</Title>
+        <Button
+          size="xs"
+          variant="light"
+          disabled={!onPurgeExpired || pendingAction !== null}
+          loading={pendingAction === "purge"}
+          onClick={() => void runAction("purge", onPurgeExpired)}
+        >
+          {t("purgeExpiredReviewerSessions")}
+        </Button>
+      </Group>
+      {actionError ? <Alert mt="md" color="red" variant="light">{actionError}</Alert> : null}
+      <Stack mt="md" gap="sm">
+        {sessions.length > 0 ? sessions.map((session) => (
+          <Card key={session.session_ref} data-reviewer-session={session.session_ref} withBorder radius="md" p="md">
+            <Group justify="space-between" align="flex-start" gap="md">
+              <Stack gap={2}>
+                <Text fw={800}>{agentDisplayName(session.agent_id, agentLabels)}</Text>
+                <Text size="xs" c="dimmed">{session.session_ref}</Text>
+              </Stack>
+              <Button
+                size="xs"
+                color="red"
+                variant="light"
+                disabled={!onClose || pendingAction !== null}
+                loading={pendingAction === session.session_ref}
+                onClick={() => void runAction(
+                  session.session_ref,
+                  onClose ? () => onClose(session.session_ref) : undefined,
+                )}
+              >
+                {t("closeReviewerSession")}
+              </Button>
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm" mt="md">
+              <OverviewMetric label={t("host")} value={reviewerSessionHostLabel(session.host_kind)} />
+              <OverviewMetric label={t("sessionMode")} value={session.mode} />
+              <OverviewMetric label={t("hermetic")} value={session.hermetic ? t("yes") : t("no")} />
+              <OverviewMetric label={t("lastUsedAt")} value={formatTimestamp(session.last_used_at)} />
+              <OverviewMetric label={t("expiresAt")} value={formatTimestamp(session.expires_at)} />
+            </SimpleGrid>
+          </Card>
+        )) : <Alert color="gray" variant="light">{t("noReviewerSessions")}</Alert>}
+      </Stack>
+    </Paper>
+  );
+}
+
+function reviewerSessionHostLabel(hostKind: string): string {
+  return {
+    codex: "Codex",
+    cursor: "Cursor",
+    "claude-code": "Claude Code",
+    antigravity: "Antigravity",
+    opencode: "OpenCode",
+    "studio-desktop": "Studio Desktop",
+    "headless-cli": "Headless CLI",
+  }[hostKind] ?? hostKind;
 }
 
 function shouldRenderRunPanel(
