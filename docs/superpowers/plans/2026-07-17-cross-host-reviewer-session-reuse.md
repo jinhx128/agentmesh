@@ -682,7 +682,7 @@
 
 - [ ] P4 阶段完成门禁：五宿主 Skill 可安全续传 scope、SDK/App/Studio 只展示脱敏状态、管理入口受控。
 
-### P4.1 / Task 15：更新 Canonical Skill 的跨宿主 Scope 协议
+### ~~P4.1 / Task 15：更新 Canonical Skill 的跨宿主 Scope 协议~~ ✅
 
 **Files:**
 - Modify: `packages/skills/agentmesh-skill/SKILL.md`
@@ -694,8 +694,8 @@
 - Consumes: `sessions scope create`、run flags。
 - Produces: Codex/Cursor/Claude/Antigravity/OpenCode 共用 propagated scope workflow。
 
-- [ ] 写失败 contract test，要求 Skill 明确：首次普通连续 review 创建一个 `amscope_v1`、当前宿主对话后续调用原样传递、token 丢失 fresh、native 优先、不得 workspace fallback、正式 gate independent。
-- [ ] 更新 Skill 示例：
+- [x] 写失败 contract test，要求 Skill 明确：首次普通连续 review 创建一个 `amscope_v1`、当前宿主对话后续调用原样传递、token 丢失 fresh、native 优先、不得 workspace fallback、正式 gate independent。
+- [x] 更新 Skill 示例：
 
   ```bash
   agentmesh sessions scope create --host codex --json
@@ -707,9 +707,18 @@
   ```
 
   其他宿主仅替换 `--host-kind`，不复制 provider session ID。
-- [ ] Run package/skill verify tests; Expected: PASS。
+- [x] Run package/skill verify tests; Expected: PASS。
 
 审查方式：外审；跨宿主规则影响用户调用。失败策略：重试或 `needs_decision`。Commit: `文档(skill)：增加跨宿主 reviewer session 续传`
+
+**进度记录（2026-07-19 00:40）：**
+
+- 状态：完成。Canonical Skill 为 Codex、Cursor、Claude、Antigravity、OpenCode 统一定义 propagated scope workflow；安全 native conversation identity 优先，无 native identity 时首轮创建一个 `amscope_v1`，同一 entry-host 对话后续原样复用。
+- 安全：token 仅保留在 entry-agent 对话上下文，不写 workspace/packet；丢失或无效时省略 `--conversation-scope` 并 fresh，禁止从 workspace、repo、worktree、旧 packet、provider state 或其他宿主对话恢复。正式 review/release gate 固定 `independent`。
+- TDD：RED 1/1 因 canonical Skill 缺少 host 协议而失败；GREEN 1/1。Fresh `npm run build` 后 package-structure + management-cli 34/34，readiness skill/verify/install/output 定向 11/11，`git diff --check` 通过；verification metadata 未变化，因此未修改 `packages/skills/src/verify.ts`。
+- 审查：初审 3 Should、定向闭环 1 Should 均接受并补强 contract assertions；最终 gate `workflow-20260719003652` 为 LGTM、0 Must/0 Should/0 Nit 且 `decide_completed`。
+- 提交：`4274b69`、`a0acf16`、`701a8e3`；本条阶段记录与 2026-07-19 changelog 由后续 bookkeeping commit 固化。
+- 下一步：P4.2 为 SDK、App Server 与 Studio 增加脱敏 reviewer session 展示和受控 close/purge mutation。
 
 ### P4.2 / Task 16：SDK、App Server 与 Studio 脱敏展示
 
@@ -827,4 +836,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P4.1` 更新 Canonical Skill 的跨宿主 propagated scope 协议。
+- 当前下一步：`P4.2` 实现 SDK、App Server 与 Studio 的脱敏 session 展示和受控管理入口。
