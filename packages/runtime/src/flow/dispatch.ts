@@ -52,6 +52,7 @@ import {
   safeAgentId,
 } from "../review/artifacts.js";
 import { refreshReleaseEvidenceSummary } from "../release/check.js";
+import { listCorrections } from "../corrections/index.js";
 import { readOptional } from "./files.js";
 import {
   buildStagePrompt,
@@ -887,6 +888,9 @@ async function invokeReviewAgentWithSession(
   const agent = resolveAgent(loadAgents(options.configPath, options.cwd), options.agent);
   const adapter = lookupRuntimeAdapter(agent.adapter);
   const scope = safeFrozenScope(status);
+  const correctionSessionImpact = status.resolved_reviewer_session_policy?.effective_mode === "interactive_continuous"
+    ? reviewerSessionCorrectionImpact(options.cwd)
+    : [];
   const sessionStartedAt = Date.now();
   const sessionBudgetMs = options.timeoutSecs === undefined || options.timeoutSecs === null
     ? undefined
@@ -908,6 +912,9 @@ async function invokeReviewAgentWithSession(
   const result = await invokeReviewerWithSession(runDir, {
     effectiveMode: status.resolved_reviewer_session_policy?.effective_mode ?? "independent",
     attemptIdentity: { runId: status.run_id, laneId: options.laneId, attempt: options.attempt },
+    prepareResumedPrompt: () => {
+      writePrompt(runDir, stage, options.cwd, options.agent, { reviewerSessionDelta: true });
+    },
     invokeFresh: async (context) => {
       const fresh = await invokeFresh(context);
       lastCall = fresh.call;
@@ -941,7 +948,7 @@ async function invokeReviewAgentWithSession(
         && adapter.capabilities.supports_structured_session_id === true
         && scope !== undefined
       ),
-      registryKey: (resolvedScope) => reviewerSessionKey(agent, resolvedScope),
+      registryKey: (resolvedScope) => reviewerSessionKey(agent, resolvedScope, correctionSessionImpact),
       withLease: async (key, action) => {
         let unavailable = false;
         const lease = await withReviewerSessionLease(key, action, {
@@ -979,7 +986,7 @@ async function invokeReviewAgentWithSession(
           key,
           sessionRef: reviewerSessionRef(key),
           providerSessionId,
-          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent)),
+          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent, correctionSessionImpact)),
           summary: scope ? { scopeRef: scope.conversationScopeRef, hostKind: scope.hostKind, reviewerId: agent.id, mode: "interactive_continuous" } : undefined,
         });
         return write.status === "written"
@@ -993,7 +1000,7 @@ async function invokeReviewAgentWithSession(
           providerSessionId,
           expectedEpoch,
           successfulResume: true,
-          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent)),
+          invocationFingerprint: reviewerSessionInvocationFingerprint(reviewerSessionInvocation(agent, correctionSessionImpact)),
         });
         return write.status === "written"
           ? { providerSessionId: write.entry.provider_session_id, sessionRef: write.entry.session_ref, epoch: write.entry.epoch }
@@ -1050,7 +1057,10 @@ function safeFrozenScope(status: PacketStatus): ResolvedReviewerSessionScope | u
   };
 }
 
-function reviewerSessionInvocation(agent: ReturnType<typeof resolveAgent>) {
+function reviewerSessionInvocation(
+  agent: ReturnType<typeof resolveAgent>,
+  correctionSessionImpact: string[] = [],
+) {
   return {
     command: agent.command,
     args: agent.args,
@@ -1062,10 +1072,24 @@ function reviewerSessionInvocation(agent: ReturnType<typeof resolveAgent>) {
     adapterPluginVersion: "v1",
     providerCliVersion: "unknown",
     environmentVariableNames: agent.env.map((entry) => entry.split("=", 1)[0] ?? ""),
+    correctionSessionImpact,
   };
 }
 
-function reviewerSessionKey(agent: ReturnType<typeof resolveAgent>, scope: ResolvedReviewerSessionScope): string {
+/** Only explicit instruction-impact labels rotate; legacy/data corrections remain packet evidence. */
+function reviewerSessionCorrectionImpact(cwd: string): string[] {
+  return listCorrections({ status: "active" }, cwd)
+    .map(({ record }) => ({ id: record.id, impact: record.session_impact ?? "data" }))
+    .filter(({ impact }) => impact === "persona" || impact === "system")
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(({ id, impact }) => `${impact}:${id}`);
+}
+
+function reviewerSessionKey(
+  agent: ReturnType<typeof resolveAgent>,
+  scope: ResolvedReviewerSessionScope,
+  correctionSessionImpact: string[] = [],
+): string {
   return sessionRegistryKey({
     conversationScopeRef: scope.conversationScopeRef,
     workspaceId: scope.workspaceId,
@@ -1074,7 +1098,7 @@ function reviewerSessionKey(agent: ReturnType<typeof resolveAgent>, scope: Resol
     adapterId: agent.adapter,
     model: agent.model ?? "current",
     reasoningEffort: agent.reasoning_effort ?? "none",
-    invocation: reviewerSessionInvocation(agent),
+    invocation: reviewerSessionInvocation(agent, correctionSessionImpact),
   });
 }
 

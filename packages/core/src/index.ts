@@ -695,6 +695,10 @@ export const CORRECTION_STATUSES = ["active", "superseded"] as const;
 export const CorrectionStatusSchema = z.enum(CORRECTION_STATUSES);
 export type CorrectionStatus = z.infer<typeof CorrectionStatusSchema>;
 
+export const CORRECTION_SESSION_IMPACTS = ["data", "persona", "system"] as const;
+export const CorrectionSessionImpactSchema = z.enum(CORRECTION_SESSION_IMPACTS);
+export type CorrectionSessionImpact = z.infer<typeof CorrectionSessionImpactSchema>;
+
 export const CorrectionRecordSchema = z
   .object({
     schema_version: SchemaVersionSchema,
@@ -706,6 +710,8 @@ export const CorrectionRecordSchema = z
     supersedes: z.array(NonEmptyStringSchema),
     status: CorrectionStatusSchema,
     owner: NonEmptyStringSchema,
+    /** Missing legacy value is ordinary packet data and must not rotate a session. */
+    session_impact: CorrectionSessionImpactSchema.optional(),
   })
   .passthrough();
 export type CorrectionRecord = z.infer<typeof CorrectionRecordSchema>;

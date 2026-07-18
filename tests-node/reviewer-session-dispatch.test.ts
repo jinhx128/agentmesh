@@ -97,6 +97,7 @@ test("continuous reviewer starts once then resumes the same safe scope", async (
   const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const dependencies = continuousDependencies({ writes, events });
   const directives: string[] = [];
+  let resumedPromptPreparations = 0;
   const invokeStructured = async (directive: { mode: "fresh" } | { mode: "resume"; providerSessionId: string }) => {
     directives.push(directive.mode);
     return {
@@ -110,6 +111,7 @@ test("continuous reviewer starts once then resumes the same safe scope", async (
       throw new Error("eligible continuous invocation must use the structured seam");
     },
     invokeStructured,
+    prepareResumedPrompt: () => { resumedPromptPreparations += 1; },
     sessionDependencies: dependencies,
   };
 
@@ -117,6 +119,7 @@ test("continuous reviewer starts once then resumes the same safe scope", async (
   const second = await invokeReviewerWithSession("/disposable/run", input);
 
   assert.deepEqual(directives, ["fresh", "resume"]);
+  assert.equal(resumedPromptPreparations, 1);
   assert.deepEqual(writes, ["fresh:session-test-123", "resume:1:session-test-123"]);
   assert.equal(first.session.mode, "fresh");
   assert.equal(first.session.registryWrite, true);

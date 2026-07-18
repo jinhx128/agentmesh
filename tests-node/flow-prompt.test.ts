@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { buildStagePrompt } from "../packages/runtime/src/flow/prompt.js";
+import { buildStagePrompt, withReviewerSessionDelta } from "../packages/runtime/src/flow/prompt.js";
 import { makeWorkspace } from "./helpers/write-side-runtime.js";
 
 test("prompt assembly references context without replaying local content", () => {
@@ -51,6 +51,83 @@ test("prompt assembly references context without replaying local content", () =>
   assert.doesNotMatch(prompt, /AgentMesh prompt assembly truncated context\.md/);
   assert.doesNotMatch(prompt, /CONTEXT_TAIL_SHOULD_NOT_REPLAY/);
   assert.ok(Buffer.byteLength(prompt, "utf-8") < 6_000, "prompt should reference context instead of replaying it");
+});
+
+test("resumed reviewer prompt adds one bounded current-packet delta without leaking provider state", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const runDir = path.join(workspace, ".agentmesh", "runs", "resumed-prompt");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(
+    path.join(runDir, "status.json"),
+    JSON.stringify({
+      schema_version: 1,
+      run_id: "resumed-prompt",
+      workflow: "resumed-prompt",
+      stages: ["review"],
+      stage_nodes: [{ id: "review", type: "review", occurrence: 1 }],
+      stage_assignments: { review: ["reviewer"] },
+      completed_stages: [],
+      stage_state: {},
+      stage_attempts: {},
+      user_gate: false,
+    }, null, 2) + "\n",
+  );
+  writeFileSync(path.join(runDir, "request.md"), "# Request\n\nCURRENT_REQUEST\n");
+  writeFileSync(path.join(runDir, "assignment.toml"), "[stage_assignments]\nreview = [\"reviewer\"]\n");
+  writeFileSync(path.join(runDir, "context.md"), [
+    "## Scoped Git Diff",
+    "",
+    "diff --git a/z.ts b/z.ts",
+    "diff --git a/a.ts b/a.ts",
+    "diff --git a/z.ts b/z.ts",
+    "",
+    "## Verification",
+    "",
+    "CURRENT_VERIFICATION",
+    "",
+    "## Project Correction",
+    "",
+    "CURRENT_CORRECTION",
+  ].join("\n"));
+
+  const base = buildStagePrompt(runDir, "review", workspace, "reviewer");
+  const resumed = withReviewerSessionDelta(base, readFileSync(path.join(runDir, "context.md"), "utf-8"));
+
+  assert.doesNotMatch(base, /## Since Last Reviewer Session Turn/);
+  assert.match(resumed, /CURRENT_REQUEST/);
+  assert.match(resumed, /Context artifact: context\.md/);
+  assert.match(resumed, /## Since Last Reviewer Session Turn/);
+  assert.match(resumed, /- changed_files: a\.ts, z\.ts/);
+  assert.match(resumed, /- previous_file_line_references_are_stale: true/);
+  assert.match(resumed, /- authoritative_evidence: current packet request\/diff\/verification\/corrections/);
+  assert.equal(resumed.match(/## Since Last Reviewer Session Turn/g)?.length, 1);
+  assert.doesNotMatch(resumed, /session-test-123|raw-host-token/);
+});
+
+test("decide prompt preserves packet-derived non-hermetic risk when prior findings are bounded", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const runDir = path.join(workspace, ".agentmesh", "runs", "decide-provenance");
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(path.join(runDir, "status.json"), JSON.stringify({
+    schema_version: 1, run_id: "decide-provenance", workflow: "w-67ef1b1f", stages: ["review", "decide"],
+    stage_nodes: [{ id: "review", type: "review", occurrence: 1 }, { id: "decide", type: "decide", occurrence: 1 }],
+    stage_assignments: { review: ["reviewer"], decide: ["current"] }, completed_stages: ["review"],
+    stage_state: {}, stage_attempts: { review: [{ lane_id: "review:reviewer", actual_agent: "reviewer", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" }], decide: [] }, user_gate: false,
+    resolved_reviewer_session_policy: { requested_mode: "independent", effective_mode: "independent", source: "workflow" },
+  }, null, 2) + "\n");
+  writeFileSync(path.join(runDir, "request.md"), "# Request\n\nDecide current evidence.\n");
+  writeFileSync(path.join(runDir, "assignment.toml"), "[stage_assignments]\ndecide = [\"current\"]\n");
+  writeFileSync(path.join(runDir, "findings.md"), `# Findings\n\n${"x".repeat(10_000)}\n`);
+
+  const prompt = buildStagePrompt(runDir, "decide", workspace, "current");
+
+  assert.match(prompt, /## Reviewer Session Provenance/);
+  assert.match(prompt, /reviewer: reviewer/);
+  assert.match(prompt, /## Independent Release Evidence Risk/);
+  assert.match(prompt, /needs_decision: resumed\/non-hermetic reviewer evidence/);
+  assert.doesNotMatch(prompt, /session-test-123|raw-host-token/);
 });
 
 test("prompt assembly displays absolute packet directory when run is outside cwd", () => {

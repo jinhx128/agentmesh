@@ -62,6 +62,38 @@ test("correction add writes a stable local record", () => {
   assert.match(readFileSync(result.path, "utf-8"), /schema_version = 1/);
 });
 
+test("correction session impact is explicit, preserved on supersede, and legacy records stay data", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const added = addCorrection({
+    id: "persona-contract",
+    scope: "review",
+    statement: "Use the approved reviewer persona.",
+    sessionImpact: "persona",
+  }, workspace);
+  assert.equal(added.record.session_impact, "persona");
+
+  const replacement = supersedeCorrection("persona-contract", {
+    id: "persona-contract-v2",
+    statement: "Use the updated approved reviewer persona.",
+  }, workspace);
+  assert.equal(replacement.replacement.record.session_impact, "persona");
+
+  writeFileSync(correctionRecordPath("legacy", workspace), [
+    "schema_version = 1",
+    'id = "legacy"',
+    'scope = "review"',
+    'statement = "Ordinary packet data."',
+    'source = "manual"',
+    'created_at = "2026-05-14T00:00:00.000Z"',
+    "supersedes = []",
+    'status = "active"',
+    'owner = "maintainers"',
+    "",
+  ].join("\n"));
+  assert.equal(loadCorrection(correctionRecordPath("legacy", workspace)).session_impact ?? "data", "data");
+});
+
 test("correction add rejects unsafe ids and duplicate records", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

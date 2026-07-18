@@ -192,6 +192,35 @@ test("builds a release evidence summary from packet evidence", () => {
   assert.match(summary, /stage\.completed stage=review agent=current/);
 });
 
+test("independent release summary flags resumed reviewer evidence as needs_decision", () => {
+  const runDir = makeReleaseRunDir();
+  test.after(() => rmSync(runDir, { recursive: true, force: true }));
+  const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
+  status.resolved_reviewer_session_policy = {
+    requested_mode: "independent",
+    effective_mode: "independent",
+    source: "workflow",
+  };
+  status.resolved_review_release_policy = {
+    source_layers: [], policy_hash: "sha256:test", required_review_profiles: [], resolved_reviewers: [],
+    required_evidence: [], needs_decision_risks: [], skipped_gates: [], missing_evidence: [],
+  };
+  status.stage_attempts.review = [{
+    lane_id: "review:security", primary_agent: "security", requested_agent: "security", actual_agent: "security",
+    lane_attempt: 1, attempt: 1, timeout_seconds: null, status: "completed",
+    session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume", session_ref: "rs-safe",
+  }];
+
+  const summary = buildReleaseEvidenceSummary(runDir, status);
+
+  assert.match(summary, /## Reviewer Session Provenance/);
+  assert.match(summary, /reviewer: security/);
+  assert.match(summary, /hidden_provider_history: advisory/);
+  assert.match(summary, /independent_release_risk: needs_decision \(session_resume\)/);
+  assert.match(summary, /Needs-decision risks: session_resume/);
+  assert.doesNotMatch(summary, /rs-safe|session-test-123|raw-host-token/);
+});
+
 test("release summary records review release policy diagnostics", () => {
   const runDir = makeReleaseRunDir();
   test.after(() => rmSync(runDir, { recursive: true, force: true }));

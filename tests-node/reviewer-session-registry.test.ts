@@ -222,10 +222,26 @@ test("scope, worktree, model, and invocation changes rotate the registry key whi
     { ...base, model: "other-model" },
     { ...base, invocation: invocation({ permissionMode: "workspace-write" }) },
     { ...base, invocation: invocation({ args: ["--structured", "review"] }) },
+    { ...base, invocation: invocation({ correctionSessionImpact: ["persona:review-contract"] }) },
   ]) {
     assert.notEqual(sessionRegistryKey(changed), key);
   }
   assert.throws(() => sessionRegistryKey({ ...base, conversationScopeRef: undefined }), /conversation scope is required/);
+});
+
+test("explicit correction impacts normalize without placing correction text in session fingerprints", () => {
+  const first = reviewerSessionInvocationFingerprint(invocation({
+    correctionSessionImpact: ["system:system-contract", "persona:review-contract", "persona:review-contract"],
+  }));
+  const second = reviewerSessionInvocationFingerprint(invocation({
+    correctionSessionImpact: ["persona:review-contract", "system:system-contract"],
+  }));
+  assert.equal(first, second);
+  assert.throws(
+    () => reviewerSessionInvocationFingerprint(invocation({ correctionSessionImpact: ["data:ordinary"] })),
+    /correction session impact is invalid/,
+  );
+  assert.doesNotMatch(first, /Use the approved reviewer persona|session-test-123/);
 });
 
 test("safe summary reviewer id cannot equal opaque identities visible to the upsert", () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   appendEvent,
+  loadStatus,
   recordArtifact,
   writeFileAtomic,
 } from "../packet/io.js";
@@ -12,6 +13,7 @@ export const REVIEW_OUTPUTS_DIR = "reviews";
 export const FINDINGS_FILE = "findings.md";
 export const DECISION_FILE = "decision.md";
 export const RAW_REVIEW_OUTPUTS_HEADING = "## Raw Review Outputs";
+export const REVIEWER_SESSION_PROVENANCE_HEADING = "## Reviewer Session Provenance";
 
 export interface RawReviewOutput {
   reviewer: string;
@@ -83,7 +85,12 @@ export function refreshFindingsRawReviews(runDir: string, node?: StageNode): voi
   const findingsFile = node && node.occurrence > 1 ? `findings_${node.occurrence}.md` : FINDINGS_FILE;
   const findingsPath = path.join(runDir, findingsFile);
   const existing = readOptional(findingsPath) || defaultFindingsMarkdown();
-  writeFileAtomic(findingsPath, findingsWithRawReviews(existing, rawReviews));
+  const attempts = stageAttemptsForProvenance(runDir, node?.id ?? "review");
+  const provenance = reviewerSessionProvenanceMarkdown(attempts);
+  writeFileAtomic(
+    findingsPath,
+    findingsWithRawReviews(findingsWithReviewerSessionProvenance(existing, provenance), rawReviews),
+  );
   const artifact = node && node.occurrence > 1 ? `findings_${node.occurrence}` : "findings";
   const stage = node?.id ?? "review";
   recordArtifact(runDir, artifact, findingsPath, "markdown", stage);
@@ -94,6 +101,15 @@ export function refreshFindingsRawReviews(runDir: string, node?: StageNode): voi
     ...(node ? { node_id: node.id, stage_type: node.type } : {}),
     agent: "agentmesh",
   });
+}
+
+function stageAttemptsForProvenance(runDir: string, stage: string): Array<Record<string, unknown>> {
+  try {
+    return loadStatus(runDir).stage_attempts[stage] ?? [];
+  } catch {
+    // Artifact helpers also support standalone tests/repair tooling with no packet status.
+    return [];
+  }
 }
 
 export function recordReviewAgentFailure(
@@ -132,6 +148,41 @@ export function findingsWithRawReviews(findings: string, rawReviews: string): st
     return `${base}\n`;
   }
   return `${base}\n\n${rawReviews}`;
+}
+
+/** Safe packet-derived disclosure; never inspect reviewer-authored output for provenance. */
+export function reviewerSessionProvenanceMarkdown(
+  attempts: Array<Record<string, unknown>>,
+): string {
+  const resumed = attempts
+    .filter((attempt) => attempt.session_mode === "resumed" || (
+      attempt.hermetic === false && attempt.non_hermetic_reason === "session_resume"
+    ))
+    .map((attempt) => ({
+      reviewer: String(attempt.actual_agent ?? "unknown"),
+      lane: String(attempt.lane_id ?? "unknown"),
+    }))
+    .sort((left, right) => left.reviewer.localeCompare(right.reviewer) || left.lane.localeCompare(right.lane))
+    .filter((entry, index, entries) => index === 0
+      || entry.reviewer !== entries[index - 1]!.reviewer
+      || entry.lane !== entries[index - 1]!.lane);
+  if (resumed.length === 0) return "";
+  return [
+    REVIEWER_SESSION_PROVENANCE_HEADING,
+    "",
+    ...resumed.flatMap(({ reviewer, lane }) => [
+      `- reviewer: ${reviewer}`,
+      `- lane: ${lane}`,
+      "- session_mode: resumed",
+      "- hermetic: false",
+      "- non_hermetic_reason: session_resume",
+    ]),
+  ].join("\n");
+}
+
+export function findingsWithReviewerSessionProvenance(findings: string, provenance: string): string {
+  const base = withoutReviewerSessionProvenance(findings) || defaultFindingsMarkdown().trimEnd();
+  return provenance ? `${base}\n\n${provenance}\n` : `${base}\n`;
 }
 
 export function rawReviewOutputsMarkdown(runDir: string, node?: StageNode): string {
@@ -202,6 +253,19 @@ export function withoutRawReviewOutputs(content: string): string {
     return content;
   }
   return content.slice(0, match.index).trimEnd();
+}
+
+export function withoutReviewerSessionProvenance(content: string): string {
+  return withoutMarkdownSection(content, REVIEWER_SESSION_PROVENANCE_HEADING);
+}
+
+function withoutMarkdownSection(content: string, heading: string): string {
+  const lines = content.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) return content;
+  let end = start + 1;
+  while (end < lines.length && !lines[end]!.startsWith("## ")) end += 1;
+  return [...lines.slice(0, start), ...lines.slice(end)].join("\n").trimEnd();
 }
 
 function appendNeedsDecisionItem(findings: string, item: string): string {

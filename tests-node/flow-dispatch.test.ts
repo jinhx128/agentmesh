@@ -189,6 +189,11 @@ test("continuous review dispatch writes safe provenance then resumes without lea
   assert.equal(second.stage_attempts.review[0].session_mode, "resumed");
   assert.equal(second.stage_attempts.review[0].hermetic, false);
   assert.equal(second.stage_attempts.review[0].non_hermetic_reason, "session_resume");
+  const resumedPrompt = readFileSync(path.join(secondDir, "prompts", "review.md"), "utf-8");
+  assert.equal(resumedPrompt.match(/## Since Last Reviewer Session Turn/g)?.length, 1);
+  assert.match(resumedPrompt, /- previous_file_line_references_are_stale: true/);
+  assert.match(resumedPrompt, /- authoritative_evidence: current packet request\/diff\/verification\/corrections/);
+  assert.doesNotMatch(resumedPrompt, /session-test-123/);
   assert.equal(readFileSync(`${reviewer}.resume-marker`, "utf-8"), "resume\n");
   assert.doesNotMatch(readFileSync(`${reviewer}.resume-marker`, "utf-8"), /session-test-123/);
   const packetText = [

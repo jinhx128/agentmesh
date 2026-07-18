@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   CURRENT_SCHEMA_VERSION,
   type CorrectionRecord,
+  type CorrectionSessionImpact,
   CorrectionRecordSchema,
   type CorrectionStatus,
   CorrectionStatusSchema,
@@ -21,6 +22,7 @@ export interface AddCorrectionInput {
   owner?: string;
   createdAt?: Date;
   supersedes?: string[];
+  sessionImpact?: CorrectionSessionImpact;
 }
 
 export interface AddCorrectionResult {
@@ -45,6 +47,7 @@ export interface SupersedeCorrectionInput {
   source?: string;
   owner?: string;
   createdAt?: Date;
+  sessionImpact?: CorrectionSessionImpact;
 }
 
 export interface SupersedeCorrectionResult {
@@ -92,6 +95,7 @@ export function addCorrection(
     supersedes: (input.supersedes ?? []).map(validateCorrectionId),
     status: "active",
     owner: requiredText(input.owner ?? "unknown", "owner"),
+    ...(input.sessionImpact === undefined ? {} : { session_impact: input.sessionImpact }),
   });
   const filePath = correctionRecordPath(id, cwd);
   if (existsSync(filePath)) {
@@ -148,6 +152,7 @@ export function supersedeCorrection(
       source: input.source,
       owner: input.owner ?? oldRecord.owner,
       createdAt: input.createdAt,
+      sessionImpact: input.sessionImpact ?? oldRecord.session_impact,
       supersedes: [oldId],
     },
     cwd,

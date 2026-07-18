@@ -82,6 +82,8 @@ export interface ReviewerSessionInvocationOptions {
     exitCode: number;
     result: AdapterStructuredResult;
   }>;
+  /** Runs only after a registry hit selects resume and immediately before spawn. */
+  prepareResumedPrompt?: () => void;
   sessionDependencies: {
     resolveScope: () => ResolvedReviewerSessionScope | undefined;
     supportsStructuredSessions: () => boolean;
@@ -238,6 +240,7 @@ async function resumeExisting(
     closeStaleEntry(options, scope, key, entry, "session_incompatible");
     return fallbackFreshWithoutStructured(options, scope);
   }
+  options.prepareResumedPrompt?.();
   const invocation = await invokeResume(options, entry);
   if (structuredSuccess(invocation)) return completedResume(options, scope, key, entry, invocation);
 

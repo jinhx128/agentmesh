@@ -18,6 +18,7 @@ import {
 import {
   RAW_REVIEW_OUTPUTS_HEADING,
   listRawReviewOutputs,
+  reviewerSessionProvenanceMarkdown,
   type RawReviewOutput,
   withoutRawReviewOutputs,
 } from "../review/artifacts.js";
@@ -63,12 +64,24 @@ export function buildReleaseEvidenceSummary(
     sectionHasEvidence(markdownSection(findings, "Accepted")) ||
     sectionHasEvidence(markdownSection(findings, "Rejected")) ||
     sectionHasEvidence(markdownSection(findings, "Needs Decision"));
-  const reviewReleasePolicy = reviewReleasePolicyWithEvidence(status, {
+  let reviewReleasePolicy = reviewReleasePolicyWithEvidence(status, {
     diff: hasDiff,
     verification: hasVerification,
     reviewOutputs: hasReviews,
     classifiedFindings: hasFindings,
   });
+  const reviewerSessionProvenance = reviewerSessionProvenanceMarkdown(
+    Object.values(status.stage_attempts).flat() as Array<Record<string, unknown>>,
+  );
+  const independentResumedEvidence = Boolean(reviewerSessionProvenance)
+    && status.resolved_reviewer_session_policy?.effective_mode === "independent";
+  if (independentResumedEvidence && reviewReleasePolicy) {
+    reviewReleasePolicy = {
+      ...reviewReleasePolicy,
+      needs_decision_risks: [...new Set([...reviewReleasePolicy.needs_decision_risks, "session_resume"])].sort(),
+    };
+    (status as Record<string, unknown>).resolved_review_release_policy = reviewReleasePolicy;
+  }
 
   const releaseVerdict = status.release_verdict;
   let verdictValue = "-";
@@ -123,6 +136,7 @@ export function buildReleaseEvidenceSummary(
     ...skipped.map((item) => `- ${item}`),
     "",
     ...reviewReleasePolicySection(reviewReleasePolicy),
+    ...releaseReviewerSessionProvenanceSection(reviewerSessionProvenance, independentResumedEvidence),
     "## Verification Evidence",
     "",
     summarizeSection(context, "Verification"),
@@ -155,6 +169,23 @@ export function buildReleaseEvidenceSummary(
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function releaseReviewerSessionProvenanceSection(
+  provenance: string,
+  independentResumedEvidence: boolean,
+): string[] {
+  if (!provenance) return [];
+  return [
+    provenance,
+    "",
+    "- current_packet_evidence_remains_authoritative: true",
+    "- hidden_provider_history: advisory",
+    ...(independentResumedEvidence
+      ? ["- independent_release_risk: needs_decision (session_resume)"]
+      : []),
+    "",
+  ];
 }
 
 function reviewFindingsContent(findings: string, rawReviews: string): string {

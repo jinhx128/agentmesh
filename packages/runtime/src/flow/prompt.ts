@@ -14,6 +14,7 @@ import { refreshReleaseEvidenceSummary } from "../release/check.js";
 import {
   listRawReviewOutputs,
   RAW_REVIEW_OUTPUTS_HEADING,
+  reviewerSessionProvenanceMarkdown,
   safeReviewArtifactId,
   withoutRawReviewOutputs,
 } from "../review/artifacts.js";
@@ -29,12 +30,19 @@ import {
 const PRIOR_ARTIFACT_CONTENT_MAX_BYTES = 6_000;
 const PRIOR_RAW_REVIEW_OUTPUT_MAX_BYTES = 2_500;
 const RELEASE_SUMMARY_PROMPT_CONTENT_MAX_BYTES = 24_000;
+const REVIEWER_SESSION_DELTA_MAX_FILES = 64;
+const REVIEWER_SESSION_DELTA_MAX_BYTES = 4_000;
+
+export interface StagePromptOptions {
+  reviewerSessionDelta?: boolean;
+}
 
 export function buildStagePrompt(
   run: string,
   stage: string,
   cwd = process.cwd(),
   agentId?: string,
+  options: StagePromptOptions = {},
 ): string {
   const runDir = resolveRunDirectory(run, cwd);
   const status = loadStatus(runDir);
@@ -76,6 +84,24 @@ export function buildStagePrompt(
     );
   }
   sections.push(...orderedPriorEvidenceSections(runDir, status, node.id));
+  if (node.type === "decide") {
+    const provenance = reviewerSessionProvenanceMarkdown(
+      Object.values(status.stage_attempts).flat() as Array<Record<string, unknown>>,
+    );
+    if (provenance) {
+      sections.push(provenance, "");
+      if (status.workflow === BUILTIN_WORKFLOW_IDS.RELEASE_CHECK
+        && status.resolved_reviewer_session_policy?.effective_mode === "independent") {
+        sections.push(
+          "## Independent Release Evidence Risk",
+          "",
+          "- needs_decision: resumed/non-hermetic reviewer evidence cannot be treated as clean independent evidence.",
+          "- current_packet_evidence_remains_authoritative: true",
+          "",
+        );
+      }
+    }
+  }
   if (releaseSummary.trim()) {
     sections.push("## Release Summary", "", releaseSummaryPromptContent(releaseSummary), "");
   }
@@ -114,7 +140,33 @@ export function buildStagePrompt(
       "",
     );
   }
-  return sections.filter((section) => section.length > 0).join("\n");
+  const prompt = sections.filter((section) => section.length > 0).join("\n");
+  return options.reviewerSessionDelta
+    ? withReviewerSessionDelta(prompt, context)
+    : prompt;
+}
+
+/**
+ * Adds the authoritative since-last-turn delta after the session boundary has
+ * actually selected a resume. The context is packet evidence, never provider
+ * memory or a repository-wide scan.
+ */
+export function withReviewerSessionDelta(prompt: string, context: string): string {
+  const base = withoutReviewerSessionDelta(prompt);
+  const changedFiles = changedFilesFromPacketContext(context);
+  const files = changedFiles.files.join(", ") || "(none recorded)";
+  const truncation = changedFiles.truncated
+    ? `; truncated: true; shown_count: ${changedFiles.files.length}; total_count: ${changedFiles.total}`
+    : "";
+  return [
+    base.trimEnd(),
+    "",
+    "## Since Last Reviewer Session Turn",
+    "",
+    `- changed_files: ${files}${truncation}`,
+    "- previous_file_line_references_are_stale: true",
+    "- authoritative_evidence: current packet request/diff/verification/corrections",
+  ].join("\n");
 }
 
 export function releaseSummaryPromptContent(content: string): string {
@@ -139,8 +191,14 @@ export function contextReferencePromptContent(context: string, contextPath = "co
   ].join("\n");
 }
 
-export function writePrompt(runDir: string, stage: string, cwd: string, agent: string): string {
-  const prompt = buildStagePrompt(runDir, stage, cwd, agent);
+export function writePrompt(
+  runDir: string,
+  stage: string,
+  cwd: string,
+  agent: string,
+  options: StagePromptOptions = {},
+): string {
+  const prompt = buildStagePrompt(runDir, stage, cwd, agent, options);
   const status = loadStatus(runDir);
   const isFanout = stageAgents(status, stage).length > 1;
   const safeAgent = safeReviewArtifactId(agent);
@@ -152,6 +210,45 @@ export function writePrompt(runDir: string, stage: string, cwd: string, agent: s
   recordArtifact(runDir, artifactName, promptPath, "prompt", stage, isFanout ? agent : undefined);
   recordPromptByteMetric(runDir, artifactName, promptPath, prompt, stage, agent, "stage");
   return promptPath;
+}
+
+function withoutReviewerSessionDelta(prompt: string): string {
+  const marker = /^## Since Last Reviewer Session Turn[ \t]*$/m;
+  const match = prompt.match(marker);
+  return match?.index === undefined ? prompt.trimEnd() : prompt.slice(0, match.index).trimEnd();
+}
+
+function changedFilesFromPacketContext(context: string): {
+  files: string[];
+  total: number;
+  truncated: boolean;
+} {
+  const scopedDiff = markdownSection(context, "Scoped Git Diff") || markdownSection(context, "Diff");
+  const matches = [...scopedDiff.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)];
+  const all = [...new Set(matches.flatMap((match) => [match[1]!, match[2]!]))].sort();
+  const selected: string[] = [];
+  let bytes = 0;
+  for (const file of all) {
+    const nextBytes = Buffer.byteLength(file, "utf-8") + (selected.length ? 2 : 0);
+    if (selected.length >= REVIEWER_SESSION_DELTA_MAX_FILES || bytes + nextBytes > REVIEWER_SESSION_DELTA_MAX_BYTES) {
+      break;
+    }
+    selected.push(file);
+    bytes += nextBytes;
+  }
+  return { files: selected, total: all.length, truncated: selected.length < all.length };
+}
+
+function markdownSection(content: string, heading: string): string {
+  const lines = content.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim().toLocaleLowerCase() === `## ${heading}`.toLocaleLowerCase());
+  if (start < 0) return "";
+  const section: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("## ")) break;
+    section.push(line);
+  }
+  return section.join("\n");
 }
 
 export function recordPromptByteMetric(

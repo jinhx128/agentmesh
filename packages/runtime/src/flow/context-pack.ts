@@ -929,6 +929,7 @@ function correctionMarkdown(correction: CorrectionRecord): string {
     `Source: ${correction.source}`,
     `Created At: ${correction.created_at}`,
     `Status: ${correction.status}`,
+    `Session Impact: ${correction.session_impact ?? "data"}`,
   ];
   if (correction.supersedes.length > 0) {
     lines.push(`Supersedes: ${correction.supersedes.join(", ")}`);

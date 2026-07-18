@@ -8,7 +8,9 @@ import { loadArtifacts, type PacketStatus } from "../packages/runtime/src/packet
 import { buildReleaseEvidenceSummary } from "../packages/runtime/src/release/check.js";
 import {
   findingsWithRawReviews,
+  findingsWithReviewerSessionProvenance,
   rawReviewOutputsMarkdown,
+  reviewerSessionProvenanceMarkdown,
   recordReviewAgentFailure,
   recordRawReviewOutputArtifact,
   refreshFindingsRawReviews,
@@ -98,6 +100,24 @@ test("review artifact helpers strip only standalone raw review heading", () => {
   assert.doesNotMatch(merged, /STALE_RAW_REVIEW_SHOULD_BE_REMOVED/);
   assert.match(merged, /Fresh bounded review output/);
   assert.equal(merged.match(/^## Raw Review Outputs$/gm)?.length, 1);
+});
+
+test("review findings provenance is packet-derived, deterministic, and idempotent", () => {
+  const provenance = reviewerSessionProvenanceMarkdown([
+    { actual_agent: "reviewer_b", lane_id: "review:b", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume", session_ref: "rs-safe" },
+    { actual_agent: "reviewer_a", lane_id: "review:a", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" },
+    { actual_agent: "fresh", lane_id: "review:fresh", session_mode: "fresh", hermetic: true },
+  ]);
+  assert.match(provenance, /## Reviewer Session Provenance/);
+  assert.match(provenance, /reviewer: reviewer_a[\s\S]*reviewer: reviewer_b/);
+  assert.match(provenance, /hermetic: false/);
+  assert.match(provenance, /non_hermetic_reason: session_resume/);
+  assert.doesNotMatch(provenance, /rs-safe|session-test-123|raw-host-token/);
+
+  const once = findingsWithReviewerSessionProvenance("# Findings\n", provenance);
+  const twice = findingsWithReviewerSessionProvenance(once, provenance);
+  assert.equal(twice.match(/## Reviewer Session Provenance/g)?.length, 1);
+  assert.equal(reviewerSessionProvenanceMarkdown([{ actual_agent: "fresh", lane_id: "review:fresh", session_mode: "fresh", hermetic: true }]), "");
 });
 
 test("release summary reads the unified raw review output section", () => {

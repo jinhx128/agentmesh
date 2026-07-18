@@ -90,6 +90,8 @@ export interface ReviewerSessionInvocationFingerprintInput {
   adapterPluginVersion: string;
   providerCliVersion: string;
   environmentVariableNames: string[];
+  /** Explicit persona/system correction identifiers only; ordinary data is excluded. */
+  correctionSessionImpact?: string[];
 }
 
 export interface SessionRegistryKeyInput {
@@ -832,7 +834,15 @@ function normalizeInvocation(input: ReviewerSessionInvocationFingerprintInput): 
     adapter_plugin_version: requiredString(input.adapterPluginVersion, "adapter plugin version is required"),
     provider_cli_version: requiredString(input.providerCliVersion, "provider CLI version is required"),
     environment_variable_names: [...new Set(input.environmentVariableNames)].sort(),
+    correction_session_impact: normalizedCorrectionSessionImpact(input.correctionSessionImpact ?? []),
   };
+}
+
+function normalizedCorrectionSessionImpact(values: string[]): string[] {
+  if (!Array.isArray(values) || values.some((value) => !/^(persona|system):[A-Za-z0-9._-]+$/.test(value))) {
+    throw new Error("correction session impact is invalid");
+  }
+  return [...new Set(values)].sort();
 }
 
 function validateUpsertInput(input: UpsertReviewerSessionInput): void {
