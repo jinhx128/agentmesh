@@ -720,7 +720,7 @@
 - 提交：`4274b69`、`a0acf16`、`701a8e3`；本条阶段记录与 2026-07-19 changelog 由后续 bookkeeping commit 固化。
 - 下一步：P4.2 为 SDK、App Server 与 Studio 增加脱敏 reviewer session 展示和受控 close/purge mutation。
 
-### P4.2 / Task 16：SDK、App Server 与 Studio 脱敏展示
+### ~~P4.2 / Task 16：SDK、App Server 与 Studio 脱敏展示~~ ✅
 
 **Files:**
 - Modify: `packages/sdk/src/index.ts`
@@ -736,8 +736,8 @@
 **Interfaces:**
 - Produces: masked session summaries、close/purge mutation、localized event labels。
 
-- [ ] 写失败 tests：run summary exposes mode/ref/hermetic but not raw ID；Studio renders reviewer/host/last-used/expiry；close/purge use local mutation safeguards；event labels use `reviewer_session.*`。
-- [ ] SDK types only expose:
+- [x] 写失败 tests：run summary exposes mode/ref/hermetic but not raw ID；Studio renders reviewer/host/last-used/expiry；close/purge use local mutation safeguards；event labels use `reviewer_session.*`。
+- [x] SDK types only expose:
 
   ```ts
   interface ReviewerSessionSummary {
@@ -751,10 +751,20 @@
   }
   ```
 
-- [ ] App Server reuses loopback/CSRF/mutation controls; Studio never receives provider session ID。
-- [ ] Run SDK/Studio tests and frontend build; Expected: PASS。
+- [x] App Server reuses loopback/CSRF/mutation controls; Studio never receives provider session ID。
+- [x] Run SDK/Studio tests and frontend build; Expected: PASS。
 
 审查方式：外审；本机敏感状态与 UI mutation。失败不可降级。Commit: `功能(studio)：展示并管理 reviewer session`
+
+**进度记录（2026-07-19 01:14）：**
+
+- 状态：完成。App Server 将 runtime 已脱敏的 registry metadata 与 packet 中 completed attempt provenance 按 `session_ref` 合并；SDK 保持 read-only/无 runtime 依赖，只投影计划规定的七字段。Studio run detail 展示 reviewer、host、mode、hermetic、last-used、expiry，并提供关闭单个 session 与清理 expired 的操作。
+- 安全：SDK 使用逐字段白名单，外部 metadata 即使夹带 `provider_session_id` 也不会穿透；只接受 boolean hermetic、completed 且 actual agent 匹配的 attempt。App Server close/purge 复用全局 loopback origin、launch auth/cookie 与 runtime registry lock/CAS，并对白名单成功响应，不自行读写 registry 文件。
+- UI：`reviewer_session.created/resumed/resume_failed/fallback_fresh/fresh_isolated/rotated/closed/expired` 全部本地化；mutation 成功后刷新 run detail；无 active session、旧 packet 或 registry 缺失继续可读。
+- TDD/验证：缺失 SDK/server/client/UI contract 先 RED；metadata 夹带 provider ID 单独 mutation RED 后修复。最终 fresh Node build，SDK/App Server/Studio UI 三文件 77/77，frontend build 通过，`npm run check:boundaries` 与 `git diff --check` 通过。
+- 审查：Claude gate `workflow-20260719010348` 被 provider cybersecurity safety false-positive 拒绝，无技术 finding；Cursor gate `workflow-20260719010526` 的 2 Should/1 Nit 全部处理，最终 closure `workflow-20260719011119` 为 LGTM、0 Must/0 Should/0 Nit 且 `decide_completed`。
+- 提交：`d588307`、`d62d474`；本条计划与 changelog 由 bookkeeping commit 固化。
+- 下一步：P4.Z 运行阶段总验证并做真机 browser/desktop session 管理 smoke。
 
 ### P4.Z / Task 17：P4 阶段收尾校准
 
@@ -836,4 +846,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P4.2` 实现 SDK、App Server 与 Studio 的脱敏 session 展示和受控管理入口。
+- 当前下一步：`P4.Z` 完成 SDK/Studio/package 总验证与真机 browser/desktop session 管理 smoke。
