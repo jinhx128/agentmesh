@@ -995,7 +995,7 @@ agentmesh skill verify --target codex --json</code></pre>
             <article class="card">
               <h3>三种模式</h3>
               <p>
-                <code>interactive_continuous</code> 用于同一宿主对话的普通连续 review；
+                <code>interactive_continuous</code> 用于同一入口宿主对话的普通连续 review；
                 <code>independent</code> 始终 fresh，release、安全和审批 gate 必须使用；
                 <code>auto</code> 在 scope、adapter 和 registry 不满足时安全退化为 fresh。
               </p>
@@ -1011,9 +1011,11 @@ agentmesh skill verify --target codex --json</code></pre>
             <article class="card">
               <h3>安全和生命周期</h3>
               <p>
-                空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume。token 丢失时 fresh，
-                不得从 workspace、旧 packet 或 provider state 恢复 scope；原始 provider/native ID
-                不进入 packet、日志或 Studio。
+                空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume，provider retention 更短时优先。
+                过期、不存在、context overflow 或不支持的 adapter 最多一次有界 fresh recovery。
+                token 丢失时 fresh，不得从 workspace、repository、worktree、旧 packet、provider state
+                或其他宿主对话恢复 scope；原始 provider/native ID 不进入 packet、日志、errors 或 Studio。
+                Registry 只在本机用户目录；AgentMesh 不读取 provider token、cookie、keychain 或私有 session store。
               </p>
             </article>
           </div>

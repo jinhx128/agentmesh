@@ -150,6 +150,14 @@ test("public docs describe reviewer session reuse without overclaiming adapters"
       "Claude Code 与 OpenCode 当前为 experimental",
       "Codex、Cursor、Antigravity 保持 fresh-only",
       "不得从 workspace",
+      "repository、worktree",
+      "其他宿主对话",
+      "provider retention 更短",
+      "过期、不存在、context overflow",
+      "最多一次",
+      "errors",
+      "provider token",
+      "私有 session store",
     ]) {
       assert.ok(content.includes(requiredContract), `${label} missing reviewer session contract: ${requiredContract}`);
     }

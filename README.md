@@ -515,7 +515,7 @@ agentmesh sessions purge --expired --json
 ```
 
 默认生命周期是空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume；provider retention 更短时
-以 provider 为准。过期、不存在、context overflow 或不支持的 adapter 可进行一次有界 fresh recovery；
+以 provider 为准。过期、不存在、context overflow 或不支持的 adapter 最多一次有界 fresh recovery；
 认证、权限或 trust 失败不会被静默伪装成 fresh 成功。
 
 Registry 只保存在本机用户配置目录，保存 provider opaque ID 但不进入 packet、logs、errors 或 Studio。

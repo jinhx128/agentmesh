@@ -2309,7 +2309,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   );
   assert.match(
     concepts.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
-    /flow resume[\s\S]*interactive_continuous[\s\S]*independent[\s\S]*non-hermetic[\s\S]*2 小时[\s\S]*12 小时[\s\S]*8 次/,
+    /flow resume[\s\S]*interactive_continuous[\s\S]*auto[\s\S]*independent[\s\S]*non-hermetic[\s\S]*2 小时[\s\S]*12 小时[\s\S]*8 次[\s\S]*最多一次[\s\S]*认证、权限或 trust/,
   );
   const operations = MANUAL_SECTIONS.find((section) => section.id === "operations");
   assert.ok(operations);
@@ -2325,11 +2325,11 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   );
   assert.match(
     operations.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
-    /agentmesh sessions list --json[\s\S]*agentmesh sessions inspect[\s\S]*agentmesh sessions close[\s\S]*agentmesh sessions purge --expired --json/,
+    /agentmesh sessions scope create --host codex --json[\s\S]*agentmesh sessions list --json[\s\S]*agentmesh sessions inspect[\s\S]*agentmesh sessions close[\s\S]*agentmesh sessions purge --expired --json/,
   );
   assert.match(
     operations.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
-    /Claude Code 与 OpenCode 当前为 experimental[\s\S]*Codex、Cursor、Antigravity 保持 fresh-only[\s\S]*不得从 workspace/,
+    /Claude Code 与 OpenCode 当前为 experimental[\s\S]*Codex、Cursor、Antigravity 保持 fresh-only[\s\S]*入口宿主可传递安全 conversation scope[\s\S]*不代表对应 reviewer provider 已启用 resume[\s\S]*不得从 workspace/,
   );
   const architecture = MANUAL_SECTIONS.find((section) => section.id === "architecture");
   assert.ok(architecture);
