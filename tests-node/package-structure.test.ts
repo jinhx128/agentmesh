@@ -121,7 +121,6 @@ test("canonical AgentMesh skill defines safe cross-host reviewer scope continuit
     "--conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111",
     "--review-session-mode interactive_continuous",
     "reuse the exact same opaque `amscope_v1` token",
-    "For another supported host, replace only",
     "omit `--conversation-scope` and run fresh",
     "A missing or invalid scope always degrades to fresh invocation",
     "native host conversation identity takes precedence",
@@ -131,6 +130,7 @@ test("canonical AgentMesh skill defines safe cross-host reviewer scope continuit
   ]) {
     assert.ok(skill.includes(requiredContract), `missing Skill contract: ${requiredContract}`);
   }
+  assert.match(skill, /For another supported host, replace only\s+`--host-kind`/);
 });
 
 test("release publish wrappers expose npm and GitHub one-command flows", () => {
