@@ -313,7 +313,9 @@ function structuredProviderFailure(
   if (output.exitCode === 0) {
     return undefined;
   }
-  const evidence = `${output.stderr ?? ""}\n${output.stdout ?? ""}`;
+  // Only the adapter-owned diagnostic channel participates in action routing;
+  // stdout may contain arbitrary provider/model content.
+  const evidence = output.stderr ?? "";
   if (
     (adapterId === "claude-code-cli" && /No conversation found with session ID:/i.test(evidence))
     || (adapterId === "opencode-cli" && /Error:\s*Session not found/i.test(evidence))
@@ -329,6 +331,9 @@ function structuredProviderFailure(
   }
   if (/rate limit|too many requests|\b429\b/i.test(evidence)) {
     return { classification: "rate_limited", message: "provider is rate limited", retryable: true };
+  }
+  if (/provider busy|server busy|service unavailable/i.test(evidence)) {
+    return { classification: "provider_busy", message: "provider is busy", retryable: true };
   }
   if (/network|connection|dns|socket|econn/i.test(evidence)) {
     return { classification: "unknown", message: "provider network request failed", retryable: true };

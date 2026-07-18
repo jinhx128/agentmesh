@@ -46,10 +46,22 @@ export interface ReviewerSessionDispatchEntry {
   epoch: number;
 }
 
+export type ReviewerSessionReadDecision =
+  | { kind: "entry"; entry: ReviewerSessionDispatchEntry }
+  | { kind: "missing" }
+  | { kind: "lifecycle"; entry: ReviewerSessionDispatchEntry; reason: "expired_idle" | "expired_absolute" | "resume_limit" }
+  | { kind: "unavailable" };
+
+export interface ReviewerSessionInvocationContext {
+  timeoutSecs?: number;
+  idempotencyKey?: string;
+}
+
 export interface ReviewerSessionInvocationOptions {
   effectiveMode: "interactive_continuous" | "independent";
-  invokeFresh: () => Promise<{ exitCode: number; outputText: string }>;
-  invokeStructured: (directive: AdapterSessionDirective) => Promise<{
+  attemptIdentity?: { runId: string; laneId: string; attempt: number };
+  invokeFresh: (context?: ReviewerSessionInvocationContext) => Promise<{ exitCode: number; outputText: string }>;
+  invokeStructured: (directive: AdapterSessionDirective, context?: ReviewerSessionInvocationContext) => Promise<{
     exitCode: number;
     result: AdapterStructuredResult;
   }>;
@@ -60,7 +72,7 @@ export interface ReviewerSessionInvocationOptions {
     withLease: <T>(key: string, action: () => Promise<T>) => Promise<
       { acquired: true; value: T } | { acquired: false; reason: "busy" | "unavailable" }
     >;
-    read: (key: string) => ReviewerSessionDispatchEntry | undefined;
+    read: (key: string) => ReviewerSessionReadDecision;
     writeFresh: (key: string, providerSessionId: string) => ReviewerSessionDispatchEntry | undefined;
     writeResume: (
       key: string,
@@ -73,6 +85,7 @@ export interface ReviewerSessionInvocationOptions {
     sleep?: (delayMs: number) => Promise<void>;
     jitter?: (baseMs: number) => number;
     remainingBudgetMs?: () => number;
+    normalizeInvocationException?: (error: unknown) => AdapterStructuredResult;
     onEvent?: (event: ReviewerSessionEvent, payload: Record<string, unknown>) => void;
   };
 }
@@ -103,27 +116,36 @@ export async function invokeReviewerWithSession(
   } catch {
     return freshWithoutRegistry(options);
   }
-  let leased: { acquired: true; value: ReviewerSessionInvocationResult } | { acquired: false; reason: "busy" | "unavailable" };
+  let leased: { acquired: true; value: LeaseActionResult } | { acquired: false; reason: "busy" | "unavailable" };
   try {
     leased = await options.sessionDependencies.withLease(key, async () => {
-      let existing: ReviewerSessionDispatchEntry | undefined;
       try {
-        existing = options.sessionDependencies.read(key);
+        const decision = options.sessionDependencies.read(key);
+        if (decision.kind === "unavailable") {
+          return { kind: "result" as const, result: await freshWithoutRegistry(options) };
+        }
+        if (decision.kind === "lifecycle") {
+          return { kind: "result" as const, result: await replaceLifecycleEntry(options, scope, key, decision.entry, decision.reason) };
+        }
+        if (decision.kind === "entry") {
+          return { kind: "result" as const, result: await resumeExisting(options, scope, key, decision.entry) };
+        }
+        return { kind: "result" as const, result: await startContinuous(options, scope, key) };
       } catch {
-        return freshWithoutRegistry(options);
+        return { kind: "exception" as const };
       }
-      if (existing) {
-        return resumeExisting(options, scope, key, existing);
-      }
-      return startContinuous(options, scope, key);
     });
   } catch {
     return freshWithoutRegistry(options);
   }
-  if (leased.acquired) return leased.value;
+  if (leased.acquired) {
+    return leased.value.kind === "result"
+      ? leased.value.result
+      : { exitCode: 1, outputText: "Reviewer session invocation failed safely.", session: scopeSession("fresh", scope, false) };
+  }
   if (leased.reason === "unavailable") return freshWithoutRegistry(options);
 
-  const fresh = await options.invokeFresh();
+  const fresh = await options.invokeFresh({ idempotencyKey: freshIsolatedIdempotencyKey(options) });
   const result: ReviewerSessionInvocationResult = {
     ...fresh,
     session: scopeSession("fresh_isolated", scope, false),
@@ -132,12 +154,39 @@ export async function invokeReviewerWithSession(
   return result;
 }
 
+type LeaseActionResult =
+  | { kind: "result"; result: ReviewerSessionInvocationResult }
+  | { kind: "exception" };
+
+async function replaceLifecycleEntry(
+  options: ReviewerSessionInvocationOptions,
+  scope: ResolvedReviewerSessionScope,
+  key: string,
+  entry: ReviewerSessionDispatchEntry,
+  reason: "expired_idle" | "expired_absolute" | "resume_limit",
+): Promise<ReviewerSessionInvocationResult> {
+  const stale = scopeSession("resumed", scope, false, entry.sessionRef);
+  if (reason !== "resume_limit") {
+    options.sessionDependencies.onEvent?.("reviewer_session.expired", safeEventPayload(stale));
+  }
+  if (!options.sessionDependencies.close?.(key, entry.epoch)) {
+    return {
+      exitCode: 1,
+      outputText: "Reviewer session lifecycle state cannot be safely rotated.",
+      session: stale,
+    };
+  }
+  options.sessionDependencies.onEvent?.("reviewer_session.closed", safeEventPayload(stale));
+  options.sessionDependencies.onEvent?.("reviewer_session.rotated", { ...safeEventPayload(stale), reason });
+  return fallbackFresh(options, scope, key, entry.providerSessionId);
+}
+
 async function startContinuous(
   options: ReviewerSessionInvocationOptions,
   scope: ResolvedReviewerSessionScope,
   key: string,
 ): Promise<ReviewerSessionInvocationResult> {
-  const invocation = await options.invokeStructured({ mode: "fresh" });
+  const invocation = await invokeStructuredSafely(options, { mode: "fresh" });
   const safe = redactAdapterStructuredResult(invocation.result, { mode: "fresh" });
   if (invocation.exitCode !== 0 || invocation.result.failure || !invocation.result.providerSessionId) {
     return {
@@ -191,7 +240,11 @@ async function fallbackFreshWithoutStructured(
   options: ReviewerSessionInvocationOptions,
   scope: ResolvedReviewerSessionScope,
 ): Promise<ReviewerSessionInvocationResult> {
-  const fresh = await options.invokeFresh();
+  const context = remainingInvocationContext(options);
+  if (!context) {
+    return { exitCode: 1, outputText: "", session: scopeSession("fallback_fresh", scope, false) };
+  }
+  const fresh = await options.invokeFresh(context);
   const session = scopeSession("fallback_fresh", scope, false);
   const result = { ...fresh, session };
   options.sessionDependencies.onEvent?.("reviewer_session.fallback_fresh", safeEventPayload(session));
@@ -202,7 +255,7 @@ async function invokeResume(
   options: ReviewerSessionInvocationOptions,
   entry: ReviewerSessionDispatchEntry,
 ): Promise<{ exitCode: number; result: AdapterStructuredResult }> {
-  return options.invokeStructured({ mode: "resume", providerSessionId: entry.providerSessionId });
+  return invokeStructuredSafely(options, { mode: "resume", providerSessionId: entry.providerSessionId });
 }
 
 function structuredSuccess(invocation: { exitCode: number; result: AdapterStructuredResult }): boolean {
@@ -291,7 +344,15 @@ async function fallbackFresh(
   key: string,
   staleProviderSessionId?: string,
 ): Promise<ReviewerSessionInvocationResult> {
-  const invocation = await options.invokeStructured({ mode: "fresh" });
+  const context = remainingInvocationContext(options);
+  if (!context) {
+    return {
+      exitCode: 1,
+      outputText: "",
+      session: scopeSession("fallback_fresh", scope, false),
+    };
+  }
+  const invocation = await invokeStructuredSafely(options, { mode: "fresh" }, context);
   const safe = redactAdapterStructuredResult(
     invocation.result,
     staleProviderSessionId
@@ -354,6 +415,43 @@ function hasRemainingBudget(options: ReviewerSessionInvocationOptions): boolean 
 async function freshWithoutRegistry(options: ReviewerSessionInvocationOptions): Promise<ReviewerSessionInvocationResult> {
   const fresh = await options.invokeFresh();
   return { ...fresh, session: { mode: "fresh", hermetic: true, registryWrite: false } };
+}
+
+async function invokeStructuredSafely(
+  options: ReviewerSessionInvocationOptions,
+  directive: AdapterSessionDirective,
+  context = remainingInvocationContext(options),
+): Promise<{ exitCode: number; result: AdapterStructuredResult }> {
+  if (!context) {
+    return {
+      exitCode: 1,
+      result: { outputText: "", failure: { classification: "timeout", message: "reviewer session budget is exhausted", retryable: false } },
+    };
+  }
+  try {
+    return await options.invokeStructured(directive, context);
+  } catch (error) {
+    return {
+      exitCode: 1,
+      result: options.sessionDependencies.normalizeInvocationException?.(error) ?? {
+        outputText: "",
+        failure: { classification: "configuration_error", message: "reviewer session invocation failed", retryable: false },
+      },
+    };
+  }
+}
+
+function remainingInvocationContext(options: ReviewerSessionInvocationOptions): ReviewerSessionInvocationContext | undefined {
+  const remaining = options.sessionDependencies.remainingBudgetMs?.();
+  if (remaining !== undefined && (Number.isNaN(remaining) || remaining <= 0)) return undefined;
+  return remaining === undefined || remaining === Number.POSITIVE_INFINITY
+    ? {}
+    : Number.isFinite(remaining) ? { timeoutSecs: remaining / 1_000 } : undefined;
+}
+
+function freshIsolatedIdempotencyKey(options: ReviewerSessionInvocationOptions): string | undefined {
+  const identity = options.attemptIdentity;
+  return identity ? `${identity.runId}:${identity.laneId}:${identity.attempt}` : undefined;
 }
 
 function scopeSession(

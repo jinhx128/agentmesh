@@ -146,7 +146,7 @@ export type ReviewerSessionUnavailableReason =
 
 export type ReviewerSessionReadResult =
   | { status: "available"; entry: ReviewerSessionEntry }
-  | { status: "unavailable"; reason: ReviewerSessionUnavailableReason; diagnostic: string };
+  | { status: "unavailable"; reason: ReviewerSessionUnavailableReason; diagnostic: string; entry?: ReviewerSessionEntry };
 
 export type ReviewerSessionWriteResult =
   | { status: "written"; entry: ReviewerSessionEntry }
@@ -339,7 +339,7 @@ export function readReviewerSession(
   }
   const lifecycle = evaluateReviewerSessionLifecycle(inspected.entry, options);
   if (lifecycle !== "reusable") {
-    return unavailable(lifecycle, lifecycleDiagnostic(lifecycle));
+    return { ...unavailable(lifecycle, lifecycleDiagnostic(lifecycle)), entry: inspected.entry };
   }
   return { status: "available", entry: inspected.entry };
 }

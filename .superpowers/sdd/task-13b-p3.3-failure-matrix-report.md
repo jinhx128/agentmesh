@@ -36,7 +36,7 @@ git diff --check dba2557
 ```
 
 - Fresh Node build passed.
-- 完整 P3.3 focused combination：167/167 passed，0 failed，耗时 30.44s。
+- 初始完整 P3.3 focused combination：167/167 passed，0 failed，耗时 30.44s。
 - `git diff --check` 与 `git diff --check dba2557` passed。
 - flow-dispatch integration 使用 disposable fake provider script；未调用真实 provider CLI、用户 state 或 provider private store。
 
@@ -52,3 +52,19 @@ git diff --check dba2557
 
 - production retry sleep 使用 dispatch 注入的 timer；测试仅使用 fake sleep/jitter/budget，未发生真实等待。
 - adapter 当前没有已验证的 Retry-After header extractor；seam 已支持上游安全提供 `retryAfterMs`，否则执行有界 jitter fallback。
+
+## 累计 Review 修复（6 Must / 1 Should）
+
+1. RED→GREEN：`effective_mode=independent` 且含 native scope 的 create-time trap 曾创建 HMAC key 父目录；现在仅 continuous policy 调用 `resolveHostScope`，independent 只保留 safe input-presence metadata。
+2. RED→GREEN：production registry read 曾把 miss、expired/limit、unsafe/corrupt 都折叠为 `undefined`。现在 canonical boundary 接收 tagged `missing|lifecycle|unavailable|entry`：unsafe/unavailable plain fresh 且不走 structured parser；expired/limit 在 lease 内 CAS close，发出 lifecycle events 后只 replacement fresh 一次。
+3. RED→GREEN：leased action exception 曾被 `withLease` catch-all 转成第二次 plain fresh。lease action 现在封装为 tagged result/exception，structured rejection 由一次安全 normalizer 映射到 timeout/config matrix，不再隐式 fresh。
+4. RED→GREEN：每次 structured resume/retry/fallback/capability-drift fresh 使用 `remainingBudgetMs` 生成 timeout context；250ms remainder 测试证明传入 `0.25` 秒且 1s retry 不启动。
+5. RED→GREEN：busy fresh-isolated 现在接收预冻结 `{runId,laneId,attempt}` 并传递 `run:lane:attempt` idempotency key；测试精确断言 `run-42:review:primary:3`。
+6. RED→GREEN：failure classifier 仅检查 adapter diagnostic `stderr`，不再拼接 stdout/model content；新增 stdout-injection regression，并保留 reachable `rate_limited` 与 `provider_busy`。
+7. Should RED→GREEN：fake providers 不再保存 argv/raw provider ID，改写 `resume` marker；integration 递归扫描整个 generated run directory，且 marker/packet/event/log/output 均无 fixed ID。
+
+### Review 修复后完整验证
+
+- Fresh Node build passed.
+- 完整 P3.3 combination 按无共享状态的 test groups 重新执行：group A（dispatch/registry/lease/adapter）87/87、group B（flow-dispatch）41/41、group C（flow-run/scope）43/43；累计 **171/171 passed，0 failed**。
+- `git diff --check` 和 `git diff --check dba2557` passed。

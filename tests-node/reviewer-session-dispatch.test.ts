@@ -27,7 +27,7 @@ function continuousDependencies(input: {
     withLease: async <T>(_key: string, action: () => Promise<T>) => (
       { acquired: true as const, value: await action() }
     ),
-    read: () => entry,
+    read: () => entry ? { kind: "entry" as const, entry } : { kind: "missing" as const },
     writeFresh: (_key: string, providerSessionId: string) => {
       input.writes.push(`fresh:${providerSessionId}`);
       entry = { providerSessionId, sessionRef: "rs-0123456789abcdef", epoch: 1 };
@@ -172,7 +172,10 @@ test("different safe scopes and linked worktrees cannot resume another dispatch 
       supportsStructuredSessions: () => true,
       registryKey: (resolved) => `${resolved.conversationScopeRef}:${resolved.worktreeId}`,
       withLease: async (_key, action) => ({ acquired: true as const, value: await action() }),
-      read: (key) => entries.get(key),
+      read: (key) => {
+        const entry = entries.get(key);
+        return entry ? { kind: "entry" as const, entry } : { kind: "missing" as const };
+      },
       writeFresh: (key, providerSessionId) => {
         const entry = { providerSessionId, sessionRef: "rs-0123456789abcdef", epoch: 1 };
         entries.set(key, entry);
@@ -195,6 +198,7 @@ test("different safe scopes and linked worktrees cannot resume another dispatch 
 
 test("busy lease uses one fresh isolated invocation without reading a provider ID", async () => {
   let freshCalls = 0;
+  const idempotencyKeys: Array<string | undefined> = [];
   let structuredCalls = 0;
   let registryReads = 0;
   const dependencies = continuousDependencies({ writes: [], events: [] });
@@ -205,8 +209,10 @@ test("busy lease uses one fresh isolated invocation without reading a provider I
   };
   const result = await invokeReviewerWithSession("/disposable/run", {
     effectiveMode: "interactive_continuous",
-    invokeFresh: async () => {
+    attemptIdentity: { runId: "run-42", laneId: "review:primary", attempt: 3 },
+    invokeFresh: async (context) => {
       freshCalls += 1;
+      idempotencyKeys.push(context?.idempotencyKey);
       return { exitCode: 0, outputText: "isolated output" };
     },
     invokeStructured: async () => {
@@ -219,6 +225,7 @@ test("busy lease uses one fresh isolated invocation without reading a provider I
   assert.equal(freshCalls, 1);
   assert.equal(structuredCalls, 0);
   assert.equal(registryReads, 0);
+  assert.deepEqual(idempotencyKeys, ["run-42:review:primary:3"]);
   assert.deepEqual(result.session, {
     mode: "fresh_isolated",
     hermetic: true,
@@ -446,7 +453,7 @@ test("exhausted budget skips retry sleep and fallback recovery", async () => {
     sessionDependencies: matrix,
   });
 
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
   assert.equal(sleeps, 0);
   assert.deepEqual(writes, []);
   assert.equal(result.session.registryWrite, false);
@@ -600,4 +607,106 @@ test("not found and context overflow rotate once into fallback fresh", async () 
       "reviewer_session.fallback_fresh",
     ], classification);
   }
+});
+
+test("lifecycle-expired registry evidence closes under the lease then writes one replacement fresh entry", async () => {
+  const writes: string[] = [];
+  const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const dependencies = continuousDependencies({ writes, events });
+  const entry = { providerSessionId: "session-test-123", sessionRef: "rs-0123456789abcdef", epoch: 4 };
+  const matrix = dependencies as typeof dependencies & { close: (key: string, epoch: number) => boolean };
+  const directives: string[] = [];
+  matrix.read = () => ({ kind: "lifecycle", entry, reason: "expired_idle" });
+  matrix.close = () => true;
+  const result = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => { throw new Error("lifecycle recovery must remain structured"); },
+    invokeStructured: async (directive) => {
+      directives.push(directive.mode);
+      return { exitCode: 0, result: { providerSessionId: "session-test-123", outputText: "replacement" } };
+    },
+    sessionDependencies: matrix,
+  });
+  assert.deepEqual(directives, ["fresh"]);
+  assert.equal(result.session.mode, "fallback_fresh");
+  assert.deepEqual(writes, ["fresh:session-test-123"]);
+  assert.deepEqual(events.map(({ event }) => event), [
+    "reviewer_session.expired",
+    "reviewer_session.closed",
+    "reviewer_session.rotated",
+    "reviewer_session.fallback_fresh",
+  ]);
+});
+
+test("unavailable registry and structured invocation exceptions never become provider-ID fresh recovery", async () => {
+  const unavailable = continuousDependencies({ writes: [], events: [] });
+  unavailable.read = () => ({ kind: "unavailable" });
+  let plainFresh = 0;
+  const unavailableResult = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => {
+      plainFresh += 1;
+      return { exitCode: 0, outputText: "plain fresh" };
+    },
+    invokeStructured: async () => { throw new Error("unsafe registry must not parse a provider session"); },
+    sessionDependencies: unavailable,
+  });
+  assert.equal(plainFresh, 1);
+  assert.equal(unavailableResult.session.mode, "fresh");
+  assert.equal(unavailableResult.session.registryWrite, false);
+
+  const exceptional = continuousDependencies({
+    entry: { providerSessionId: "session-test-123", sessionRef: "rs-0123456789abcdef", epoch: 4 },
+    writes: [],
+    events: [],
+  });
+  let exceptionFresh = 0;
+  const exceptionalResult = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => {
+      exceptionFresh += 1;
+      return { exitCode: 0, outputText: "must not run" };
+    },
+    invokeStructured: async () => { throw new Error("spawn failed"); },
+    sessionDependencies: {
+      ...exceptional,
+      normalizeInvocationException: () => ({
+        outputText: "",
+        failure: { classification: "timeout", message: "timeout", retryable: false },
+      }),
+    },
+  });
+  assert.equal(exceptionFresh, 0);
+  assert.equal(exceptionalResult.exitCode, 1);
+  assert.equal(exceptionalResult.session.mode, "resumed");
+});
+
+test("a small remaining budget is passed to resume and prevents an unbounded retry", async () => {
+  const dependencies = continuousDependencies({
+    entry: { providerSessionId: "session-test-123", sessionRef: "rs-0123456789abcdef", epoch: 4 },
+    writes: [],
+    events: [],
+  });
+  const matrix = dependencies as typeof dependencies & {
+    remainingBudgetMs: () => number;
+    jitter: (baseMs: number) => number;
+    sleep: (delayMs: number) => Promise<void>;
+  };
+  const timeouts: Array<number | undefined> = [];
+  let sleeps = 0;
+  matrix.remainingBudgetMs = () => 250;
+  matrix.jitter = () => 1_000;
+  matrix.sleep = async () => { sleeps += 1; };
+  const result = await invokeReviewerWithSession("/disposable/run", {
+    effectiveMode: "interactive_continuous",
+    invokeFresh: async () => { throw new Error("network retry must not become fresh"); },
+    invokeStructured: async (_directive, context) => {
+      timeouts.push(context?.timeoutSecs);
+      return { exitCode: 1, result: { outputText: "", failure: { classification: "unknown", message: "network", retryable: true } } };
+    },
+    sessionDependencies: matrix,
+  });
+  assert.deepEqual(timeouts, [0.25]);
+  assert.equal(sleeps, 0);
+  assert.equal(result.exitCode, 1);
 });

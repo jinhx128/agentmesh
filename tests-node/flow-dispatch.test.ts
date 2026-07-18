@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -60,6 +60,13 @@ function writeOutputAgent(scriptPath: string, body: string): void {
       "",
     ].join("\n"),
   );
+}
+
+function generatedRunText(runDir: string): string {
+  const files = readdirSync(runDir, { recursive: true })
+    .map((entry) => path.join(runDir, entry.toString()))
+    .filter((filePath) => statSync(filePath).isFile());
+  return files.map((filePath) => readFileSync(filePath, "utf-8")).join("\n");
 }
 
 test("flow dispatch refreshes current workspace registry activity", () => {
@@ -138,7 +145,7 @@ test("continuous review dispatch writes safe provenance then resumes without lea
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       "session='session-test-123'",
-      "printf '%s\\n' \"$*\" >> \"$0.args\"",
+      "if [[ \"$*\" == *\"--resume\"* ]]; then printf 'resume\\n' >> \"$0.resume-marker\"; fi",
       "printf '%s\\n' \\",
       "  \"{\\\"type\\\":\\\"system\\\",\\\"subtype\\\":\\\"init\\\",\\\"session_id\\\":\\\"$session\\\"}\" \\",
       "  \"{\\\"type\\\":\\\"assistant\\\",\\\"session_id\\\":\\\"$session\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review output\\\"}]}}\" \\",
@@ -182,15 +189,15 @@ test("continuous review dispatch writes safe provenance then resumes without lea
   assert.equal(second.stage_attempts.review[0].session_mode, "resumed");
   assert.equal(second.stage_attempts.review[0].hermetic, false);
   assert.equal(second.stage_attempts.review[0].non_hermetic_reason, "session_resume");
-  const invocationText = readFileSync(`${reviewer}.args`, "utf-8");
-  assert.match(invocationText, /--resume session-test-123/);
-  assert.equal([...invocationText.matchAll(/--resume session-test-123/g)].length, 1);
+  assert.equal(readFileSync(`${reviewer}.resume-marker`, "utf-8"), "resume\n");
+  assert.doesNotMatch(readFileSync(`${reviewer}.resume-marker`, "utf-8"), /session-test-123/);
   const packetText = [
     readFileSync(path.join(secondDir, "status.json"), "utf-8"),
     readFileSync(path.join(secondDir, "events.jsonl"), "utf-8"),
     readFileSync(path.join(secondDir, "findings.md"), "utf-8"),
   ].join("\n");
   assert.doesNotMatch(packetText, /session-test-123/);
+  assert.doesNotMatch(generatedRunText(secondDir), /session-test-123/);
 });
 
 test("expired continuous reviewer resume recovers once before the existing lane can succeed", () => {
@@ -216,8 +223,8 @@ test("expired continuous reviewer resume recovers once before the existing lane 
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       "session='session-test-123'",
-      "printf '%s\\n' \"$*\" >> \"$0.args\"",
       "if [[ \"$*\" == *\"--resume\"* ]]; then",
+      "  printf 'resume\\n' >> \"$0.resume-marker\"",
       "  printf 'No conversation found with session ID: %s\\n' \"$session\" >&2",
       "  exit 1",
       "fi",
@@ -262,13 +269,14 @@ test("expired continuous reviewer resume recovers once before the existing lane 
   assert.match(events, /reviewer_session\.closed/);
   assert.match(events, /reviewer_session\.rotated/);
   assert.match(events, /reviewer_session\.fallback_fresh/);
-  const calls = readFileSync(`${reviewer}.args`, "utf-8");
-  assert.equal([...calls.matchAll(/--resume session-test-123/g)].length, 1);
+  assert.equal(readFileSync(`${reviewer}.resume-marker`, "utf-8"), "resume\n");
+  assert.doesNotMatch(readFileSync(`${reviewer}.resume-marker`, "utf-8"), /session-test-123/);
   assert.doesNotMatch([
     readFileSync(path.join(secondDir, "status.json"), "utf-8"),
     events,
     readFileSync(path.join(secondDir, "findings.md"), "utf-8"),
   ].join("\n"), /session-test-123/);
+  assert.doesNotMatch(generatedRunText(secondDir), /session-test-123/);
 });
 
 test("flow attach refreshes current workspace registry activity", () => {

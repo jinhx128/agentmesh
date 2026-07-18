@@ -795,9 +795,10 @@ async function invokeStageAgentAttempt(
   },
 ): Promise<StageAgentAttemptResult> {
   const startedAt = new Date().toISOString();
+  const laneAttempt = (status.stage_attempts[stage] ?? []).filter((attempt) => attempt.lane_id === options.laneId).length + 1;
   try {
     const invocation = stageNodeForId(status, stage).type === "review"
-      ? await invokeReviewAgentWithSession(runDir, status, stage, options)
+      ? await invokeReviewAgentWithSession(runDir, status, stage, { ...options, attempt: laneAttempt })
       : await invokeAgentForStageAsync(runDir, stage, options.agent, {
       configPath: options.configPath,
       cwd: options.cwd,
@@ -876,9 +877,11 @@ async function invokeReviewAgentWithSession(
     configPath?: string;
     cwd: string;
     agent: string;
+    laneId: string;
     outputPath: string;
     promptPath: string;
     timeoutSecs?: number | null;
+    attempt: number;
   },
 ): Promise<AgentCallResult & { session: ReturnType<typeof reviewerSessionAttemptFields> }> {
   const agent = resolveAgent(loadAgents(options.configPath, options.cwd), options.agent);
@@ -888,14 +891,14 @@ async function invokeReviewAgentWithSession(
   const sessionBudgetMs = options.timeoutSecs === undefined || options.timeoutSecs === null
     ? undefined
     : Math.max(0, options.timeoutSecs * 1_000);
-  const invokeFresh = async () => {
+  const invokeFresh = async (context?: { timeoutSecs?: number; idempotencyKey?: string }) => {
     const result = await invokeAgentForStageAsync(runDir, stage, options.agent, {
       configPath: options.configPath,
       cwd: options.cwd,
       agentName: options.agent,
       promptFile: options.promptPath,
       outputFile: options.outputPath,
-      timeoutSecs: options.timeoutSecs ?? undefined,
+      timeoutSecs: context?.timeoutSecs ?? options.timeoutSecs ?? undefined,
     });
     return { exitCode: result.exitCode, outputText: result.stdout ?? "", call: result };
   };
@@ -903,19 +906,20 @@ async function invokeReviewAgentWithSession(
   let usedStructuredSessionInvocation = false;
   const result = await invokeReviewerWithSession(runDir, {
     effectiveMode: status.resolved_reviewer_session_policy?.effective_mode ?? "independent",
-    invokeFresh: async () => {
-      const fresh = await invokeFresh();
+    attemptIdentity: { runId: status.run_id, laneId: options.laneId, attempt: options.attempt },
+    invokeFresh: async (context) => {
+      const fresh = await invokeFresh(context);
       lastCall = fresh.call;
       return fresh;
     },
-    invokeStructured: async (session) => {
+    invokeStructured: async (session, context) => {
       usedStructuredSessionInvocation = true;
       const call = await invokeAgentForStageAsync(runDir, stage, options.agent, {
         configPath: options.configPath,
         cwd: options.cwd,
         agentName: options.agent,
         promptFile: options.promptPath,
-        timeoutSecs: options.timeoutSecs ?? undefined,
+        timeoutSecs: context?.timeoutSecs ?? options.timeoutSecs ?? undefined,
         session,
       });
       lastCall = call;
@@ -948,9 +952,26 @@ async function invokeReviewAgentWithSession(
       },
       read: (key) => {
         const read = readReviewerSession(key);
-        return read.status === "available"
-          ? { providerSessionId: read.entry.provider_session_id, sessionRef: read.entry.session_ref, epoch: read.entry.epoch }
+        const entry = read.status === "available" || read.entry
+          ? read.entry
           : undefined;
+        if (read.status === "available" && entry) {
+          return { kind: "entry" as const, entry: { providerSessionId: entry.provider_session_id, sessionRef: entry.session_ref, epoch: entry.epoch } };
+        }
+        if (
+          entry
+          && read.status === "unavailable"
+          && (read.reason === "expired_idle" || read.reason === "expired_absolute" || read.reason === "resume_limit")
+        ) {
+          return {
+            kind: "lifecycle" as const,
+            entry: { providerSessionId: entry.provider_session_id, sessionRef: entry.session_ref, epoch: entry.epoch },
+            reason: read.reason,
+          };
+        }
+        return read.status === "unavailable" && read.reason === "missing"
+          ? { kind: "missing" as const }
+          : { kind: "unavailable" as const };
       },
       writeFresh: (key, providerSessionId) => {
         const write = upsertReviewerSession({
@@ -983,6 +1004,12 @@ async function invokeReviewAgentWithSession(
       remainingBudgetMs: () => sessionBudgetMs === undefined
         ? Number.POSITIVE_INFINITY
         : Math.max(0, sessionBudgetMs - (Date.now() - sessionStartedAt)),
+      normalizeInvocationException: (error) => {
+        const output = agentCallOutputFromError(error);
+        return output?.timedOut
+          ? { outputText: "", failure: { classification: "timeout" as const, message: "provider session invocation timed out", retryable: false } }
+          : { outputText: "", failure: { classification: "configuration_error" as const, message: "provider session invocation failed", retryable: false } };
+      },
       onEvent: (event, payload) => appendEvent(runDir, event, payload),
     },
   });

@@ -173,6 +173,44 @@ test("workflow run freezes reviewer session policy and safe propagated host scop
   assert.doesNotMatch(`${statusText}\n${eventsText}\n${run.stdout}\n${run.stderr}`, new RegExp(scopeToken));
 });
 
+test("independent run creation does not touch the reviewer scope-key path", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const hmacKeyPath = path.join(workspace, ".scope-key-trap", "nested", "reviewer-session-scope.key");
+  const runDir = await createFlowRun({
+    plan: null,
+    execute: null,
+    review: [],
+    decide: null,
+    stageAssignments: {
+      plan: ["current"],
+      execute: ["current"],
+      review: ["current"],
+      decide: ["current"],
+    },
+    task: "independent scope key trap",
+    runId: "independent-scope-key-trap",
+    reviewerSessionPolicy: {
+      requested_mode: "independent",
+      effective_mode: "independent",
+      source: "cli",
+    },
+    hostScopeInput: {
+      hostKind: "codex",
+      nativeConversationId: "native-id-must-stay-in-memory",
+    },
+    hostScopeOptions: { hmacKeyPath },
+  }, workspace);
+
+  assert.equal(existsSync(path.dirname(hmacKeyPath)), false);
+  const status = loadStatus(runDir);
+  assert.equal(status.resolved_host_scope, undefined);
+  assert.deepEqual(status.host_scope_input, {
+    host_kind: "codex",
+    scope_source: "native",
+  });
+});
+
 test("flow creation never persists a native conversation identifier", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

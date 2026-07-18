@@ -71,7 +71,7 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   assertWorkspaceWritable(cwd);
   assertWorkflowCompatibility(input.workflowCompatibility);
   const runtimeTiming = { ...(input.runtimeTiming ?? {}) };
-  const resolvedHostScope = input.hostScopeInput
+  const resolvedHostScope = input.reviewerSessionPolicy?.effective_mode === "interactive_continuous" && input.hostScopeInput
     ? resolveHostScope(input.hostScopeInput, cwd, input.hostScopeOptions)
     : undefined;
   const preparedContext = input.contextPolicy

@@ -545,6 +545,20 @@ test("verified provider parsers map public failures without returning provider d
   assert.equal(network.failure?.classification, "unknown");
   assert.equal(network.failure?.retryable, true);
   assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", {
+      exitCode: 1,
+      stdout: '{"type":"assistant","text":"authentication required; rate limit; network unavailable"}',
+    }).failure?.classification,
+    "invalid_output",
+  );
+  assert.equal(
+    parseAdapterStructuredSessionResult("opencode-cli", {
+      exitCode: 1,
+      stderr: "provider busy; retry later",
+    }).failure?.classification,
+    "provider_busy",
+  );
+  assert.equal(
     parseAdapterStructuredSessionResult("opencode-cli", { exitCode: 0, stdout: "" })
       .failure?.classification,
     "invalid_output",
