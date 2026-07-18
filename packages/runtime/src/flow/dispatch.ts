@@ -915,6 +915,9 @@ async function invokeReviewAgentWithSession(
     prepareResumedPrompt: () => {
       writePrompt(runDir, stage, options.cwd, options.agent, { reviewerSessionDelta: true });
     },
+    prepareFreshPrompt: () => {
+      writePrompt(runDir, stage, options.cwd, options.agent);
+    },
     invokeFresh: async (context) => {
       const fresh = await invokeFresh(context);
       lastCall = fresh.call;
@@ -1076,13 +1079,17 @@ function reviewerSessionInvocation(
   };
 }
 
-/** Only explicit instruction-impact labels rotate; legacy/data corrections remain packet evidence. */
+/**
+ * Explicit instruction-impact correction lifecycle is fingerprinted by safe
+ * id/impact/status labels. Retaining superseded records prevents a later
+ * removal from resurrecting an older provider session; free text is excluded.
+ */
 function reviewerSessionCorrectionImpact(cwd: string): string[] {
-  return listCorrections({ status: "active" }, cwd)
-    .map(({ record }) => ({ id: record.id, impact: record.session_impact ?? "data" }))
+  return listCorrections({}, cwd)
+    .map(({ record }) => ({ id: record.id, impact: record.session_impact ?? "data", status: record.status }))
     .filter(({ impact }) => impact === "persona" || impact === "system")
-    .sort((left, right) => left.id.localeCompare(right.id))
-    .map(({ id, impact }) => `${impact}:${id}`);
+    .sort((left, right) => left.id.localeCompare(right.id) || left.status.localeCompare(right.status))
+    .map(({ id, impact, status }) => `${status}:${impact}:${id}`);
 }
 
 function reviewerSessionKey(

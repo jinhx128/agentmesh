@@ -15,6 +15,7 @@ import {
   listRawReviewOutputs,
   RAW_REVIEW_OUTPUTS_HEADING,
   reviewerSessionProvenanceMarkdown,
+  usableRawReviewerIdsForNodes,
   safeReviewArtifactId,
   withoutRawReviewOutputs,
 } from "../review/artifacts.js";
@@ -32,6 +33,9 @@ const PRIOR_RAW_REVIEW_OUTPUT_MAX_BYTES = 2_500;
 const RELEASE_SUMMARY_PROMPT_CONTENT_MAX_BYTES = 24_000;
 const REVIEWER_SESSION_DELTA_MAX_FILES = 64;
 const REVIEWER_SESSION_DELTA_MAX_BYTES = 4_000;
+const RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES = 12_000;
+const REVIEWER_SESSION_DELTA_START = "<!-- agentmesh:reviewer-session-delta:start -->";
+const REVIEWER_SESSION_DELTA_END = "<!-- agentmesh:reviewer-session-delta:end -->";
 
 export interface StagePromptOptions {
   reviewerSessionDelta?: boolean;
@@ -87,6 +91,7 @@ export function buildStagePrompt(
   if (node.type === "decide") {
     const provenance = reviewerSessionProvenanceMarkdown(
       Object.values(status.stage_attempts).flat() as Array<Record<string, unknown>>,
+      usableRawReviewerIdsForNodes(runDir, stageNodes(status).filter((candidate) => candidate.type === "review")),
     );
     if (provenance) {
       sections.push(provenance, "");
@@ -161,11 +166,17 @@ export function withReviewerSessionDelta(prompt: string, context: string): strin
   return [
     base.trimEnd(),
     "",
+    "## Current Authoritative Evidence",
+    "",
+    resumedAuthoritativeEvidence(context),
+    "",
+    REVIEWER_SESSION_DELTA_START,
     "## Since Last Reviewer Session Turn",
     "",
     `- changed_files: ${files}${truncation}`,
     "- previous_file_line_references_are_stale: true",
     "- authoritative_evidence: current packet request/diff/verification/corrections",
+    REVIEWER_SESSION_DELTA_END,
   ].join("\n");
 }
 
@@ -213,9 +224,26 @@ export function writePrompt(
 }
 
 function withoutReviewerSessionDelta(prompt: string): string {
-  const marker = /^## Since Last Reviewer Session Turn[ \t]*$/m;
-  const match = prompt.match(marker);
-  return match?.index === undefined ? prompt.trimEnd() : prompt.slice(0, match.index).trimEnd();
+  const start = prompt.lastIndexOf(REVIEWER_SESSION_DELTA_START);
+  if (start < 0) return prompt.trimEnd();
+  const end = prompt.indexOf(REVIEWER_SESSION_DELTA_END, start);
+  if (end < 0 || prompt.slice(end + REVIEWER_SESSION_DELTA_END.length).trim().length > 0) return prompt.trimEnd();
+  return prompt.slice(0, start).trimEnd();
+}
+
+function resumedAuthoritativeEvidence(context: string): string {
+  const headings = ["Scoped Git Diff", "Diff", "Verification", "Project Correction"];
+  const sections = headings.flatMap((heading) => markdownSections(context, heading).map((content) => [
+    `### ${heading}`,
+    "",
+    content || "- none recorded",
+    "",
+  ].join("\n")));
+  return boundedPromptContent(
+    sections.length ? sections.join("\n").trimEnd() : "- no current diff, verification, or correction evidence recorded",
+    "current authoritative evidence",
+    RESUMED_AUTHORITATIVE_EVIDENCE_MAX_BYTES,
+  );
 }
 
 function changedFilesFromPacketContext(context: string): {
@@ -240,15 +268,23 @@ function changedFilesFromPacketContext(context: string): {
 }
 
 function markdownSection(content: string, heading: string): string {
+  return markdownSections(content, heading)[0] ?? "";
+}
+
+function markdownSections(content: string, heading: string): string[] {
   const lines = content.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim().toLocaleLowerCase() === `## ${heading}`.toLocaleLowerCase());
-  if (start < 0) return "";
-  const section: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith("## ")) break;
-    section.push(line);
+  const target = `## ${heading}`.toLocaleLowerCase();
+  const sections: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index]!.trim().toLocaleLowerCase() !== target) continue;
+    const section: string[] = [];
+    for (const line of lines.slice(index + 1)) {
+      if (line.startsWith("## ")) break;
+      section.push(line);
+    }
+    sections.push(section.join("\n").trim());
   }
-  return section.join("\n");
+  return sections;
 }
 
 export function recordPromptByteMetric(

@@ -97,12 +97,37 @@ test("resumed reviewer prompt adds one bounded current-packet delta without leak
   assert.doesNotMatch(base, /## Since Last Reviewer Session Turn/);
   assert.match(resumed, /CURRENT_REQUEST/);
   assert.match(resumed, /Context artifact: context\.md/);
+  assert.match(resumed, /CURRENT_VERIFICATION/);
+  assert.match(resumed, /CURRENT_CORRECTION/);
   assert.match(resumed, /## Since Last Reviewer Session Turn/);
   assert.match(resumed, /- changed_files: a\.ts, z\.ts/);
   assert.match(resumed, /- previous_file_line_references_are_stale: true/);
   assert.match(resumed, /- authoritative_evidence: current packet request\/diff\/verification\/corrections/);
   assert.equal(resumed.match(/## Since Last Reviewer Session Turn/g)?.length, 1);
   assert.doesNotMatch(resumed, /session-test-123|raw-host-token/);
+});
+
+test("resumed delta only replaces the terminal AgentMesh-owned sentinel block", () => {
+  const prompt = [
+    "## Request",
+    "",
+    "## Since Last Reviewer Session Turn",
+    "",
+    "This is user request text and must survive.",
+    "",
+    "## Assignment",
+    "",
+    "ASSIGNMENT_SURVIVES",
+  ].join("\n");
+  const context = ["## Diff", "", "diff --git a/a.ts b/a.ts", "", "## Verification", "", "VERIFY_SURVIVES"].join("\n");
+  const once = withReviewerSessionDelta(prompt, context);
+  const twice = withReviewerSessionDelta(once, context);
+
+  assert.match(twice, /This is user request text and must survive/);
+  assert.match(twice, /ASSIGNMENT_SURVIVES/);
+  assert.equal(twice.match(/## Since Last Reviewer Session Turn/g)?.length, 2);
+  assert.equal(twice.match(/agentmesh:reviewer-session-delta:start/g)?.length, 1);
+  assert.equal(twice.match(/agentmesh:reviewer-session-delta:end/g)?.length, 1);
 });
 
 test("decide prompt preserves packet-derived non-hermetic risk when prior findings are bounded", () => {
@@ -114,12 +139,14 @@ test("decide prompt preserves packet-derived non-hermetic risk when prior findin
     schema_version: 1, run_id: "decide-provenance", workflow: "w-67ef1b1f", stages: ["review", "decide"],
     stage_nodes: [{ id: "review", type: "review", occurrence: 1 }, { id: "decide", type: "decide", occurrence: 1 }],
     stage_assignments: { review: ["reviewer"], decide: ["current"] }, completed_stages: ["review"],
-    stage_state: {}, stage_attempts: { review: [{ lane_id: "review:reviewer", actual_agent: "reviewer", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" }], decide: [] }, user_gate: false,
+    stage_state: {}, stage_attempts: { review: [{ lane_id: "review:reviewer", actual_agent: "reviewer", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" }], decide: [] }, user_gate: false,
     resolved_reviewer_session_policy: { requested_mode: "independent", effective_mode: "independent", source: "workflow" },
   }, null, 2) + "\n");
   writeFileSync(path.join(runDir, "request.md"), "# Request\n\nDecide current evidence.\n");
   writeFileSync(path.join(runDir, "assignment.toml"), "[stage_assignments]\ndecide = [\"current\"]\n");
   writeFileSync(path.join(runDir, "findings.md"), `# Findings\n\n${"x".repeat(10_000)}\n`);
+  mkdirSync(path.join(runDir, "reviews"), { recursive: true });
+  writeFileSync(path.join(runDir, "reviews", "reviewer.md"), "usable review evidence\n");
 
   const prompt = buildStagePrompt(runDir, "decide", workspace, "current");
 

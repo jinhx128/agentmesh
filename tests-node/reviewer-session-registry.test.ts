@@ -222,7 +222,7 @@ test("scope, worktree, model, and invocation changes rotate the registry key whi
     { ...base, model: "other-model" },
     { ...base, invocation: invocation({ permissionMode: "workspace-write" }) },
     { ...base, invocation: invocation({ args: ["--structured", "review"] }) },
-    { ...base, invocation: invocation({ correctionSessionImpact: ["persona:review-contract"] }) },
+    { ...base, invocation: invocation({ correctionSessionImpact: ["active:persona:review-contract"] }) },
   ]) {
     assert.notEqual(sessionRegistryKey(changed), key);
   }
@@ -231,14 +231,14 @@ test("scope, worktree, model, and invocation changes rotate the registry key whi
 
 test("explicit correction impacts normalize without placing correction text in session fingerprints", () => {
   const first = reviewerSessionInvocationFingerprint(invocation({
-    correctionSessionImpact: ["system:system-contract", "persona:review-contract", "persona:review-contract"],
+    correctionSessionImpact: ["active:system:system-contract", "active:persona:review-contract", "active:persona:review-contract"],
   }));
   const second = reviewerSessionInvocationFingerprint(invocation({
-    correctionSessionImpact: ["persona:review-contract", "system:system-contract"],
+    correctionSessionImpact: ["active:persona:review-contract", "active:system:system-contract"],
   }));
   assert.equal(first, second);
   assert.throws(
-    () => reviewerSessionInvocationFingerprint(invocation({ correctionSessionImpact: ["data:ordinary"] })),
+    () => reviewerSessionInvocationFingerprint(invocation({ correctionSessionImpact: ["active:data:ordinary"] })),
     /correction session impact is invalid/,
   );
   assert.doesNotMatch(first, /Use the approved reviewer persona|session-test-123/);

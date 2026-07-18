@@ -206,7 +206,7 @@ test("independent release summary flags resumed reviewer evidence as needs_decis
     required_evidence: [], needs_decision_risks: [], skipped_gates: [], missing_evidence: [],
   };
   status.stage_attempts.review = [{
-    lane_id: "review:security", primary_agent: "security", requested_agent: "security", actual_agent: "security",
+    lane_id: "review:gemini", primary_agent: "gemini", requested_agent: "gemini", actual_agent: "gemini",
     lane_attempt: 1, attempt: 1, timeout_seconds: null, status: "completed",
     session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume", session_ref: "rs-safe",
   }];
@@ -214,7 +214,7 @@ test("independent release summary flags resumed reviewer evidence as needs_decis
   const summary = buildReleaseEvidenceSummary(runDir, status);
 
   assert.match(summary, /## Reviewer Session Provenance/);
-  assert.match(summary, /reviewer: security/);
+  assert.match(summary, /reviewer: gemini/);
   assert.match(summary, /hidden_provider_history: advisory/);
   assert.match(summary, /independent_release_risk: needs_decision \(session_resume\)/);
   assert.match(summary, /Needs-decision risks: session_resume/);

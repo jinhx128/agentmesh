@@ -86,7 +86,7 @@ export function refreshFindingsRawReviews(runDir: string, node?: StageNode): voi
   const findingsPath = path.join(runDir, findingsFile);
   const existing = readOptional(findingsPath) || defaultFindingsMarkdown();
   const attempts = stageAttemptsForProvenance(runDir, node?.id ?? "review");
-  const provenance = reviewerSessionProvenanceMarkdown(attempts);
+  const provenance = reviewerSessionProvenanceMarkdown(attempts, usableRawReviewerIds(runDir, node));
   writeFileAtomic(
     findingsPath,
     findingsWithRawReviews(findingsWithReviewerSessionProvenance(existing, provenance), rawReviews),
@@ -143,7 +143,7 @@ export function recordReviewAgentFailure(
 }
 
 export function findingsWithRawReviews(findings: string, rawReviews: string): string {
-  const base = withoutRawReviewOutputs(findings) || defaultFindingsMarkdown().trimEnd();
+  const base = (withoutRawReviewOutputs(findings) || defaultFindingsMarkdown()).trimEnd();
   if (!rawReviews) {
     return `${base}\n`;
   }
@@ -153,8 +153,10 @@ export function findingsWithRawReviews(findings: string, rawReviews: string): st
 /** Safe packet-derived disclosure; never inspect reviewer-authored output for provenance. */
 export function reviewerSessionProvenanceMarkdown(
   attempts: Array<Record<string, unknown>>,
+  usableReviewerIds?: ReadonlySet<string>,
 ): string {
   const resumed = attempts
+    .filter((attempt) => attempt.status === "completed")
     .filter((attempt) => attempt.session_mode === "resumed" || (
       attempt.hermetic === false && attempt.non_hermetic_reason === "session_resume"
     ))
@@ -165,24 +167,52 @@ export function reviewerSessionProvenanceMarkdown(
     .sort((left, right) => left.reviewer.localeCompare(right.reviewer) || left.lane.localeCompare(right.lane))
     .filter((entry, index, entries) => index === 0
       || entry.reviewer !== entries[index - 1]!.reviewer
-      || entry.lane !== entries[index - 1]!.lane);
+      || entry.lane !== entries[index - 1]!.lane)
+    .filter((entry) => !usableReviewerIds || usableReviewerIds.has(safeReviewArtifactId(entry.reviewer)));
   if (resumed.length === 0) return "";
+  const bounded: typeof resumed = [];
+  let bytes = 0;
+  for (const entry of resumed) {
+    const rendered = provenanceEntryMarkdown(entry);
+    if (bounded.length >= 32 || bytes + Buffer.byteLength(rendered, "utf-8") > 3_800) break;
+    bounded.push(entry);
+    bytes += Buffer.byteLength(rendered, "utf-8");
+  }
   return [
     REVIEWER_SESSION_PROVENANCE_HEADING,
     "",
-    ...resumed.flatMap(({ reviewer, lane }) => [
-      `- reviewer: ${reviewer}`,
-      `- lane: ${lane}`,
-      "- session_mode: resumed",
-      "- hermetic: false",
-      "- non_hermetic_reason: session_resume",
-    ]),
+    ...bounded.flatMap((entry) => provenanceEntryMarkdown(entry).split("\n")),
+    ...(bounded.length < resumed.length
+      ? [`- truncated: true; shown_count: ${bounded.length}; total_count: ${resumed.length}`]
+      : []),
   ].join("\n");
 }
 
 export function findingsWithReviewerSessionProvenance(findings: string, provenance: string): string {
-  const base = withoutReviewerSessionProvenance(findings) || defaultFindingsMarkdown().trimEnd();
+  const base = withoutReviewerSessionProvenance(withoutRawReviewOutputs(findings)) || defaultFindingsMarkdown().trimEnd();
   return provenance ? `${base}\n\n${provenance}\n` : `${base}\n`;
+}
+
+function provenanceEntryMarkdown({ reviewer, lane }: { reviewer: string; lane: string }): string {
+  return [
+    `- reviewer: ${reviewer}`,
+    `- lane: ${lane}`,
+    "- session_mode: resumed",
+    "- hermetic: false",
+    "- non_hermetic_reason: session_resume",
+  ].join("\n");
+}
+
+export function usableRawReviewerIds(runDir: string, node?: StageNode): Set<string> {
+  return new Set(
+    listRawReviewOutputs(runDir, node)
+      .filter((output) => output.content.trim().length > 0)
+      .map((output) => output.reviewer),
+  );
+}
+
+export function usableRawReviewerIdsForNodes(runDir: string, nodes: StageNode[]): Set<string> {
+  return new Set(nodes.flatMap((node) => [...usableRawReviewerIds(runDir, node)]));
 }
 
 export function rawReviewOutputsMarkdown(runDir: string, node?: StageNode): string {

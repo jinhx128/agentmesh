@@ -289,6 +289,7 @@ test("expired resumed session closes stale evidence then performs one fallback f
   });
   const matrix = dependencies as typeof dependencies & { close: (key: string, epoch: number) => boolean };
   const directives: string[] = [];
+  const promptModes: string[] = [];
   matrix.close = () => true;
 
   const result = await invokeReviewerWithSession("/disposable/run", {
@@ -302,10 +303,13 @@ test("expired resumed session closes stale evidence then performs one fallback f
         ? { exitCode: 1, result: { outputText: "session-test-123", failure: { classification: "session_expired", message: "expired", retryable: false } } }
         : { exitCode: 0, result: { providerSessionId: "session-test-123", outputText: "recovered" } };
     },
+    prepareResumedPrompt: () => { promptModes.push("resumed"); },
+    prepareFreshPrompt: () => { promptModes.push("fresh"); },
     sessionDependencies: matrix,
   });
 
   assert.deepEqual(directives, ["resume", "fresh"]);
+  assert.deepEqual(promptModes, ["resumed", "fresh"]);
   assert.equal(result.session.mode, "fallback_fresh");
   assert.equal(result.session.registryWrite, true);
   assert.deepEqual(writes, ["fresh:session-test-123"]);

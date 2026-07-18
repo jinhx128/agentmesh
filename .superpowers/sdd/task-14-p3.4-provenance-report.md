@@ -50,3 +50,18 @@ git diff --check f219886
 ## 已知限制
 
 - 本 slice intentionally does not add correction CLI UX for selecting `session_impact`; the typed optional field is available to record producers and preserves existing CLI behavior. This follows the P3.4 scope boundary against unrelated CLI UX work.
+
+## Review Fix Follow-up
+
+### RED
+
+1. Review regression tests first exposed that provenance had no usable-review projection API (TS2554), matching the reviewed false-warning defect.
+2. The new dispatch integration initially failed only on an over-broad test assertion that treated correction statement text in the intentionally authoritative packet context as a leak. The relevant invariant is that free text is absent from the fingerprint, while it remains present in current packet evidence; the test was narrowed accordingly.
+
+### GREEN
+
+- Fresh recovery now invokes `prepareFreshPrompt` before structured or plain fallback fresh spawn, restoring the canonical base prompt.
+- Resumed prompt includes bounded current authoritative diff/verification/active-correction sections and an AgentMesh-owned terminal sentinel pair; repeated preparation replaces only that exact terminal block.
+- Findings recomposition strips generated raw/provenance sections in a stable order, writes provenance before raw outputs, filters to completed attempts with non-empty matching raw review output, and applies deterministic reviewer/lane plus UTF-8 bounds with a truncation marker.
+- Decide and release use the same safe usable-raw projection.
+- Disposable dispatch integration covers data correction resume plus persona add/supersede/removal and system add rotations; only the data correction run resumes, and generated packet artifacts never contain `session-test-123`.

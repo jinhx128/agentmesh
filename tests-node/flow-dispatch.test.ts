@@ -6,6 +6,7 @@ import test from "node:test";
 import { loadArtifacts } from "../packages/runtime/src/packet/io.js";
 import { withRunMutationLockAsync } from "../packages/runtime/src/packet/lock.js";
 import { dispatchFlowStage } from "../packages/runtime/src/flow/dispatch.js";
+import { addCorrection, supersedeCorrection } from "../packages/runtime/src/corrections/index.js";
 import {
   listRegisteredWorkspaces,
   recordWorkspaceActivity,
@@ -205,6 +206,60 @@ test("continuous review dispatch writes safe provenance then resumes without lea
   assert.doesNotMatch(generatedRunText(secondDir), /session-test-123/);
 });
 
+test("correction impact controls real continuous dispatch resume without fingerprinting correction text", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const reviewer = path.join(workspace, "correction-reviewer.sh");
+  const workflow = path.join(workspace, "review-only.toml");
+  writeFileSync(workflow, [
+    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [1]",
+    'name = "Review Only"', 'stages = ["review"]', 'description = "Correction session test."',
+    'when_to_use = ["Correction impact."]', 'packet_artifacts = ["findings.md"]', 'quality_gates = ["Review output exists."]', "",
+  ].join("\n"));
+  writeExecutable(reviewer, [
+    "#!/usr/bin/env bash", "set -euo pipefail", "session='session-test-123'",
+    "if [[ \"$*\" == *\"--resume\"* ]]; then printf 'resume\\n' >> \"$0.resume-marker\"; fi",
+    "printf '%s\\n' \\",
+    "  \"{\\\"type\\\":\\\"system\\\",\\\"subtype\\\":\\\"init\\\",\\\"session_id\\\":\\\"$session\\\"}\" \\",
+    "  \"{\\\"type\\\":\\\"assistant\\\",\\\"session_id\\\":\\\"$session\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review output\\\"}]}}\" \\",
+    "  \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"session_id\\\":\\\"$session\\\",\\\"result\\\":\\\"review output\\\"}\"",
+    "",
+  ].join("\n"));
+  const config = writeConfig(workspace, [
+    "[agents.reviewer]", 'adapter = "claude-code-cli"', `command = "${reviewer}"`, "args = []",
+    'model = "claude-sonnet-4-6"', 'reasoning_effort = "high"', 'capabilities = ["review"]', "",
+  ].join("\n"));
+  const scope = "amscope_v1:44444444-4444-4444-8444-444444444444";
+  const run = (id: string) => {
+    const created = runCli(workspace, ["--config", config, "flow", "run", "--workflow-file", workflow, "--review", "reviewer", "--task", "correction impact", "--review-session-mode", "interactive_continuous", "--host-kind", "codex", "--conversation-scope", scope, "--run-id", id]);
+    assert.equal(created.status, 0, created.stderr);
+    const dispatched = runCli(workspace, ["--config", config, "flow", "dispatch", id, "--stage", "review"]);
+    assert.equal(dispatched.status, 0, dispatched.stderr);
+    return path.join(workspace, ".agentmesh", "runs", id);
+  };
+
+  run("correction-first");
+  addCorrection({ id: "data", scope: "review", statement: "DATA_CORRECTION", sessionImpact: "data" }, workspace);
+  const dataRun = run("correction-data");
+  assert.equal(JSON.parse(readFileSync(path.join(dataRun, "status.json"), "utf-8")).stage_attempts.review[0].session_mode, "resumed");
+  assert.match(readFileSync(path.join(dataRun, "prompts", "review.md"), "utf-8"), /DATA_CORRECTION/);
+
+  addCorrection({ id: "persona", scope: "review", statement: "PERSONA_TEXT_MUST_NOT_FINGERPRINT", sessionImpact: "persona" }, workspace);
+  const personaRun = run("correction-persona");
+  assert.equal(JSON.parse(readFileSync(path.join(personaRun, "status.json"), "utf-8")).stage_attempts.review[0].session_mode, "fresh");
+  supersedeCorrection("persona", { id: "persona-v2", statement: "PERSONA_V2_TEXT", sessionImpact: "persona" }, workspace);
+  const supersededRun = run("correction-supersede");
+  assert.equal(JSON.parse(readFileSync(path.join(supersededRun, "status.json"), "utf-8")).stage_attempts.review[0].session_mode, "fresh");
+  supersedeCorrection("persona-v2", { id: "persona-removed", statement: "ordinary data replacement", sessionImpact: "data" }, workspace);
+  const removedRun = run("correction-removal");
+  assert.equal(JSON.parse(readFileSync(path.join(removedRun, "status.json"), "utf-8")).stage_attempts.review[0].session_mode, "fresh");
+  addCorrection({ id: "system", scope: "review", statement: "SYSTEM_TEXT_MUST_NOT_FINGERPRINT", sessionImpact: "system" }, workspace);
+  const systemRun = run("correction-system");
+  assert.equal(JSON.parse(readFileSync(path.join(systemRun, "status.json"), "utf-8")).stage_attempts.review[0].session_mode, "fresh");
+  assert.equal(readFileSync(`${reviewer}.resume-marker`, "utf-8"), "resume\n");
+  assert.doesNotMatch(generatedRunText(systemRun), /session-test-123/);
+});
+
 test("expired continuous reviewer resume recovers once before the existing lane can succeed", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -269,6 +324,7 @@ test("expired continuous reviewer resume recovers once before the existing lane 
   const second = JSON.parse(readFileSync(path.join(secondDir, "status.json"), "utf-8"));
   assert.equal(second.stage_attempts.review[0].session_mode, "fallback_fresh");
   assert.equal(second.stage_attempts.review[0].registry_write, true);
+  assert.doesNotMatch(readFileSync(path.join(secondDir, "prompts", "review.md"), "utf-8"), /Since Last Reviewer Session Turn/);
   const events = readFileSync(path.join(secondDir, "events.jsonl"), "utf-8");
   assert.match(events, /reviewer_session\.resume_failed/);
   assert.match(events, /reviewer_session\.closed/);

@@ -19,6 +19,7 @@ import {
   RAW_REVIEW_OUTPUTS_HEADING,
   listRawReviewOutputs,
   reviewerSessionProvenanceMarkdown,
+  usableRawReviewerIdsForNodes,
   type RawReviewOutput,
   withoutRawReviewOutputs,
 } from "../review/artifacts.js";
@@ -72,6 +73,7 @@ export function buildReleaseEvidenceSummary(
   });
   const reviewerSessionProvenance = reviewerSessionProvenanceMarkdown(
     Object.values(status.stage_attempts).flat() as Array<Record<string, unknown>>,
+    usableRawReviewerIdsForNodes(runDir, status.stage_nodes.filter((node) => node.type === "review")),
   );
   const independentResumedEvidence = Boolean(reviewerSessionProvenance)
     && status.resolved_reviewer_session_policy?.effective_mode === "independent";

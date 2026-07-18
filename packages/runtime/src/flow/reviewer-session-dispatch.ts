@@ -84,6 +84,8 @@ export interface ReviewerSessionInvocationOptions {
   }>;
   /** Runs only after a registry hit selects resume and immediately before spawn. */
   prepareResumedPrompt?: () => void;
+  /** Restores the canonical fresh prompt before any fresh recovery spawn. */
+  prepareFreshPrompt?: () => void;
   sessionDependencies: {
     resolveScope: () => ResolvedReviewerSessionScope | undefined;
     supportsStructuredSessions: () => boolean;
@@ -272,6 +274,7 @@ async function fallbackFreshWithoutStructured(
   if (!context) {
     return { exitCode: 1, outputText: "", session: scopeSession("fallback_fresh", scope, false) };
   }
+  options.prepareFreshPrompt?.();
   const fresh = await options.invokeFresh(context);
   const session = scopeSession("fallback_fresh", scope, false);
   const result = { ...fresh, session };
@@ -382,6 +385,7 @@ async function fallbackFresh(
       session: scopeSession("fallback_fresh", scope, false),
     };
   }
+  options.prepareFreshPrompt?.();
   const invocation = await invokeStructuredSafely(options, { mode: "fresh" }, context);
   const safe = redactAdapterStructuredResult(
     invocation.result,

@@ -839,7 +839,7 @@ function normalizeInvocation(input: ReviewerSessionInvocationFingerprintInput): 
 }
 
 function normalizedCorrectionSessionImpact(values: string[]): string[] {
-  if (!Array.isArray(values) || values.some((value) => !/^(persona|system):[A-Za-z0-9._-]+$/.test(value))) {
+  if (!Array.isArray(values) || values.some((value) => !/^(active|superseded):(persona|system):[A-Za-z0-9._-]+$/.test(value))) {
     throw new Error("correction session impact is invalid");
   }
   return [...new Set(values)].sort();

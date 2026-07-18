@@ -104,10 +104,10 @@ test("review artifact helpers strip only standalone raw review heading", () => {
 
 test("review findings provenance is packet-derived, deterministic, and idempotent", () => {
   const provenance = reviewerSessionProvenanceMarkdown([
-    { actual_agent: "reviewer_b", lane_id: "review:b", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume", session_ref: "rs-safe" },
-    { actual_agent: "reviewer_a", lane_id: "review:a", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" },
-    { actual_agent: "fresh", lane_id: "review:fresh", session_mode: "fresh", hermetic: true },
-  ]);
+    { actual_agent: "reviewer_b", lane_id: "review:b", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume", session_ref: "rs-safe" },
+    { actual_agent: "reviewer_a", lane_id: "review:a", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" },
+    { actual_agent: "fresh", lane_id: "review:fresh", status: "completed", session_mode: "fresh", hermetic: true },
+  ], new Set(["reviewer_a", "reviewer_b"]));
   assert.match(provenance, /## Reviewer Session Provenance/);
   assert.match(provenance, /reviewer: reviewer_a[\s\S]*reviewer: reviewer_b/);
   assert.match(provenance, /hermetic: false/);
@@ -117,7 +117,43 @@ test("review findings provenance is packet-derived, deterministic, and idempoten
   const once = findingsWithReviewerSessionProvenance("# Findings\n", provenance);
   const twice = findingsWithReviewerSessionProvenance(once, provenance);
   assert.equal(twice.match(/## Reviewer Session Provenance/g)?.length, 1);
-  assert.equal(reviewerSessionProvenanceMarkdown([{ actual_agent: "fresh", lane_id: "review:fresh", session_mode: "fresh", hermetic: true }]), "");
+  assert.equal(reviewerSessionProvenanceMarkdown([{ actual_agent: "fresh", lane_id: "review:fresh", status: "completed", session_mode: "fresh", hermetic: true }], new Set(["fresh"])), "");
+});
+
+test("findings refresh composes provenance before raw outputs and excludes failed resumed attempts", () => {
+  const provenance = reviewerSessionProvenanceMarkdown([
+    { actual_agent: "failed_resume", lane_id: "review:failed", status: "failed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" },
+    { actual_agent: "fresh_fallback", lane_id: "review:fallback", status: "completed", session_mode: "fallback_fresh", hermetic: true },
+    { actual_agent: "resumed", lane_id: "review:resumed", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" },
+  ], new Set(["resumed"]));
+  const raw = ["## Raw Review Outputs", "", "### resumed", "", "usable raw output"].join("\n");
+  const once = findingsWithRawReviews(findingsWithReviewerSessionProvenance("# Findings\n", provenance), raw);
+  const twice = findingsWithRawReviews(findingsWithReviewerSessionProvenance(once, provenance), raw);
+
+  assert.equal(twice.match(/## Reviewer Session Provenance/g)?.length, 1);
+  assert.equal(twice.match(/## Raw Review Outputs/g)?.length, 1);
+  assert.ok(twice.indexOf("## Reviewer Session Provenance") < twice.indexOf("## Raw Review Outputs"));
+  assert.match(twice, /reviewer: resumed/);
+  assert.doesNotMatch(twice, /failed_resume|fresh_fallback/);
+});
+
+test("review provenance bounds reviewer lanes with an explicit deterministic marker", () => {
+  const attempts = Array.from({ length: 40 }, (_, index) => ({
+    actual_agent: `reviewer_${String(index).padStart(2, "0")}`,
+    lane_id: `review:${String(index).padStart(2, "0")}`,
+    status: "completed",
+    session_mode: "resumed",
+    hermetic: false,
+    non_hermetic_reason: "session_resume",
+  }));
+  const usable = new Set(attempts.map((attempt) => attempt.actual_agent));
+  const provenance = reviewerSessionProvenanceMarkdown(attempts, usable);
+
+  assert.match(provenance, /truncated: true; shown_count: 31; total_count: 40/);
+  assert.ok(Buffer.byteLength(provenance, "utf-8") <= 4_000);
+  assert.match(provenance, /reviewer: reviewer_00/);
+  assert.match(provenance, /reviewer: reviewer_30/);
+  assert.doesNotMatch(provenance, /reviewer: reviewer_31/);
 });
 
 test("release summary reads the unified raw review output section", () => {
