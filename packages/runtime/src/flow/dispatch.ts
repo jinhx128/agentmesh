@@ -795,7 +795,7 @@ async function invokeStageAgentAttempt(
   },
 ): Promise<StageAgentAttemptResult> {
   const startedAt = new Date().toISOString();
-  const laneAttempt = (status.stage_attempts[stage] ?? []).filter((attempt) => attempt.lane_id === options.laneId).length + 1;
+  const laneAttempt = nextLaneAttempt(runDir, stage, options.laneId);
   try {
     const invocation = stageNodeForId(status, stage).type === "review"
       ? await invokeReviewAgentWithSession(runDir, status, stage, { ...options, attempt: laneAttempt })
@@ -810,7 +810,7 @@ async function invokeStageAgentAttempt(
     if (stageNodeForId(status, stage).type !== "review") {
       writeAgentLogs(runDir, stage, options.agent, invocation);
     }
-    const statusValue = invocation.exitCode === 0 ? "completed" : "failed";
+    const statusValue = invocation.exitCode === 0 ? "completed" : invocation.timedOut ? "timed_out" : "failed";
     recordStageAttempt(runDir, stage, {
       laneId: options.laneId,
       primaryAgent: options.primaryAgent,
@@ -822,7 +822,7 @@ async function invokeStageAgentAttempt(
       startedAt,
       completedAt: new Date().toISOString(),
       exitCode: invocation.exitCode,
-      errorKind: invocation.exitCode === 0 ? undefined : "exit_code",
+      errorKind: invocation.exitCode === 0 ? undefined : invocation.timedOut ? "timeout" : "exit_code",
       error: invocation.exitCode === 0 ? undefined : `exit code ${invocation.exitCode}`,
       session: "session" in invocation
         ? invocation.session as ReturnType<typeof reviewerSessionAttemptFields>
@@ -899,6 +899,7 @@ async function invokeReviewAgentWithSession(
       promptFile: options.promptPath,
       outputFile: options.outputPath,
       timeoutSecs: context?.timeoutSecs ?? options.timeoutSecs ?? undefined,
+      ...(context?.idempotencyKey ? { idempotencyKey: context.idempotencyKey } : {}),
     });
     return { exitCode: result.exitCode, outputText: result.stdout ?? "", call: result };
   };
@@ -1006,9 +1007,10 @@ async function invokeReviewAgentWithSession(
         : Math.max(0, sessionBudgetMs - (Date.now() - sessionStartedAt)),
       normalizeInvocationException: (error) => {
         const output = agentCallOutputFromError(error);
+        const timing = agentCallTimingFromError(error);
         return output?.timedOut
-          ? { outputText: "", failure: { classification: "timeout" as const, message: "provider session invocation timed out", retryable: false } }
-          : { outputText: "", failure: { classification: "configuration_error" as const, message: "provider session invocation failed", retryable: false } };
+          ? { result: { outputText: "", failure: { classification: "timeout" as const, message: "provider session invocation timed out", retryable: false } }, timedOut: true, ...(timing ? { timing } : {}) }
+          : { result: { outputText: "", failure: { classification: "configuration_error" as const, message: "provider session invocation failed", retryable: false } }, ...(timing ? { timing } : {}) };
       },
       onEvent: (event, payload) => appendEvent(runDir, event, payload),
     },
@@ -1020,8 +1022,18 @@ async function invokeReviewAgentWithSession(
   const call = lastCall;
   return {
     exitCode: result.exitCode,
-    timing: call?.timing ?? { config_load_ms: 0, adapter_spawn_ms: 0, agent_total_ms: 0, total_ms: 0 },
-    ...(call?.timedOut === undefined ? {} : { timedOut: call.timedOut }),
+    timing: result.timing
+      ? {
+          config_load_ms: result.timing.config_load_ms ?? 0,
+          adapter_spawn_ms: result.timing.adapter_spawn_ms ?? 0,
+          agent_total_ms: result.timing.agent_total_ms ?? 0,
+          total_ms: result.timing.total_ms ?? 0,
+          ...(result.timing.first_output_ms === undefined ? {} : { first_output_ms: result.timing.first_output_ms }),
+        }
+      : call?.timing ?? { config_load_ms: 0, adapter_spawn_ms: 0, agent_total_ms: 0, total_ms: 0 },
+    ...(result.timedOut === undefined
+      ? call?.timedOut === undefined ? {} : { timedOut: call.timedOut }
+      : { timedOut: result.timedOut }),
     session: reviewerSessionAttemptFields(result.session),
   };
 }
@@ -1133,6 +1145,12 @@ function recordStageAttempt(
     ],
   };
   saveStatus(runDir, status);
+}
+
+/** Caller holds the run mutation lock; reload keeps configured retries in one lane unique. */
+function nextLaneAttempt(runDir: string, stage: string, laneId: string): number {
+  const current = loadStatus(runDir);
+  return (current.stage_attempts[stage] ?? []).filter((attempt) => attempt.lane_id === laneId).length + 1;
 }
 
 function primaryInvocationForAgent(status: PacketStatus, stage: string, agent: string) {

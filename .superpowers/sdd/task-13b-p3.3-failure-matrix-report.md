@@ -68,3 +68,9 @@ git diff --check dba2557
 - Fresh Node build passed.
 - 完整 P3.3 combination 按无共享状态的 test groups 重新执行：group A（dispatch/registry/lease/adapter）87/87、group B（flow-dispatch）41/41、group C（flow-run/scope）43/43；累计 **171/171 passed，0 failed**。
 - `git diff --check` 和 `git diff --check dba2557` passed。
+
+## Final Re-review 修复（3 Must）
+
+1. RED→GREEN：`fresh_isolated` lane attempt 曾基于传入的 stale status snapshot 计数，且 idempotency key 在 production wrapper 被丢弃。现在每次 spawn 前在 run mutation lock 内 reload status 冻结 next lane attempt；`idempotencyKey` 已进入 `runAgentCallAsync` surface，并只作为 `AGENTMESH_INTERNAL_IDEMPOTENCY_KEY` adapter-local env 传给 child，绝不进入 argv/prompt/packet/artifact。adapter integration 覆盖该实际传递路径。
+2. RED→GREEN：busy/unavailable plain fresh 曾退回原 timeout。它们现在与 structured recovery 共用 `remainingInvocationContext()`；零 remainder 返回 lane failure 而不 spawn，覆盖 busy 与 unavailable 两种 lease result。
+3. RED→GREEN：structured `AgentCallError` timeout 曾丢失 timing/timedOut。normalizer 现在将安全 failure、timing 和 timeout flag 一并返回 canonical result；flow integration 验证 resumed timeout 的 stage attempt 为 `timed_out`、`error_kind=timeout`、`registry_write=false`，且不启动 fresh recovery。

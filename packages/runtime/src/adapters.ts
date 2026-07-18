@@ -305,6 +305,8 @@ export async function runAgentCallAsync(options: {
   outputFile?: string;
   timeoutSecs?: number;
   session?: AdapterSessionDirective;
+  /** Opaque runtime metadata; never added to prompts, artifacts, or adapter argv. */
+  idempotencyKey?: string;
 }): Promise<AgentCallResult> {
   if (options.agentName === "current") {
     throw new Error(
@@ -345,7 +347,10 @@ export async function runAgentCallAsync(options: {
   };
 
   const child = spawn(command[0], command.slice(1), {
-    env: buildAgentProcessEnv(prepared.env),
+    env: buildAgentProcessEnv({
+      ...prepared.env,
+      ...(options.idempotencyKey ? { AGENTMESH_INTERNAL_IDEMPOTENCY_KEY: options.idempotencyKey } : {}),
+    }),
     stdio:
       stdin === undefined
         ? ["inherit", "pipe", "pipe"]

@@ -676,6 +676,34 @@ test("agent calls report config load and synchronous spawn timing", () => {
   assert.equal(result.timing.first_output_ms, undefined);
 });
 
+test("async agent invocation carries opaque idempotency metadata only through the adapter-local environment", async () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const agent = path.join(workspace, "agent.sh");
+  const outputFile = path.join(workspace, "metadata.txt");
+  writeFileSync(agent, "#!/usr/bin/env bash\nprintf '%s' \"${AGENTMESH_INTERNAL_IDEMPOTENCY_KEY:-missing}\" > \"$2\"\n", { mode: 0o755 });
+  const configPath = path.join(workspace, "agentmesh.toml");
+  writeFileSync(configPath, [
+    "schema_version = 1",
+    "",
+    "[agents.metadata]",
+    'adapter = "command"',
+    `command = ${JSON.stringify(agent)}`,
+    "args = []",
+    'capabilities = ["plan"]',
+    'output_file_arg = "--output-file"',
+    "",
+  ].join("\n"));
+  const result = await runAgentCallAsync({
+    configPath,
+    agentName: "metadata",
+    outputFile,
+    idempotencyKey: "run-42:review:backup:2",
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(readFileSync(outputFile, "utf-8"), "run-42:review:backup:2");
+});
+
 test("agent calls discover provider CLIs installed outside PATH", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

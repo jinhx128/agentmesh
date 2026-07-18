@@ -671,8 +671,8 @@ test("unavailable registry and structured invocation exceptions never become pro
     sessionDependencies: {
       ...exceptional,
       normalizeInvocationException: () => ({
-        outputText: "",
-        failure: { classification: "timeout", message: "timeout", retryable: false },
+        result: { outputText: "", failure: { classification: "timeout", message: "timeout", retryable: false } },
+        timedOut: true,
       }),
     },
   });
@@ -709,4 +709,25 @@ test("a small remaining budget is passed to resume and prevents an unbounded ret
   assert.deepEqual(timeouts, [0.25]);
   assert.equal(sleeps, 0);
   assert.equal(result.exitCode, 1);
+});
+
+test("busy and unavailable plain-fresh paths use remaining budget and skip the provider at zero", async () => {
+  for (const reason of ["busy", "unavailable"] as const) {
+    const dependencies = continuousDependencies({ writes: [], events: [] });
+    dependencies.withLease = async () => ({ acquired: false, reason });
+    const matrix = dependencies as typeof dependencies & { remainingBudgetMs: () => number };
+    matrix.remainingBudgetMs = () => 0;
+    let freshCalls = 0;
+    const result = await invokeReviewerWithSession("/disposable/run", {
+      effectiveMode: "interactive_continuous",
+      invokeFresh: async () => {
+        freshCalls += 1;
+        return { exitCode: 0, outputText: "must not spawn" };
+      },
+      invokeStructured: async () => { throw new Error("lease result must not parse session"); },
+      sessionDependencies: matrix,
+    });
+    assert.equal(freshCalls, 0, reason);
+    assert.equal(result.exitCode, 1, reason);
+  }
 });

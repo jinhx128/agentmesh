@@ -279,6 +279,46 @@ test("expired continuous reviewer resume recovers once before the existing lane 
   assert.doesNotMatch(generatedRunText(secondDir), /session-test-123/);
 });
 
+test("timed-out structured resume keeps timeout provenance and does not fresh recover", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const reviewer = path.join(workspace, "reviewer-timeout-session.sh");
+  const workflow = path.join(workspace, "review-only.toml");
+  writeFileSync(workflow, [
+    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [1]",
+    'name = "Review Only"', 'stages = ["review"]', 'description = "Timeout test."',
+    'when_to_use = ["Timeout provenance."]', 'packet_artifacts = ["findings.md"]', 'quality_gates = ["Review."]', "",
+  ].join("\n"));
+  writeExecutable(reviewer, [
+    "#!/usr/bin/env bash", "set -euo pipefail", "session='session-test-123'",
+    "if [[ \"$*\" == *\"--resume\"* ]]; then sleep 2; exit 0; fi",
+    "printf '%s\\n' \\",
+    "  \"{\\\"type\\\":\\\"system\\\",\\\"subtype\\\":\\\"init\\\",\\\"session_id\\\":\\\"$session\\\"}\" \\",
+    "  \"{\\\"type\\\":\\\"assistant\\\",\\\"session_id\\\":\\\"$session\\\",\\\"message\\\":{\\\"content\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"review output\\\"}]}}\" \\",
+    "  \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"session_id\\\":\\\"$session\\\",\\\"result\\\":\\\"review output\\\"}\"",
+    "",
+  ].join("\n"));
+  const config = writeConfig(workspace, [
+    "[agents.reviewer]", 'adapter = "claude-code-cli"', `command = "${reviewer}"`, "args = []",
+    'model = "claude-sonnet-4-6"', 'reasoning_effort = "high"', 'capabilities = ["review"]', "",
+  ].join("\n"));
+  const scope = "amscope_v1:33333333-3333-4333-8333-333333333333";
+  const run = (runId: string) => runCli(workspace, ["--config", config, "flow", "run", "--workflow-file", workflow, "--review", "reviewer", "--task", "timeout", "--review-session-mode", "interactive_continuous", "--host-kind", "codex", "--conversation-scope", scope, "--run-id", runId]);
+  const firstRun = run("timeout-first");
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+  const firstDispatch = runCli(workspace, ["--config", config, "flow", "dispatch", "timeout-first", "--stage", "review", "--timeout-secs", "1"]);
+  assert.equal(firstDispatch.status, 0, firstDispatch.stderr);
+  assert.equal(run("timeout-second").status, 0);
+  const dispatch = runCli(workspace, ["--config", config, "flow", "dispatch", "timeout-second", "--stage", "review", "--timeout-secs", "1"]);
+  assert.notEqual(dispatch.status, 0);
+  const status = JSON.parse(readFileSync(path.join(workspace, ".agentmesh", "runs", "timeout-second", "status.json"), "utf-8"));
+  const attempt = status.stage_attempts.review[0];
+  assert.equal(attempt.status, "timed_out");
+  assert.equal(attempt.error_kind, "timeout");
+  assert.equal(attempt.session_mode, "resumed");
+  assert.equal(attempt.registry_write, false);
+});
+
 test("flow attach refreshes current workspace registry activity", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));

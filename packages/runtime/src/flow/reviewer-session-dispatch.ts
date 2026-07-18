@@ -18,9 +18,26 @@ type ReviewerSessionEvent =
 const RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 5_000;
 
+export interface ReviewerSessionInvocationTiming {
+  config_load_ms?: number;
+  adapter_spawn_ms?: number;
+  agent_total_ms?: number;
+  total_ms?: number;
+  first_output_ms?: number;
+}
+
+interface StructuredSessionInvocation {
+  exitCode: number;
+  result: AdapterStructuredResult;
+  timedOut?: boolean;
+  timing?: ReviewerSessionInvocationTiming;
+}
+
 export interface ReviewerSessionInvocationResult {
   exitCode: number;
   outputText: string;
+  timedOut?: boolean;
+  timing?: ReviewerSessionInvocationTiming;
   session: {
     mode: ReviewerSessionMode;
     hermetic: boolean;
@@ -85,7 +102,11 @@ export interface ReviewerSessionInvocationOptions {
     sleep?: (delayMs: number) => Promise<void>;
     jitter?: (baseMs: number) => number;
     remainingBudgetMs?: () => number;
-    normalizeInvocationException?: (error: unknown) => AdapterStructuredResult;
+    normalizeInvocationException?: (error: unknown) => {
+      result: AdapterStructuredResult;
+      timedOut?: boolean;
+      timing?: ReviewerSessionInvocationTiming;
+    };
     onEvent?: (event: ReviewerSessionEvent, payload: Record<string, unknown>) => void;
   };
 }
@@ -108,13 +129,13 @@ export async function invokeReviewerWithSession(
 
   const scope = options.sessionDependencies.resolveScope();
   if (!scope || scope.scopeSource === "missing" || !options.sessionDependencies.supportsStructuredSessions()) {
-    return freshWithoutRegistry(options);
+    return freshWithoutRegistry(options, true);
   }
   let key: string;
   try {
     key = options.sessionDependencies.registryKey(scope);
   } catch {
-    return freshWithoutRegistry(options);
+    return freshWithoutRegistry(options, true);
   }
   let leased: { acquired: true; value: LeaseActionResult } | { acquired: false; reason: "busy" | "unavailable" };
   try {
@@ -122,7 +143,7 @@ export async function invokeReviewerWithSession(
       try {
         const decision = options.sessionDependencies.read(key);
         if (decision.kind === "unavailable") {
-          return { kind: "result" as const, result: await freshWithoutRegistry(options) };
+          return { kind: "result" as const, result: await freshWithoutRegistry(options, true) };
         }
         if (decision.kind === "lifecycle") {
           return { kind: "result" as const, result: await replaceLifecycleEntry(options, scope, key, decision.entry, decision.reason) };
@@ -136,16 +157,18 @@ export async function invokeReviewerWithSession(
       }
     });
   } catch {
-    return freshWithoutRegistry(options);
+    return freshWithoutRegistry(options, true);
   }
   if (leased.acquired) {
     return leased.value.kind === "result"
       ? leased.value.result
       : { exitCode: 1, outputText: "Reviewer session invocation failed safely.", session: scopeSession("fresh", scope, false) };
   }
-  if (leased.reason === "unavailable") return freshWithoutRegistry(options);
+  if (leased.reason === "unavailable") return freshWithoutRegistry(options, true);
 
-  const fresh = await options.invokeFresh({ idempotencyKey: freshIsolatedIdempotencyKey(options) });
+  const context = remainingInvocationContext(options);
+  if (!context) return exhaustedFresh(scope);
+  const fresh = await options.invokeFresh({ ...context, idempotencyKey: freshIsolatedIdempotencyKey(options) });
   const result: ReviewerSessionInvocationResult = {
     ...fresh,
     session: scopeSession("fresh_isolated", scope, false),
@@ -192,6 +215,8 @@ async function startContinuous(
     return {
       exitCode: invocation.exitCode,
       outputText: safe.outputText,
+      ...(invocation.timedOut === undefined ? {} : { timedOut: invocation.timedOut }),
+      ...(invocation.timing ? { timing: invocation.timing } : {}),
       session: scopeSession("fresh", scope, false),
     };
   }
@@ -254,11 +279,11 @@ async function fallbackFreshWithoutStructured(
 async function invokeResume(
   options: ReviewerSessionInvocationOptions,
   entry: ReviewerSessionDispatchEntry,
-): Promise<{ exitCode: number; result: AdapterStructuredResult }> {
+): Promise<StructuredSessionInvocation> {
   return invokeStructuredSafely(options, { mode: "resume", providerSessionId: entry.providerSessionId });
 }
 
-function structuredSuccess(invocation: { exitCode: number; result: AdapterStructuredResult }): boolean {
+function structuredSuccess(invocation: StructuredSessionInvocation): boolean {
   return invocation.exitCode === 0 && !invocation.result.failure && Boolean(invocation.result.providerSessionId);
 }
 
@@ -267,7 +292,7 @@ function completedResume(
   scope: ResolvedReviewerSessionScope,
   key: string,
   entry: ReviewerSessionDispatchEntry,
-  invocation: { exitCode: number; result: AdapterStructuredResult },
+  invocation: StructuredSessionInvocation,
 ): ReviewerSessionInvocationResult {
   const safe = redactAdapterStructuredResult(invocation.result, {
     mode: "resume",
@@ -283,7 +308,7 @@ function completedResume(
 function failedResume(
   scope: ResolvedReviewerSessionScope,
   entry: ReviewerSessionDispatchEntry,
-  invocation: { exitCode: number; result: AdapterStructuredResult },
+  invocation: StructuredSessionInvocation,
 ): ReviewerSessionInvocationResult {
   const safe = redactAdapterStructuredResult(invocation.result, {
     mode: "resume",
@@ -294,6 +319,8 @@ function failedResume(
     outputText: isHardFailure(invocation.result.failure?.classification)
       ? "Reviewer session cannot continue; verify reviewer access and configuration."
       : safe.outputText,
+    ...(invocation.timedOut === undefined ? {} : { timedOut: invocation.timedOut }),
+    ...(invocation.timing ? { timing: invocation.timing } : {}),
     session: scopeSession("resumed", scope, false, entry.sessionRef),
   };
 }
@@ -367,6 +394,8 @@ async function fallbackFresh(
   const result = {
     exitCode: successful ? invocation.exitCode : invocation.exitCode || 1,
     outputText: safe.outputText,
+    ...(invocation.timedOut === undefined ? {} : { timedOut: invocation.timedOut }),
+    ...(invocation.timing ? { timing: invocation.timing } : {}),
     session,
   };
   options.sessionDependencies.onEvent?.("reviewer_session.fallback_fresh", {
@@ -385,7 +414,7 @@ function allowsFreshRecovery(classification: string): boolean {
 
 function retryDelayFor(
   options: ReviewerSessionInvocationOptions,
-  invocation: { result: AdapterStructuredResult },
+  invocation: Pick<StructuredSessionInvocation, "result">,
 ): number | undefined {
   const failure = invocation.result.failure;
   if (!failure) return undefined;
@@ -412,16 +441,27 @@ function hasRemainingBudget(options: ReviewerSessionInvocationOptions): boolean 
   return remaining === undefined || (Number.isFinite(remaining) && remaining > 0);
 }
 
-async function freshWithoutRegistry(options: ReviewerSessionInvocationOptions): Promise<ReviewerSessionInvocationResult> {
-  const fresh = await options.invokeFresh();
+async function freshWithoutRegistry(
+  options: ReviewerSessionInvocationOptions,
+  constrainToRemainingBudget = false,
+): Promise<ReviewerSessionInvocationResult> {
+  const context = constrainToRemainingBudget ? remainingInvocationContext(options) : {};
+  if (!context) {
+    return { exitCode: 1, outputText: "", session: { mode: "fresh", hermetic: true, registryWrite: false } };
+  }
+  const fresh = await options.invokeFresh(context);
   return { ...fresh, session: { mode: "fresh", hermetic: true, registryWrite: false } };
+}
+
+function exhaustedFresh(scope: ResolvedReviewerSessionScope): ReviewerSessionInvocationResult {
+  return { exitCode: 1, outputText: "", session: scopeSession("fresh_isolated", scope, false) };
 }
 
 async function invokeStructuredSafely(
   options: ReviewerSessionInvocationOptions,
   directive: AdapterSessionDirective,
   context = remainingInvocationContext(options),
-): Promise<{ exitCode: number; result: AdapterStructuredResult }> {
+): Promise<StructuredSessionInvocation> {
   if (!context) {
     return {
       exitCode: 1,
@@ -431,9 +471,12 @@ async function invokeStructuredSafely(
   try {
     return await options.invokeStructured(directive, context);
   } catch (error) {
+    const normalized = options.sessionDependencies.normalizeInvocationException?.(error);
     return {
       exitCode: 1,
-      result: options.sessionDependencies.normalizeInvocationException?.(error) ?? {
+      ...(normalized?.timedOut === undefined ? {} : { timedOut: normalized.timedOut }),
+      ...(normalized?.timing ? { timing: normalized.timing } : {}),
+      result: normalized?.result ?? {
         outputText: "",
         failure: { classification: "configuration_error", message: "reviewer session invocation failed", retryable: false },
       },
