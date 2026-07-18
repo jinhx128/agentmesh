@@ -680,7 +680,7 @@
 
 ## P4. 跨宿主 Scope 续传、SDK 与 Studio
 
-- [ ] P4 阶段完成门禁：五宿主 Skill 可安全续传 scope、SDK/App/Studio 只展示脱敏状态、管理入口受控。
+- [x] P4 阶段完成门禁：五宿主 Skill 可安全续传 scope、SDK/App/Studio 只展示脱敏状态、管理入口受控。
 
 ### ~~P4.1 / Task 15：更新 Canonical Skill 的跨宿主 Scope 协议~~ ✅
 
@@ -766,14 +766,23 @@
 - 提交：`d588307`、`d62d474`；本条计划与 changelog 由 bookkeeping commit 固化。
 - 下一步：P4.Z 运行阶段总验证并做真机 browser/desktop session 管理 smoke。
 
-### P4.Z / Task 17：P4 阶段收尾校准
+### ~~P4.Z / Task 17：P4 阶段收尾校准~~ ✅
 
-- [ ] Run SDK/Studio/package tests、`npm run build`、`git diff --check`。
-- [ ] 真机浏览器/桌面 smoke：列表、关闭、过期清理、无 raw ID；不同 host scope 不串线。
-- [ ] AgentMesh 外审跨宿主 Skill、API 脱敏和 UI 边界；处理发现。
-- [ ] 同步 changelog、提交。
+- [x] Run SDK/Studio/package tests、`npm run build`、`git diff --check`。
+- [x] 真机浏览器/桌面 smoke：列表、关闭、过期清理、无 raw ID；不同 host scope 不串线。
+- [x] AgentMesh 外审跨宿主 Skill、API 脱敏和 UI 边界；处理发现。
+- [x] 同步 changelog、提交。
 
 审查方式：外审；失败不可降级。Commit: `收尾：校准跨宿主 session 管理体验`
+
+**进度记录（2026-07-19 01:42）：**
+
+- 状态：完成。隔离 browser 与 debug desktop `.app` 均验证 Claude/OpenCode run 只显示各自 host-scoped session；八类 `reviewer_session.*` 事件中文化，DOM 敏感字段匹配为 0，expired purge 使安全投影 3→2，逐个 close 后 CLI `sessions list --json` 最终为空。
+- 安全：smoke 使用 disposable HOME/workspace，未读取真实 provider token、cookie、keychain、登录态或 reviewer registry；进程、浏览器标签和临时目录均已清理。SDK 七字段白名单、App Server loopback/auth/lock/CAS mutation 和 Studio scoped display 均由自动化与真机证据覆盖。
+- 验证：fresh `npm run build` 通过；SDK/Studio/package/management/readiness 六文件 154/154；`npm run check:boundaries` 与 `git diff --check` 通过。debug Tauri `.app` 可运行；外围 debug bundle 命令仅因缺少 updater signing key 非零，P4 不声明 release artifact。
+- 审查：唯一一次 P4 阶段总 gate `workflow-20260719013846` 为 LGTM、0 Must/0 Should/0 Nit 且 `decide_completed`。
+- 提交：实现截至 `42f1f7a`；本条计划、progress 和 changelog 由 `收尾：校准跨宿主 session 管理体验` 固化。
+- 下一步：P5.1 补齐 README、落地页和 Studio 手册的 reviewer session 用户文档。
 
 ---
 
@@ -846,4 +855,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P4.Z` 完成 SDK/Studio/package 总验证与真机 browser/desktop session 管理 smoke。
+- 当前下一步：`P5.1` 补齐用户文档与变更记录。
