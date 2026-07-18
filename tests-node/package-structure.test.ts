@@ -133,6 +133,30 @@ test("canonical AgentMesh skill defines safe cross-host reviewer scope continuit
   assert.match(skill, /For another supported host, replace only\s+`--host-kind`/);
 });
 
+test("public docs describe reviewer session reuse without overclaiming adapters", () => {
+  const root = process.cwd();
+  const readme = readFileSync(path.join(root, "README.md"), "utf-8");
+  const landingPage = readFileSync(path.join(root, "index.html"), "utf-8");
+
+  for (const [label, content] of [["README", readme], ["landing page", landingPage]] as const) {
+    for (const requiredContract of [
+      "Reviewer Session",
+      "interactive_continuous",
+      "independent",
+      "agentmesh sessions list --json",
+      "agentmesh sessions close",
+      "agentmesh sessions purge --expired --json",
+      "non-hermetic",
+      "Claude Code 与 OpenCode 当前为 experimental",
+      "Codex、Cursor、Antigravity 保持 fresh-only",
+      "不得从 workspace",
+    ]) {
+      assert.ok(content.includes(requiredContract), `${label} missing reviewer session contract: ${requiredContract}`);
+    }
+    assert.match(content, /flow resume[\s\S]*Run[\s\S]*Reviewer Session/i);
+  }
+});
+
 test("release publish wrappers expose npm and GitHub one-command flows", () => {
   const root = process.cwd();
   const packageJson = JSON.parse(

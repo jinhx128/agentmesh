@@ -198,6 +198,16 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           "当 review/verify fanout 调用多个 Agent 时，Call 是追踪每个外部工具输出的入口。",
         ],
       },
+      {
+        title: "Run Resume 与 Reviewer Session Resume",
+        body: "flow resume 恢复 AgentMesh Run 中断或待处理的 workflow stage；Reviewer Session resume 在多次 Run 之间恢复底层 reviewer provider 会话，两者不会互相替代。",
+        details: [
+          "interactive_continuous 用于同一个入口宿主对话里的普通连续 review；每轮仍重发当前 packet、diff、verification 和 corrections。",
+          "independent 始终 fresh 并绕过 session registry；release、安全、合规、审批和首次冷读等正式 gate 必须使用。",
+          "恢复成功的证据标记为 non-hermetic，provider 历史只作辅助上下文，不能代替当前 Packet 证据。",
+          "默认生命周期为空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume；更短的 provider retention 优先。",
+        ],
+      },
     ],
   },
   {
@@ -230,6 +240,18 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           "先看结论和需要决策的问题，再读原始审查。",
           "skipped checks 和 residual risk 适合进入诊断 tab 做后续排查。",
           "本地采纳证据在 Calls 页面处理，避免把底层调用记录和 Run 结论混在一起。",
+        ],
+      },
+      {
+        title: "Reviewer Session 管理",
+        body: "Reviewer Session registry 是本机用户级状态；CLI 和 Run 详情只展示不可逆 session_ref 与脱敏状态，可按 ref 或 scope 关闭，也可清理过期项。",
+        details: [
+          "查看：agentmesh sessions list --json；详情：agentmesh sessions inspect <session-ref> --json。",
+          "关闭：agentmesh sessions close <session-ref> --json，或 agentmesh sessions close --scope <scope-ref> --json。",
+          "清理：agentmesh sessions purge --expired --json；Studio Run 详情也提供关闭当前会话和清理已过期会话。",
+          "Claude Code 与 OpenCode 当前为 experimental，只验证立即恢复；Codex、Cursor、Antigravity 保持 fresh-only。",
+          "propagated token 丢失或无效时 fresh，不得从 workspace、repository、worktree、旧 packet、provider state 或其他宿主对话恢复 scope。",
+          "原始 provider/native session ID 不进入 Packet、日志、错误或 Studio；AgentMesh 不读取 provider token、cookie、keychain、登录态或私有 session store。",
         ],
       },
       {

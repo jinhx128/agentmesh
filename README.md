@@ -469,6 +469,59 @@ agentmesh flow prompt <run-id> --stage plan
 agentmesh flow attach <run-id> --stage execute --text "补充上下文"
 ```
 
+## Reviewer Session 复用
+
+`agentmesh flow resume <run-id>` 恢复的是 AgentMesh Run 中断或待处理的 workflow stage；
+Reviewer Session resume 则是在多次 Run 之间恢复底层 reviewer provider 的会话。两者不是同一件事，
+也不会互相替代。
+
+Reviewer Session 有三种请求模式：
+
+- `interactive_continuous`：用于同一个入口宿主对话里的普通连续 review。每轮仍会重发当前 packet、diff、verification、corrections 和风险；恢复成功的证据标记为 `non-hermetic`，provider 历史只作辅助上下文。
+- `independent`：始终新建 reviewer 会话并绕过本机 session registry。release、安全、合规、审批、首次冷读等正式 gate 必须使用该模式。
+- `auto`：遵循 workflow policy；只有宿主 scope、adapter 能力和安全 registry 都可用时才可能连续恢复，否则安全退化为 fresh。`independent` workflow 不能被 CLI 参数降级。
+
+当前 adapter 证据是保守的：Claude Code 与 OpenCode 当前为 experimental，只验证了同一 probe
+序列内的立即恢复；Codex、Cursor、Antigravity 保持 fresh-only。这里描述的是 reviewer provider
+能力，不限制 Codex、Cursor 或 Antigravity 作为入口宿主传递安全的 conversation scope。
+
+同一入口对话第一次需要连续 review、且宿主没有 native scope 时，先生成 propagated scope：
+
+```bash
+agentmesh sessions scope create --host codex --json
+
+agentmesh run \
+  --workflow <review-workflow-id> \
+  --review <reviewer-agent-id> \
+  --decide current \
+  --review-session-mode interactive_continuous \
+  --host-kind codex \
+  --conversation-scope amscope_v1:11111111-1111-4111-8111-111111111111 \
+  --task "复审当前改动"
+```
+
+后续调用只在同一入口宿主对话内原样复用该 `amscope_v1` token。token 丢失或无效时省略
+`--conversation-scope` 并 fresh；不得从 workspace、repository、worktree、旧 packet、provider state
+或其他宿主对话推断或恢复 scope。不要传递 provider/native session ID。
+
+本机会话管理命令：
+
+```bash
+agentmesh sessions list --json
+agentmesh sessions inspect <session-ref> --json
+agentmesh sessions close <session-ref> --json
+agentmesh sessions close --scope <scope-ref> --json
+agentmesh sessions purge --expired --json
+```
+
+默认生命周期是空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume；provider retention 更短时
+以 provider 为准。过期、不存在、context overflow 或不支持的 adapter 可进行一次有界 fresh recovery；
+认证、权限或 trust 失败不会被静默伪装成 fresh 成功。
+
+Registry 只保存在本机用户配置目录，保存 provider opaque ID 但不进入 packet、logs、errors 或 Studio。
+AgentMesh 不读取 provider token、cookie、keychain、登录态或私有 session store；Studio 只展示不可逆
+`session_ref` 与 reviewer、host、mode、last-used、expiry、hermetic 状态，并提供关闭和过期清理。
+
 ## Packet 文件
 
 每个 workflow run 都落在 `.agentmesh/runs/<run-id>/`，核心文件包括：

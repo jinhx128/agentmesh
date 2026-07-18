@@ -652,6 +652,7 @@
         <a href="#install">安装</a>
         <a href="#adapters">工具</a>
         <a href="#workflow">工作流</a>
+        <a href="#reviewer-sessions">会话</a>
         <a href="#config">配置</a>
       </nav>
     </header>
@@ -980,7 +981,67 @@ agentmesh skill verify --target codex --json</code></pre>
         </div>
       </section>
 
-      <section id="config" class="band">
+      <section id="reviewer-sessions" class="band">
+        <div class="section-inner">
+          <div class="section-title">
+            <h2>Reviewer Session：连续审查，但不牺牲独立门禁</h2>
+            <p>
+              <code>flow resume</code> 恢复 AgentMesh Run 的 workflow stage；Reviewer Session resume
+              在多次 Run 之间恢复 reviewer provider 会话。恢复证据会标记为 <code>non-hermetic</code>，
+              当前 packet、diff 和验证仍会完整重发。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>三种模式</h3>
+              <p>
+                <code>interactive_continuous</code> 用于同一宿主对话的普通连续 review；
+                <code>independent</code> 始终 fresh，release、安全和审批 gate 必须使用；
+                <code>auto</code> 在 scope、adapter 和 registry 不满足时安全退化为 fresh。
+              </p>
+            </article>
+            <article class="card">
+              <h3>当前支持边界</h3>
+              <p>
+                Claude Code 与 OpenCode 当前为 experimental，只验证立即恢复；
+                Codex、Cursor、Antigravity 保持 fresh-only。入口宿主仍可传递安全 scope，
+                不代表对应 reviewer provider 已启用恢复。
+              </p>
+            </article>
+            <article class="card">
+              <h3>安全和生命周期</h3>
+              <p>
+                空闲 2 小时、绝对最多 12 小时、最多 8 次成功 resume。token 丢失时 fresh，
+                不得从 workspace、旧 packet 或 provider state 恢复 scope；原始 provider/native ID
+                不进入 packet、日志或 Studio。
+              </p>
+            </article>
+          </div>
+          <div class="split" style="margin-top: 22px">
+            <pre><code>agentmesh sessions scope create --host codex --json
+agentmesh sessions list --json
+agentmesh sessions inspect &lt;session-ref&gt; --json
+agentmesh sessions close &lt;session-ref&gt; --json
+agentmesh sessions close --scope &lt;scope-ref&gt; --json
+agentmesh sessions purge --expired --json</code></pre>
+            <article class="card">
+              <h3>连续 review</h3>
+              <pre><code>agentmesh run \
+  --workflow &lt;review-workflow-id&gt; \
+  --review &lt;reviewer&gt; \
+  --decide current \
+  --review-session-mode interactive_continuous \
+  --host-kind codex \
+  --conversation-scope amscope_v1:...</code></pre>
+              <p>
+                propagated token 只在同一入口对话内原样传递；认证、权限或 trust 失败不会被静默转成 fresh 成功。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="config">
         <div class="section-inner">
           <div class="section-title">
             <h2>配置和安全边界</h2>

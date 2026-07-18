@@ -2300,11 +2300,16 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
       "Stage 类型",
       "Run、Packet 与 Artifact",
       "Call、Context 与 MCP",
+      "Run Resume 与 Reviewer Session Resume",
     ],
   );
   assert.match(
     concepts.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
     /plan.md[\s\S]*handoff.md[\s\S]*verification.md[\s\S]*findings.md[\s\S]*decision.md/,
+  );
+  assert.match(
+    concepts.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    /flow resume[\s\S]*interactive_continuous[\s\S]*independent[\s\S]*non-hermetic[\s\S]*2 小时[\s\S]*12 小时[\s\S]*8 次/,
   );
   const operations = MANUAL_SECTIONS.find((section) => section.id === "operations");
   assert.ok(operations);
@@ -2314,8 +2319,17 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
       "资源管理",
       "推进运行",
       "审查发布",
+      "Reviewer Session 管理",
       "常见问题",
     ],
+  );
+  assert.match(
+    operations.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    /agentmesh sessions list --json[\s\S]*agentmesh sessions inspect[\s\S]*agentmesh sessions close[\s\S]*agentmesh sessions purge --expired --json/,
+  );
+  assert.match(
+    operations.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    /Claude Code 与 OpenCode 当前为 experimental[\s\S]*Codex、Cursor、Antigravity 保持 fresh-only[\s\S]*不得从 workspace/,
   );
   const architecture = MANUAL_SECTIONS.find((section) => section.id === "architecture");
   assert.ok(architecture);
