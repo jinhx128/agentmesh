@@ -617,7 +617,7 @@
 - 提交：`d0d223c`、`12d1e69`、`a7543c6`、`261cd5d`；本条日志与阶段记录由收尾 commit 固化。
 - 残余限制：当前没有 verified Retry-After extractor，无 structured metadata 时使用有界 jitter；P3.4 再传播 delta/non-hermetic/release 语义。
 
-### P3.4 / Task 13：Structured Delta、Packet Provenance 与 Decide 传播
+### ~~P3.4 / Task 13：Structured Delta、Packet Provenance 与 Decide 传播~~ ✅
 
 **Files:**
 - Modify: `packages/runtime/src/flow/prompt.ts`
@@ -631,8 +631,8 @@
 **Interfaces:**
 - Produces: since-last delta、obsolete-line marker、session provenance in findings/decide/release summary。
 
-- [ ] 写失败测试：resumed prompt 包含当前 request/diff/verification/corrections 和 since-last changed files；旧行号明确失效；persona/system correction rotate；data correction resend。
-- [ ] 实现 bounded delta section：
+- [x] 写失败测试：resumed prompt 包含当前 request/diff/verification/corrections 和 since-last changed files；旧行号明确失效；persona/system correction rotate；data correction resend。
+- [x] 实现 bounded delta section：
 
   ```markdown
   ## Since Last Reviewer Session Turn
@@ -641,10 +641,21 @@
   - authoritative_evidence: current packet request/diff/verification/corrections
   ```
 
-- [ ] Findings、decide prompt、release summary 显示 `hermetic=false` 与原因；independent release 遇 resumed evidence 标 `needs_decision` 或拒绝采信。
-- [ ] Run targeted tests; Expected: PASS。
+- [x] Findings、decide prompt、release summary 显示 `hermetic=false` 与原因；independent release 遇 resumed evidence 标 `needs_decision` 或拒绝采信。
+- [x] Run targeted tests; Expected: PASS。
 
 审查方式：外审；影响 reviewer/decider 事实边界和 release gate。失败不可降级。Commit: `功能(review)：传播 session provenance 与代码增量`
+
+**进度记录（2026-07-18 19:58）：**
+
+- 状态：完成。registry hit 确定 resume 后、provider spawn 前重写实际 prompt；一个 AgentMesh-owned terminal block 同时内联 current diff/verification/active corrections 与 bounded since-last changed-files delta，fresh/independent/fallback-fresh/fresh-isolated 不携带 resumed-only 内容。
+- Delta/证据：changed files 排序去重并有 count/UTF-8 bounds；diff、verification、corrections 分类别保留原始 bytes/truncation，multi-correction 按安全 ID 排序并显式列 omitted count/IDs；helper 重入只替换自身 sentinel block，不截断用户同名标题。
+- Correction：新增 optional `session_impact=data|persona|system`，legacy 默认为 data；data correction 在相同 session 上重发，persona/system add/supersede/removal 改变安全 fingerprint 并 fresh，statement/free text 不入 fingerprint。
+- Provenance/release：findings/decide/release 使用 bounded `completed + usable raw review` StageAttempt projection；失败 resume→成功 fresh 不产生假 non-hermetic risk。Independent release 遇 resumed evidence 增加 `session_resume` needs-decision risk，保持现有 verdict-line contract。
+- 验证：focused 从 206/206 增至 211/211；controller fresh 重跑完整 P3.4 focused 组合 exit 0；Node build、`git diff --check` 通过。
+- 审查：首轮 5 Must/1 Should、follow-up 2 Must 均修复；最终 Spec/Quality PASS、LGTM、0 Must/0 Should/0 Nit；AgentMesh gate `workflow-20260718195634` 已 `decide_completed`。
+- 提交：`3b13a9b`、`b60960d`、`a18bd6c`；本条日志与阶段记录由收尾 commit 固化。
+- 下一步：P3.Z 使用 fake CLI 完成 start→resume→expired→fresh recovery E2E、全量 targeted/泄漏扫描和阶段总门禁。
 
 ### P3.Z / Task 14：P3 阶段收尾校准
 
@@ -806,4 +817,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P3.4` 实现 structured delta、attempt/findings/decide/release provenance 与 independent release 边界。
+- 当前下一步：`P3.Z` 完成 fake CLI E2E、P3 全 targeted/泄漏扫描与阶段总门禁。
