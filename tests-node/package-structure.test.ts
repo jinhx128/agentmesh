@@ -115,6 +115,8 @@ test("canonical AgentMesh skill defines safe cross-host reviewer scope continuit
   }
   for (const requiredContract of [
     "## Cross-Host Reviewer Session Continuity",
+    "All built-in reviewer providers currently execute fresh-only by default",
+    "does not guarantee that a provider session will resume",
     "agentmesh sessions scope create --host codex --json",
     "Read `correlation_token` from the JSON response",
     "--host-kind codex",

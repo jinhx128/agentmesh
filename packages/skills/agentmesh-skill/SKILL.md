@@ -235,6 +235,12 @@ Use the same propagated scope workflow for entry hosts `codex`, `cursor`,
 native host conversation identity, native host conversation identity takes precedence.
 Do not copy that native value into a command, packet, or propagated token.
 
+All built-in reviewer providers currently execute fresh-only by default because
+the P5 real-review quality gate produced no valid resumed arm. The propagated
+scope workflow remains the safe correlation contract for a future re-enabled
+adapter, but passing `--review-session-mode interactive_continuous` does not guarantee that a provider session will resume. Treat a hermetic fresh attempt as
+the expected safe result while the runtime gate remains closed.
+
 For an ordinary continuous review without native identity, the first review in
 the current host conversation creates one opaque `amscope_v1` token and passes
 it to the run:
