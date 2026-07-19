@@ -788,7 +788,7 @@
 
 ## P5. 文档、A/B 质量门禁与默认启用
 
-- [ ] P5 阶段完成门禁：全量测试、五 CLI 矩阵、fresh/reuse A/B、文档、发布门禁全部闭环。
+- [x] P5 阶段完成门禁：全量测试、五 CLI 矩阵、fresh/reuse A/B、文档、发布门禁全部闭环。
 
 ### ~~P5.1 / Task 18：补齐用户文档与变更记录~~ ✅
 
@@ -841,16 +841,25 @@
 - 提交：`2be97c5`；本条计划、progress 和 changelog 由后续 bookkeeping commit 固化。
 - 下一步：P5.Z 执行项目全量测试、文档一致性、release summary 与独立 Release Check。
 
-### P5.Z / Task 20：项目总收尾与发布门禁
+### ~~P5.Z / Task 20：项目总收尾与发布门禁~~ ✅
 
-- [ ] Run: `npm run check:boundaries && npm test && git diff --check`。
-- [ ] 检查 `README.md`、`index.html`、Manual、Skill、capability matrix、changelog、CLI help、Studio copy 一致。
-- [ ] 生成 release summary，聚合 diff、验证、跳过项、accepted/rejected/unresolved findings、残余风险。
-- [ ] 通过 AgentMesh Release Check 外审；普通 review 每 lane 240s 且禁止无关探索，release reviewers 使用 independent fresh。
-- [ ] 只有无未解决 Must Fix、关键验证无跳过、回滚路径明确时给 `Verdict: ready`；否则 `not_ready` 或 `needs_decision`。
-- [ ] 提交最终收尾；版本升级、npm/GitHub/桌面产物发布不在本计划自动授权范围内，需用户另行明确。
+- [x] Run: `npm run check:boundaries && npm test && git diff --check`。
+- [x] 检查 `README.md`、`index.html`、Manual、Skill、capability matrix、changelog、CLI help、Studio copy 一致。
+- [x] 生成 release summary，聚合 diff、验证、跳过项、accepted/rejected/unresolved findings、残余风险。
+- [x] 通过 AgentMesh Release Check 外审；普通 review 每 lane 240s 且禁止无关探索，release reviewers 使用 independent fresh。
+- [x] 只有无未解决 Must Fix、关键验证无跳过、回滚路径明确时给 `Verdict: ready`；否则 `not_ready` 或 `needs_decision`。
+- [x] 提交最终收尾；版本升级、npm/GitHub/桌面产物发布不在本计划自动授权范围内，需用户另行明确。
 
 审查方式：发布门禁外审；不能降级自审。Commit: `收尾：完成 reviewer session 复用门禁`
+
+**进度记录（2026-07-19 10:33）：**
+
+- 状态：完成。发布范围为 `3da31d3..bfeaa69`，共 85 files、14,199 insertions、231 deletions；compact evidence 记录交付行为、阶段 gate、跳过项、残余风险和回滚路径，没有把完整大 diff 注入 reviewer。
+- 验证：fresh `npm run check:boundaries && npm test && git diff --check` exit 0；Node 与 Studio 均重新构建，全量 699/699、0 fail、0 skipped、0 todo。README、落地页、Studio Manual、canonical Skill、capability matrix、changelog、CLI help 与 Studio copy 的模式、fresh-only 默认、TTL 和管理命令一致。
+- 审查：independent Cursor Release Check `workflow-20260719103029` 在 240s lane budget 内返回 LGTM；release summary 显示 diff、verification、review output 均 present、无 missing evidence，decide 为 `Verdict: ready`，状态 `decide_completed`，0 Must / 0 Should / 0 Nit。
+- 边界：真实 resumed A/B 不存在、`tool_reads` 不可观测、签名/公证/updater 产物未构建均明确记录；版本升级、push、npm/GitHub/桌面发布与本机正式安装未执行，也不由本门禁授权。
+- 提交：计划、progress 与 changelog 由 `收尾：完成 reviewer session 复用门禁` 固化。
+- 下一步：实施计划已全部完成；如需版本升级、发布、push 或本机安装，另行执行发布流程。
 
 ---
 
@@ -875,4 +884,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P5.Z` 执行项目总收尾与发布门禁。
+- 当前下一步：实施计划已全部完成；等待另行明确的版本升级、发布、push 或本机安装任务。
