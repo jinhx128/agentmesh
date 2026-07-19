@@ -12,6 +12,11 @@ export interface RuntimeAdapterMetadata {
 
 const DEFAULT_STAGES = [...STAGE_TYPES];
 const DEFAULT_ROLES = ["planner", "worker", "verifier", "reviewer", "decider"];
+// P5 A/B did not produce a valid resumed quality/latency arm for either
+// structurally capable provider. Keep the parser/probe metadata, but do not
+// route real review dispatch through provider sessions until a future gate
+// explicitly promotes an adapter here.
+const REVIEWER_SESSION_RUNTIME_ENABLED_ADAPTERS = new Set(["claude-code-cli", "opencode-cli"]);
 
 const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
   {
@@ -101,6 +106,8 @@ export function isAiCliRuntimeAdapter(idOrAlias: string): boolean {
 export function runtimeAdapterSupportsStructuredSessions(idOrAlias: string): boolean {
   const adapter = lookupRuntimeAdapter(idOrAlias);
   return (
+    process.env.AGENTMESH_ENABLE_EXPERIMENTAL_REVIEWER_SESSIONS === "1" &&
+    REVIEWER_SESSION_RUNTIME_ENABLED_ADAPTERS.has(adapter.id) &&
     adapter.capabilities.supports_resume === true &&
     adapter.capabilities.supports_structured_session_id === true
   );

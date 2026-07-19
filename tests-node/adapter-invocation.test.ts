@@ -17,7 +17,10 @@ import {
   runAgentCallAsync,
   runAgentCallWithTiming,
 } from "../packages/runtime/src/adapters.js";
-import { lookupRuntimeAdapter } from "../packages/runtime/src/adapters/registry.js";
+import {
+  lookupRuntimeAdapter,
+  runtimeAdapterSupportsStructuredSessions,
+} from "../packages/runtime/src/adapters/registry.js";
 
 function makeWorkspace(): string {
   return mkdtempSync(path.join(tmpdir(), "agentmesh-adapter-invocation-"));
@@ -579,6 +582,18 @@ test("fresh-only providers retain their legacy invocation and reject structured 
       parseAdapterStructuredSessionResult(adapter, { exitCode: 0, stdout: "{}" }).failure?.classification,
       "invalid_output",
     );
+  }
+});
+
+test("P5 quality gate keeps every built-in provider session runtime fresh-only", () => {
+  for (const adapter of [
+    "codex-cli",
+    "claude-code-cli",
+    "cursor-agent",
+    "antigravity-cli",
+    "opencode-cli",
+  ]) {
+    assert.equal(runtimeAdapterSupportsStructuredSessions(adapter), false, `${adapter} must stay fresh-only`);
   }
 });
 

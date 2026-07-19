@@ -481,9 +481,11 @@ Reviewer Session 有三种请求模式：
 - `independent`：始终新建 reviewer 会话并绕过本机 session registry。release、安全、合规、审批、首次冷读等正式 gate 必须使用该模式。
 - `auto`：遵循 workflow policy；只有宿主 scope、adapter 能力和安全 registry 都可用时才可能连续恢复，否则安全退化为 fresh。`independent` workflow 不能被 CLI 参数降级。
 
-当前 adapter 证据是保守的：Claude Code 与 OpenCode 当前为 experimental，只验证了同一 probe
-序列内的立即恢复；Codex、Cursor、Antigravity 保持 fresh-only。这里描述的是 reviewer provider
-能力，不限制 Codex、Cursor 或 Antigravity 作为入口宿主传递安全的 conversation scope。
+当前 P5 A/B 未产生合格的 resumed arm：Claude Code 的 independent/fresh 审查能检出缺陷，
+但 continuous structured start 失败；OpenCode 的 structured start 失败，independent 对照又超时。
+因此所有五个内置 reviewer provider 均保持 fresh-only；Claude Code/OpenCode 的底层结构化 probe
+代码仅供后续重新验证，不在默认 runtime 启用。入口宿主仍可传递安全的 conversation scope，
+但这不代表对应 reviewer provider 已启用 resume。
 
 同一入口对话第一次需要连续 review、且宿主没有 native scope 时，先生成 propagated scope：
 

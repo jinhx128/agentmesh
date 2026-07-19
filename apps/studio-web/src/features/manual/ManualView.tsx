@@ -252,7 +252,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
           "查看：agentmesh sessions list --json；详情：agentmesh sessions inspect <session-ref> --json。",
           "关闭：agentmesh sessions close <session-ref> --json，或 agentmesh sessions close --scope <scope-ref> --json。",
           "清理：agentmesh sessions purge --expired --json；Studio Run 详情也提供关闭当前会话和清理已过期会话。",
-          "Claude Code 与 OpenCode 当前为 experimental，只验证立即恢复；Codex、Cursor、Antigravity 保持 fresh-only。",
+          "P5 A/B 未产生合格的 resumed arm，因此所有五个内置 reviewer provider 均保持 fresh-only；Claude Code/OpenCode 只保留底层 probe 供后续重验。",
           "入口宿主可传递安全 conversation scope，不代表对应 reviewer provider 已启用 resume。",
           "propagated token 丢失或无效时 fresh，不得从 workspace、repository、worktree、旧 packet、provider state 或其他宿主对话恢复 scope。",
           "原始 provider/native session ID 不进入 Packet、日志、错误或 Studio；AgentMesh 不读取 provider token、cookie、keychain、登录态或私有 session store。",

@@ -2329,7 +2329,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   );
   assert.match(
     operations.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
-    /Claude Code 与 OpenCode 当前为 experimental[\s\S]*Codex、Cursor、Antigravity 保持 fresh-only[\s\S]*入口宿主可传递安全 conversation scope[\s\S]*不代表对应 reviewer provider 已启用 resume[\s\S]*不得从 workspace/,
+    /所有五个内置 reviewer provider 均保持 fresh-only[\s\S]*入口宿主可传递安全 conversation scope[\s\S]*不代表对应 reviewer provider 已启用 resume[\s\S]*不得从 workspace/,
   );
   const architecture = MANUAL_SECTIONS.find((section) => section.id === "architecture");
   assert.ok(architecture);

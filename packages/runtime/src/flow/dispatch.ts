@@ -23,7 +23,10 @@ import {
   type AgentCallResult,
   type AgentCallRuntimeTiming,
 } from "../adapters.js";
-import { lookupRuntimeAdapter } from "../adapters/registry.js";
+import {
+  lookupRuntimeAdapter,
+  runtimeAdapterSupportsStructuredSessions,
+} from "../adapters/registry.js";
 import {
   closeReviewerSession,
   readReviewerSession,
@@ -947,8 +950,7 @@ async function invokeReviewAgentWithSession(
     sessionDependencies: {
       resolveScope: () => scope,
       supportsStructuredSessions: () => (
-        adapter.capabilities.supports_resume === true
-        && adapter.capabilities.supports_structured_session_id === true
+        runtimeAdapterSupportsStructuredSessions(adapter.id)
         && scope !== undefined
       ),
       registryKey: (resolvedScope) => reviewerSessionKey(agent, resolvedScope, correctionSessionImpact),

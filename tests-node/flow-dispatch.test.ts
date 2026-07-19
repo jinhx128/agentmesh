@@ -19,6 +19,10 @@ import {
   writeRunMutationLock,
 } from "./helpers/write-side-runtime.js";
 
+// Session state-machine integration uses disposable fake CLIs. Production
+// dispatch remains fresh-only unless this explicit experimental gate is set.
+process.env.AGENTMESH_ENABLE_EXPERIMENTAL_REVIEWER_SESSIONS = "1";
+
 function bashString(value: string): string {
   return JSON.stringify(value);
 }
