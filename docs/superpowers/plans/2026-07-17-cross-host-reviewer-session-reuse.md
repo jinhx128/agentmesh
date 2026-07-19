@@ -815,7 +815,7 @@
 - 提交：`4a4fed1`、`8c4fb76`；本条计划、progress 和 changelog 由后续 bookkeeping commit 固化。
 - 下一步：P5.2 对 enabled adapters 执行同 prompt-scope 的 Fresh/Reuse A/B 与安全回归。
 
-### P5.2 / Task 19：执行 Fresh/Reuse A/B 与安全回归
+### ~~P5.2 / Task 19：执行 Fresh/Reuse A/B 与安全回归~~ ✅
 
 **Files:**
 - Modify: `docs/diagnostics/reviewer-session-capability-matrix.md`
@@ -823,12 +823,23 @@
 - Test: `tests-node/reviewer-session-dispatch.test.ts`
 - Test: `tests-node/release-check-flow.test.ts`
 
-- [ ] 对每个 enabled adapter 使用相同 prompt-scope、相同 diff、相同注入缺陷，分别跑 fresh 与 resumed；记录墙钟、tool reads、输出有效性、缺陷检出、false-LGTM。
-- [ ] 验证两个宿主对话、两个 worktree、两个 model、并发 run、native/explicit close、CI/换机 registry miss。
-- [ ] 运行敏感信息扫描：packet/log/error/Studio 中不得匹配 smoke 的 provider session ID。
-- [ ] 若任一 adapter 无显著性能收益或质量回退不可接受，将其保持 experimental/fresh-only；不得为完成发布门禁而放宽指标。
+- [x] 对每个 enabled adapter 使用相同 prompt-scope、相同 diff、相同注入缺陷，分别跑 fresh 与 resumed；记录墙钟、tool reads、输出有效性、缺陷检出、false-LGTM。
+- [x] 验证两个宿主对话、两个 worktree、两个 model、并发 run、native/explicit close、CI/换机 registry miss。
+- [x] 运行敏感信息扫描：packet/log/error/Studio 中不得匹配 smoke 的 provider session ID。
+- [x] 若任一 adapter 无显著性能收益或质量回退不可接受，将其保持 experimental/fresh-only；不得为完成发布门禁而放宽指标。
 
 审查方式：外审；默认启用和质量门禁。失败不可降级。证据：A/B 表、E2E run IDs、测试输出、审查。Commit: `测试：验证 reviewer session 性能与隔离`
+
+**进度记录（2026-07-19 10:14）：**
+
+- 状态：完成，结论为门禁未通过而非复用成功。同一临时 Git fixture、同一 diff/prompt/scope 和同一非 owner 授权绕过缺陷下，Claude/OpenCode continuous fresh 均在 structured start 失败，未生成可安全恢复的 session，因此 resumed arm 按门禁不可执行；`tool_reads` 不可观测，明确记录为 `not_observable`，未伪造收益。
+- 质量：Claude independent fresh `workflow-20260719094407` 31.2s、输出有效、检出缺陷、false-LGTM=false；OpenCode independent `workflow-20260719094438` 在 240s 超时。默认 gate 后 Claude `workflow-20260719095819` 19.9s，以 hermetic fresh 完成并检出缺陷。A/B 表及失败 run 见 capability matrix。
+- 决策：所有五个内置 reviewer provider 默认 fresh-only。Claude/OpenCode 只保留底层 argv/parser probe；仅 disposable fake-CLI 集成测试显式设置 `AGENTMESH_ENABLE_EXPERIMENTAL_REVIEWER_SESSIONS=1`，生产默认不读写 reviewer registry。
+- 安全/隔离：四个 disposable A/B packet root 对 `provider_session_id|sessionID|session_id|amscope_v1:` 扫描为 0，随后全部清理；fake-CLI E2E cleanup=true，provider ID/scope token 泄漏为 0。两 scope、linked worktree、model/fingerprint、并发 lease、close/CAS、expiry、registry miss/unavailable、independent release provenance 均由定向测试覆盖。
+- 验证：TDD RED 命中 Claude runtime 仍启用；GREEN adapter 5/5、fake session flow 3/3。Fresh build 后 10 文件 session/release/package/Studio 定向 211/211；fake-CLI E2E、`npm run check:boundaries`、`git diff --check` 通过。
+- 审查：P5.2 总 gate `workflow-20260719100857` 为 LGTM、0 Must/0 Should/0 Nit 且 `decide_completed`。
+- 提交：`2be97c5`；本条计划、progress 和 changelog 由后续 bookkeeping commit 固化。
+- 下一步：P5.Z 执行项目全量测试、文档一致性、release summary 与独立 Release Check。
 
 ### P5.Z / Task 20：项目总收尾与发布门禁
 
@@ -864,4 +875,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P5.2` 执行 Fresh/Reuse A/B 与安全回归。
+- 当前下一步：`P5.Z` 执行项目总收尾与发布门禁。
