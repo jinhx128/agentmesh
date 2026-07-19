@@ -790,7 +790,7 @@
 
 - [ ] P5 阶段完成门禁：全量测试、五 CLI 矩阵、fresh/reuse A/B、文档、发布门禁全部闭环。
 
-### P5.1 / Task 18：补齐用户文档与变更记录
+### ~~P5.1 / Task 18：补齐用户文档与变更记录~~ ✅
 
 **Files:**
 - Modify: `README.md`
@@ -800,11 +800,20 @@
 - Test: `tests-node/package-structure.test.ts`
 - Test: `tests-node/studio-ui.test.ts`
 
-- [ ] 文档明确 run resume 与 reviewer session resume 区别、continuous/independent、TTL、CLI commands、fresh fallback、non-hermetic、fresh-only adapters 和安全限制。
-- [ ] README/index/manual 命令与 CLI help 一致；不承诺未通过 P0 的 provider。
-- [ ] Run package/UI tests、link/path grep、`git diff --check`; Expected: PASS。
+- [x] 文档明确 run resume 与 reviewer session resume 区别、continuous/independent、TTL、CLI commands、fresh fallback、non-hermetic、fresh-only adapters 和安全限制。
+- [x] README/index/manual 命令与 CLI help 一致；不承诺未通过 P0 的 provider。
+- [x] Run package/UI tests、link/path grep、`git diff --check`; Expected: PASS。
 
 审查方式：外审；功能级用户行为文档。失败策略：重试，低风险纯文案项才可在充分测试后降级自审。Commit: `文档：说明 reviewer session 复用与限制`
+
+**进度记录（2026-07-19 09:31）：**
+
+- 状态：完成。README 提供完整 reviewer session 用户说明；落地页增加能力/模式/生命周期/安全边界与管理命令；Studio Manual 新增 Run resume 与 provider-session resume 区分、session 管理和 adapter enablement 说明。
+- 契约：`interactive_continuous`、`auto`、`independent`、non-hermetic、空闲 2 小时/绝对 12 小时/8 次 resume、一次有界 fresh recovery、auth/permission/trust hard failure、scope denylist 与本机 secret 边界均与设计/CLI help 一致。Claude Code/OpenCode 仅写 experimental，Codex/Cursor/Antigravity 保持 fresh-only，并区分入口宿主 scope 与 reviewer provider resume。
+- TDD/验证：首轮 RED 因三处文档缺失而失败；GREEN full build 后 package/UI 48/48。外审发现 6 Should/2 Nit 后新增定向 RED contract，修复后 focused 2/2、fresh full build + 48/48、`npm run check:boundaries`、命令/help grep 与 `git diff --check` 均通过。
+- 审查：初审 `workflow-20260719015224` 的 6 Should/2 Nit 全部接受并由 `8c4fb76` 关闭；定向 follow-up `workflow-20260719092738` 为 LGTM、0 Must/0 Should/0 Nit；两个 run 均 `decide_completed`。
+- 提交：`4a4fed1`、`8c4fb76`；本条计划、progress 和 changelog 由后续 bookkeeping commit 固化。
+- 下一步：P5.2 对 enabled adapters 执行同 prompt-scope 的 Fresh/Reuse A/B 与安全回归。
 
 ### P5.2 / Task 19：执行 Fresh/Reuse A/B 与安全回归
 
@@ -855,4 +864,4 @@
 
 ## 当前下一步
 
-- 当前下一步：`P5.1` 补齐用户文档与变更记录。
+- 当前下一步：`P5.2` 执行 Fresh/Reuse A/B 与安全回归。
