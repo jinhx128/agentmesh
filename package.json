@@ -1,6 +1,6 @@
 {
   "name": "@jinhx128/agentmesh",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": false,
   "type": "module",
   "description": "CLI for orchestrating local AI coding agents through traceable run packets.",

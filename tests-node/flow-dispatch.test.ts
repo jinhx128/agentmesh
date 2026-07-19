@@ -2515,7 +2515,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       assert.equal(firstLease.workspace, workspace);
       assert.equal(firstLease.scope, "run:owner-lock-flow");
       assert.equal(firstLease.entrypoint, "desktop");
-      assert.equal(firstLease.runtime_version, "0.1.13");
+      assert.equal(firstLease.runtime_version, "0.1.14");
       assert.equal(firstLease.operation, "owner-metadata");
       assert.equal(firstLease.operation_id, "operation-123");
       assert.equal(firstLease.command, "flow.dispatch:plan");
@@ -2535,7 +2535,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       ]);
       assert.equal(attach.status, 1);
       assert.match(attach.stderr, /entrypoint desktop/);
-      assert.match(attach.stderr, /runtime 0\.1\.13/);
+      assert.match(attach.stderr, /runtime 0\.1\.14/);
       assert.match(attach.stderr, /operation_id operation-123/);
       assert.match(attach.stderr, /command flow\.dispatch:plan/);
 
@@ -2546,7 +2546,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
     },
     {
       entrypoint: "desktop",
-      runtimeVersion: "0.1.13",
+      runtimeVersion: "0.1.14",
       operationId: "operation-123",
       command: "flow.dispatch:plan",
       heartbeatIntervalMs: 5,

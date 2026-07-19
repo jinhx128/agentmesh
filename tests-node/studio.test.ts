@@ -2159,7 +2159,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.13");
+  assert.equal(compatibility.current_runtime_version, "0.1.14");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -2168,7 +2168,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 test("Studio server exposes AgentMesh update diagnostics", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.14"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.1.15"), async (releaseUrl) => {
     const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
     process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
     const { server, url } = await listen(createStudioServer({ cwd: workspace }));
@@ -2183,18 +2183,18 @@ test("Studio server exposes AgentMesh update diagnostics", async () => {
       };
 
       assert.equal(update.schema_version, 1);
-      assert.equal(update.current_version, "0.1.13");
-      assert.equal(update.latest_version, "0.1.14");
+      assert.equal(update.current_version, "0.1.14");
+      assert.equal(update.latest_version, "0.1.15");
       assert.equal(update.update_available, true);
       assert.equal(update.cli.status, "update_available");
       assert.deepEqual(update.cli.install_command, [
         "npm",
         "install",
         "-g",
-        "https://example.invalid/agentmesh-0.1.14.tgz",
+        "https://example.invalid/agentmesh-0.1.15.tgz",
       ]);
       assert.equal(update.desktop.status, "manual_update_available");
-      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.14_aarch64.dmg");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.15_aarch64.dmg");
     } finally {
       if (previousReleaseUrl === undefined) {
         delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
