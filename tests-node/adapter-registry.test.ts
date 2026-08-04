@@ -16,7 +16,7 @@ test("runtime adapter registry looks up built-in adapters by id", () => {
 
   assert.equal(codex.id, "codex-cli");
   assert.equal(codex.command, "codex");
-  assert.deepEqual(codex.args, ["exec"]);
+  assert.deepEqual(codex.args, ["exec", "--skip-git-repo-check"]);
   assert.equal(codex.label, "Codex CLI");
 });
 

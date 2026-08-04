@@ -36,7 +36,7 @@ const RUNTIME_ADAPTERS: RuntimeAdapterMetadata[] = [
     aliases: ["codex"],
     description: "Codex CLI.",
     command: "codex",
-    args: ["exec"],
+    args: ["exec", "--skip-git-repo-check"],
     label: "Codex CLI",
     capabilities: aiCliCapabilities(false),
   },

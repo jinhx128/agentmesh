@@ -647,7 +647,7 @@ test("agents add generates a short id and probes before writing", () => {
   assert.match(content, /model = "gpt-5.5"/);
   assert.doesNotMatch(content, /aliases =/);
   assert.match(content, /capabilities = \[ "plan", "execute", "verify", "review", "decide" \]/);
-  assert.match(readFileSync(argsFile, "utf-8"), /exec -m gpt-5\.5/);
+  assert.match(readFileSync(argsFile, "utf-8"), /exec --skip-git-repo-check -m gpt-5\.5/);
   assert.match(readFileSync(stdinFile, "utf-8"), /AgentMesh doctor authentication probe/);
 });
 
@@ -1120,7 +1120,7 @@ test("call invokes built-in AI CLI adapters with model args and prompt content",
 
   assert.equal(result.status, 0, result.stderr);
   const args = readFileSync(argsFile, "utf-8").trim().split(/\s+/);
-  assert.deepEqual(args, ["exec", "-m", "gpt-5.5", "-c", 'model_reasoning_effort="high"', "-"]);
+  assert.deepEqual(args, ["exec", "--skip-git-repo-check", "-m", "gpt-5.5", "-c", 'model_reasoning_effort="high"', "-"]);
   assert.equal(readFileSync(stdinFile, "utf-8"), "hello ai\n");
   assert.equal(readFileSync(envFile, "utf-8"), "present\n");
   assert.equal(readFileSync(outputFile, "utf-8"), "ai output\n");

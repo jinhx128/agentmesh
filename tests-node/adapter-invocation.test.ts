@@ -52,7 +52,7 @@ test("prepares AI CLI invocations with prompt, model, reasoning, and stdout capt
     {
       adapter: "codex-cli",
       effort: "high",
-      command: ["agent", "exec", "-m", "model-a", "-c", 'model_reasoning_effort="high"', "-"],
+      command: ["agent", "exec", "--skip-git-repo-check", "-m", "model-a", "-c", 'model_reasoning_effort="high"', "-"],
       stdin: "hello",
     },
     {
@@ -206,7 +206,7 @@ test("prepares AI CLI prompt-file invocations with file content rather than the 
     {
       adapter: "codex-cli",
       effort: "high",
-      command: ["agent", "exec", "-m", "model-a", "-c", 'model_reasoning_effort="high"', "-"],
+      command: ["agent", "exec", "--skip-git-repo-check", "-m", "model-a", "-c", 'model_reasoning_effort="high"', "-"],
       stdin: "file prompt for ai\n",
     },
     {

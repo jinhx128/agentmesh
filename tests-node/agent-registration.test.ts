@@ -605,7 +605,7 @@ test("agent registration candidate is built from canonical adapter and model", (
   assert.equal(candidate.label, "Codex CLI (gpt-5.5)");
   assert.equal(candidate.adapter, "codex-cli");
   assert.equal(candidate.command, "codex");
-  assert.deepEqual(candidate.args, ["exec"]);
+  assert.deepEqual(candidate.args, ["exec", "--skip-git-repo-check"]);
   assert.equal(candidate.model, "gpt-5.5");
   assert.equal(candidate.reasoning_effort, "high");
   assert.deepEqual(candidate.capabilities, ["plan", "execute", "verify", "review", "decide"]);
