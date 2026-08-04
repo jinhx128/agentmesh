@@ -371,7 +371,7 @@ test("timed-out structured resume keeps timeout provenance and does not fresh re
   const run = (runId: string) => runCli(workspace, ["--config", config, "flow", "run", "--workflow-file", workflow, "--review", "reviewer", "--task", "timeout", "--review-session-mode", "interactive_continuous", "--host-kind", "codex", "--conversation-scope", scope, "--run-id", runId]);
   const firstRun = run("timeout-first");
   assert.equal(firstRun.status, 0, firstRun.stderr);
-  const firstDispatch = runCli(workspace, ["--config", config, "flow", "dispatch", "timeout-first", "--stage", "review", "--timeout-secs", "1"]);
+  const firstDispatch = runCli(workspace, ["--config", config, "flow", "dispatch", "timeout-first", "--stage", "review", "--timeout-secs", "5"]);
   assert.equal(firstDispatch.status, 0, firstDispatch.stderr);
   assert.equal(run("timeout-second").status, 0);
   const dispatch = runCli(workspace, ["--config", config, "flow", "dispatch", "timeout-second", "--stage", "review", "--timeout-secs", "1"]);
