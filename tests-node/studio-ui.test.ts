@@ -2086,10 +2086,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(`${advancedSettingsSource}\n${agentLifecycleSource}`, /hidePickedOptions/);
   assert.match(agentLifecycleSource, /onLoadAgentModels/);
   assert.match(agentLifecycleSource, /loadAgentModelOptionCache/);
-  assert.match(agentLifecycleSource, /AGENT_TOOLS\.map\(\(tool\) => tool\.id\)/);
+  assert.match(agentLifecycleSource, /\[toolId\]/);
+  assert.match(agentLifecycleSource, /\[adapter\]/);
   assert.doesNotMatch(agentLifecycleSource, /void onLoadAgentModels/);
-  assert.doesNotMatch(agentLifecycleSource, /onLoadAgentModels\(currentAdapter\)/);
-  assert.doesNotMatch(agentLifecycleSource, /\[createModalOpen,\s*toolId,\s*onLoadAgentModels\]/);
+  assert.doesNotMatch(agentLifecycleSource, /loadAgentModelOptionCache\([\s\S]*AGENT_TOOLS\.map\(\(tool\) => tool\.id\)/);
   assert.match(agentLifecycleSource, /agentModelSelectData\(toolId, createModelEntry\.options, model\)/);
   assert.match(agentLifecycleSource, /agentModelSelectData\(adapter, modelEntry\.options, model\)/);
   assert.match(agentLifecycleSource, /currentModel\.trim\(\)\.length > 0/);
@@ -2099,16 +2099,14 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(agentLifecycleSource, /suggestAgentName/);
   assert.doesNotMatch(agentLifecycleSource, /agent-create-id-field/);
   assert.doesNotMatch(agentLifecycleSource, /agentIdTouched|changeAgentId|submittedAgentId/);
-  assert.match(agentLifecycleSource, /const createToolDisabled = areAllToolOptionsDisabled\(createToolData\);/);
   assert.match(agentLifecycleSource, /const createModelDisabled = isModelSelectDisabled\(createModelEntry, createModelData\);/);
   assert.match(agentLifecycleSource, /const canCreate = !createModelDisabled && model\.trim\(\)\.length > 0;/);
-  assert.match(agentLifecycleSource, /disabled=\{createToolDisabled\}/);
+  assert.doesNotMatch(agentLifecycleSource, /disabled=\{createToolDisabled\}/);
   assert.match(agentLifecycleSource, /disabled=\{createModelDisabled\}/);
   assert.match(agentLifecycleSource, /disabled=\{modelDisabled\}/);
-  assert.match(agentLifecycleSource, /const toolDisabled = areAllToolOptionsDisabled\(toolData\);/);
-  assert.match(agentLifecycleSource, /function isToolOptionDisabled\(entry: AgentModelOptionCacheEntry\): boolean/);
-  assert.match(agentLifecycleSource, /function areAllToolOptionsDisabled/);
-  assert.doesNotMatch(agentLifecycleSource, /const (?:createToolDisabled|toolDisabled) = isToolSelectDisabled\(/);
+  assert.doesNotMatch(agentLifecycleSource, /disabled=\{toolDisabled\}/);
+  assert.doesNotMatch(agentLifecycleSource, /function isToolOptionDisabled/);
+  assert.doesNotMatch(agentLifecycleSource, /function areAllToolOptionsDisabled/);
   assert.doesNotMatch(agentLifecycleSource, /ANTIGRAVITY_CURRENT_MODEL/);
   assert.doesNotMatch(agentLifecycleSource, /payload\.adapter_id === "antigravity-cli"[\s\S]*\["current"\]/);
   assert.doesNotMatch(agentLifecycleSource, /agent-create-model-help|agent-create-name-help|agent-edit-model-help|agent-edit-name-help/);
@@ -2181,7 +2179,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(editModal, /计划/);
   assert.match(editModal, /决策/);
   const editModalWithoutModels = renderAgentEditModalWithoutModels();
-  assert.match(editModalWithoutModels, /<input[^>]*data-studio-section="agent-edit-tool-select"[^>]*disabled=""/);
+  assert.doesNotMatch(editModalWithoutModels, /<input[^>]*data-studio-section="agent-edit-tool-select"[^>]*disabled=""/);
   assert.match(editModalWithoutModels, /data-studio-section="agent-edit-model-select"/);
   assert.match(editModalWithoutModels, /未发现可选模型/);
   assert.match(editModalWithoutModels, /disabled=""/);
@@ -2584,7 +2582,7 @@ test("Activity load generations ignore stale responses that finish after deletio
   assert.equal(generations.isCurrent(reloadGeneration), true);
 });
 
-test("Agent model option cache preloads every Studio tool once", async () => {
+test("Agent model option cache loads only the requested Studio tool", async () => {
   const calls: string[] = [];
   const cache = await loadAgentModelOptionCache(async (adapter) => {
     calls.push(adapter);
@@ -2603,21 +2601,15 @@ test("Agent model option cache preloads every Studio tool once", async () => {
       source: "adapter-cli",
       models: [`${adapter}-model`],
     };
-  });
+  }, ["codex-cli"]);
 
-  assert.deepEqual(calls.sort(), [
-    "claude-code-cli",
-    "codex-cli",
-    "cursor-agent",
-    "antigravity-cli",
-    "opencode-cli",
-  ].sort());
+  assert.deepEqual(calls, ["codex-cli"]);
   assert.deepEqual(cache["codex-cli"], {
     status: "ready",
     options: ["codex-cli-model"],
   });
   assert.deepEqual(cache["antigravity-cli"], {
-    status: "empty",
+    status: "idle",
     options: [],
   });
 
@@ -2626,12 +2618,39 @@ test("Agent model option cache preloads every Studio tool once", async () => {
     status: "discovered",
     source: "adapter-cli",
     models: adapter === "antigravity-cli" ? ["gemini-3.5-flash"] : [`${adapter}-model`],
-  }));
+  }), ["antigravity-cli"]);
 
   assert.deepEqual(readyCache["antigravity-cli"], {
     status: "ready",
     options: ["gemini-3.5-flash"],
   });
+});
+
+test("Agent model discovery reuses the same adapter request", async () => {
+  let requestCount = 0;
+  const client = createStudioApiClient({
+    baseUrl: "http://studio.test",
+    fetch: async () => {
+      requestCount += 1;
+      return new Response(JSON.stringify({
+        adapter_id: "codex-cli",
+        status: "discovered",
+        source: "adapter-cli",
+        models: ["gpt-5.6-terra"],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const [first, second] = await Promise.all([
+    loadStudioAgentModels(client, "codex-cli"),
+    loadStudioAgentModels(client, "codex-cli"),
+  ]);
+
+  assert.equal(requestCount, 1);
+  assert.deepEqual(second, first);
 });
 
 const testStudioCopyMessages: Partial<Record<StudioCopyKey, string>> = {

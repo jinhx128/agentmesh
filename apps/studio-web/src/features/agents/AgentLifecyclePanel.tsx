@@ -103,7 +103,6 @@ export function AgentLifecyclePanel({
 }: AgentLifecyclePanelProps): ReactElement {
   const { t } = useStudioCopy();
   const [toolId, setToolId] = useState<AgentToolId>("codex-cli");
-  const toolIdRef = useRef<AgentToolId>(toolId);
   const loadAgentModelsRef = useRef(onLoadAgentModels);
   const [model, setModel] = useState("");
   const [createModelCache, setCreateModelCache] = useState<AgentModelOptionCache>(() => emptyAgentModelOptionCache("idle"));
@@ -116,37 +115,32 @@ export function AgentLifecyclePanel({
   const [deleteConfirmationAgent, setDeleteConfirmationAgent] = useState<StudioAgentSummary | null>(null);
   const selectedTool = agentToolById(toolId);
   const createModelEntry = modelOptionCacheEntry(createModelCache, toolId);
-  const createToolData = agentToolSelectData(toolId, createModelCache);
+  const createToolData = agentToolSelectData(toolId);
   const createModelData = agentModelSelectData(toolId, createModelEntry.options, model);
   const createModelPlaceholder = modelSelectPlaceholder(createModelEntry.status, createModelData, t);
-  const createToolDisabled = areAllToolOptionsDisabled(createToolData);
   const createModelDisabled = isModelSelectDisabled(createModelEntry, createModelData);
   const suggestedAgentLabel = suggestAgentLabel(toolId, model);
   const submittedAgentName = agentName.trim() || suggestedAgentLabel;
   const canCreate = !createModelDisabled && model.trim().length > 0;
 
   useEffect(() => {
-    toolIdRef.current = toolId;
-  }, [toolId]);
-
-  useEffect(() => {
     loadAgentModelsRef.current = onLoadAgentModels;
   }, [onLoadAgentModels]);
 
   useEffect(() => {
-    if (!createModalOpen) {
+    if (!createModalOpen || createModelEntry.status !== "idle") {
       return;
     }
     let active = true;
-    setCreateModelCache(emptyAgentModelOptionCache("loading"));
-    void loadAgentModelOptionCache((adapter) => loadAgentModelsRef.current(adapter))
+    setCreateModelCache((current) => setModelCacheEntry(current, toolId, { status: "loading", options: [] }));
+    void loadAgentModelOptionCache((adapter) => loadAgentModelsRef.current(adapter), [toolId])
       .then((nextCache) => {
         if (!active) {
           return;
         }
-        setCreateModelCache(nextCache);
+        setCreateModelCache((current) => setModelCacheEntry(current, toolId, nextCache[toolId]));
         setModel((current) => {
-          const nextModel = firstModelForTool(nextCache, toolIdRef.current);
+          const nextModel = firstModelForTool(nextCache, toolId);
           return current.trim().length > 0
             ? current
             : nextModel;
@@ -154,21 +148,17 @@ export function AgentLifecyclePanel({
       })
       .catch(() => {
         if (active) {
-          setCreateModelCache(emptyAgentModelOptionCache("empty"));
+          setCreateModelCache((current) => setModelCacheEntry(current, toolId, { status: "empty", options: [] }));
         }
       });
     return () => {
       active = false;
     };
-  }, [createModalOpen]);
+  }, [createModalOpen, toolId, createModelEntry.status]);
 
   function changeTool(value: string | null): void {
     const nextToolId = isAgentToolId(value) ? value : "codex-cli";
-    if (isToolOptionDisabled(modelOptionCacheEntry(createModelCache, nextToolId))) {
-      return;
-    }
     const nextModel = firstModelForTool(createModelCache, nextToolId);
-    toolIdRef.current = nextToolId;
     setToolId(nextToolId);
     setModel(nextModel);
     setReasoningEffort(agentToolById(nextToolId).supportsReasoning ? "high" : "none");
@@ -283,7 +273,6 @@ export function AgentLifecyclePanel({
             label={t("tool")}
             value={toolId}
             data={createToolData}
-            disabled={createToolDisabled}
             allowDeselect={false}
             onChange={changeTool}
           />
@@ -503,7 +492,13 @@ export function AgentEditModal({
       size="lg"
       data-studio-section="agent-edit-modal"
     >
-      <AgentEditForm agent={agent} busy={busy} onSubmit={onSubmit} onLoadAgentModels={onLoadAgentModels} />
+      <AgentEditForm
+        key={agent?.id ?? "empty"}
+        agent={agent}
+        busy={busy}
+        onSubmit={onSubmit}
+        onLoadAgentModels={onLoadAgentModels}
+      />
     </Modal>
   );
 }
@@ -522,16 +517,12 @@ export function AgentEditForm({
   const { t } = useStudioCopy();
   const [label, setLabel] = useState(() => agent?.label ?? "");
   const [adapter, setAdapter] = useState(() => agent?.adapter ?? "");
-  const adapterRef = useRef(adapter);
   const loadAgentModelsRef = useRef(onLoadAgentModels);
   const [model, setModel] = useState(() => agent?.model ?? "");
   const [modelCache, setModelCache] = useState<AgentModelOptionCache>(() => emptyAgentModelOptionCache("idle"));
   const [reasoningEffort, setReasoningEffort] = useState(() => agent?.reasoning_effort ?? "");
   const [capabilities, setCapabilities] = useState<string[]>(() => agent?.capabilities ?? []);
-
-  useEffect(() => {
-    adapterRef.current = adapter;
-  }, [adapter]);
+  const modelEntry = modelOptionCacheEntry(modelCache, adapter);
 
   useEffect(() => {
     loadAgentModelsRef.current = onLoadAgentModels;
@@ -542,7 +533,6 @@ export function AgentEditForm({
       return;
     }
     setLabel(agent.label ?? "");
-    adapterRef.current = agent.adapter;
     setAdapter(agent.adapter);
     setModel(agent.model ?? "");
     setModelCache(emptyAgentModelOptionCache("idle"));
@@ -558,19 +548,19 @@ export function AgentEditForm({
   ]);
 
   useEffect(() => {
-    if (!agent) {
+    if (!agent || !isAgentToolId(adapter) || modelEntry.status !== "idle") {
       return;
     }
     let active = true;
-    setModelCache(emptyAgentModelOptionCache("loading"));
-    void loadAgentModelOptionCache((adapter) => loadAgentModelsRef.current(adapter))
+    setModelCache((current) => setModelCacheEntry(current, adapter, { status: "loading", options: [] }));
+    void loadAgentModelOptionCache((adapter) => loadAgentModelsRef.current(adapter), [adapter])
       .then((nextCache) => {
         if (!active) {
           return;
         }
-        setModelCache(nextCache);
+        setModelCache((current) => setModelCacheEntry(current, adapter, nextCache[adapter]));
         setModel((current) => {
-          const nextModel = firstModelForTool(nextCache, adapterRef.current);
+          const nextModel = firstModelForTool(nextCache, adapter);
           return current.trim().length > 0
             ? current
             : nextModel;
@@ -578,33 +568,26 @@ export function AgentEditForm({
       })
       .catch(() => {
         if (active) {
-          setModelCache(emptyAgentModelOptionCache("empty"));
+          setModelCache((current) => setModelCacheEntry(current, adapter, { status: "empty", options: [] }));
         }
       });
     return () => {
       active = false;
     };
-  }, [agent?.id]);
+  }, [agent?.id, adapter, modelEntry.status]);
 
   const selectedTool = agentToolForAdapter(adapter);
-  const modelEntry = modelOptionCacheEntry(modelCache, adapter);
-  const toolData = agentToolSelectData(adapter, modelCache);
+  const toolData = agentToolSelectData(adapter);
   const modelData = agentModelSelectData(adapter, modelEntry.options, model);
   const modelPlaceholder = modelSelectPlaceholder(modelEntry.status, modelData, t);
-  const toolDisabled = areAllToolOptionsDisabled(toolData);
   const modelDisabled = isModelSelectDisabled(modelEntry, modelData);
   const capabilityData = capabilitySelectData(capabilities);
   const canSubmit = agent !== null
     && adapter.length > 0
-    && !modelDisabled
     && model.trim().length > 0;
 
   function changeAdapter(value: string | null): void {
     const nextAdapter = value ?? adapter;
-    if (isToolOptionDisabled(modelOptionCacheEntry(modelCache, nextAdapter))) {
-      return;
-    }
-    adapterRef.current = nextAdapter;
     setAdapter(nextAdapter);
     const nextTool = AGENT_TOOLS.find((tool) => tool.id === nextAdapter);
     if (!nextTool) {
@@ -655,7 +638,6 @@ export function AgentEditForm({
           label={t("tool")}
           value={adapter}
           data={toolData}
-          disabled={toolDisabled}
           allowDeselect={false}
           onChange={changeAdapter}
         />
@@ -711,16 +693,11 @@ export function formatAgentLifecycleOperation(operation: StudioAgentLifecycleOpe
 
 function agentToolSelectData(
   currentAdapter: string,
-  modelCache?: AgentModelOptionCache,
-): Array<{ value: string; label: string; disabled?: boolean }> {
-  const options = AGENT_TOOLS.map((tool) => {
-    const entry = modelCache ? modelOptionCacheEntry(modelCache, tool.id) : undefined;
-    return {
-      value: tool.id,
-      label: tool.label,
-      ...(entry && isToolOptionDisabled(entry) ? { disabled: true } : {}),
-    };
-  });
+): Array<{ value: string; label: string }> {
+  const options = AGENT_TOOLS.map((tool) => ({
+    value: tool.id,
+    label: tool.label,
+  }));
   return currentAdapter && !AGENT_TOOLS.some((tool) => tool.id === currentAdapter)
     ? [...options, { value: currentAdapter, label: currentAdapter }]
     : options;
@@ -746,7 +723,7 @@ function modelOptionsFromPayload(payload: StudioAgentModelListPayload): string[]
 
 export async function loadAgentModelOptionCache(
   onLoadAgentModels: (adapter: string) => Promise<StudioAgentModelListPayload>,
-  toolIds: AgentToolId[] = AGENT_TOOLS.map((tool) => tool.id),
+  toolIds: AgentToolId[],
 ): Promise<AgentModelOptionCache> {
   const cache = emptyAgentModelOptionCache("idle");
   await Promise.all(toolIds.map(async (toolId) => {
@@ -764,6 +741,17 @@ export async function loadAgentModelOptionCache(
     }
   }));
   return cache;
+}
+
+function setModelCacheEntry(
+  cache: AgentModelOptionCache,
+  adapter: AgentToolId,
+  entry: AgentModelOptionCacheEntry,
+): AgentModelOptionCache {
+  return {
+    ...cache,
+    [adapter]: entry,
+  };
 }
 
 function emptyAgentModelOptionCache(status: ModelSelectStatus): AgentModelOptionCache {
@@ -792,14 +780,6 @@ function isModelSelectDisabled(
   data: Array<{ value: string; label: string }>,
 ): boolean {
   return entry.status !== "ready" && data.length === 0;
-}
-
-function isToolOptionDisabled(entry: AgentModelOptionCacheEntry): boolean {
-  return entry.status !== "ready" || entry.options.length === 0;
-}
-
-function areAllToolOptionsDisabled(data: Array<{ disabled?: boolean }>): boolean {
-  return data.length === 0 || data.every((option) => option.disabled === true);
 }
 
 function modelSelectPlaceholder(

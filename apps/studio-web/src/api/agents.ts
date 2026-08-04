@@ -65,6 +65,12 @@ export interface StudioAgentLifecycleOperation {
 
 export type StudioAgentLifecycleResponse = StudioApiJsonResponse<StudioAgentLifecycleOperation>;
 
+const AGENT_MODEL_CACHE_TTL_MS = 60_000;
+const agentModelRequests = new WeakMap<StudioApiClient, Map<string, {
+  expiresAt: number;
+  promise: Promise<StudioAgentModelListPayload>;
+}>>();
+
 export type StudioAgentLifecycleSubmit =
   | { action: "create"; request: StudioAgentCreateRequest }
   | { action: "update"; agentId: string; request: StudioAgentUpdateRequest }
@@ -78,9 +84,26 @@ export function loadStudioAgentModels(
   client: StudioApiClient,
   adapter: string,
 ): Promise<StudioAgentModelListPayload> {
-  return client.getJson<StudioAgentModelListPayload>(
+  const now = Date.now();
+  const requests = agentModelRequests.get(client) ?? new Map();
+  agentModelRequests.set(client, requests);
+  const cached = requests.get(adapter);
+  if (cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+  const promise = client.getJson<StudioAgentModelListPayload>(
     `/api/v1/agents/models?adapter=${encodeURIComponent(adapter)}`,
   );
+  requests.set(adapter, {
+    expiresAt: now + AGENT_MODEL_CACHE_TTL_MS,
+    promise,
+  });
+  void promise.catch(() => {
+    if (requests.get(adapter)?.promise === promise) {
+      requests.delete(adapter);
+    }
+  });
+  return promise;
 }
 
 export function submitStudioAgentLifecycleOperation(
