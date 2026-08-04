@@ -349,6 +349,10 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-data-navigator\s*\{[^}]*overflow:\s*hidden/s);
   assert.match(frontendCss, /\.studio-nav-item\s+\.mantine-Button-label\s*\{[^}]*justify-content:\s*flex-start/s);
   assert.match(frontendCss, /\.studio-nav-item-title\s*\{[^}]*text-align:\s*left/s);
+  assert.match(frontendCss, /\.studio-activity-item-shell\s+\.studio-nav-item\s*\{[^}]*border:\s*1px solid var\(--studio-border\);[^}]*border-radius:\s*var\(--studio-radius-control\);[^}]*background:\s*#f8fafb;/s);
+  assert.match(frontendCss, /\.studio-activity-item-shell\s*\+\s*\.studio-activity-item-shell\s*\{[^}]*margin-top:\s*2px;/s);
+  assert.match(frontendCss, /\.studio-activity-item-shell\s+\.studio-nav-item:hover\s*\{[^}]*border-color:\s*var\(--studio-border-strong\);[^}]*background:\s*#f3f6f8;[^}]*box-shadow:\s*none;/s);
+  assert.match(frontendCss, /\.studio-activity-item-shell\s+\.studio-nav-item\[aria-current="true"\]\s*\{[^}]*border-color:\s*rgb\(62 184 200 \/ 38%\)\s*!important;[^}]*background:\s*var\(--studio-primary-soft\)\s*!important;/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s*\{[^}]*flex:\s*0 0 56px/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
