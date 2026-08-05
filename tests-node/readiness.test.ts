@@ -200,8 +200,10 @@ test("single agent readiness probe accepts an in-memory candidate agent", () => 
   assert.equal(report.id, "codex-gpt-5-5");
   assert.equal(report.classification, "ready");
   assert.equal(report.source_layer, undefined);
-  assert.match(readFileSync(argsFile, "utf-8"), /exec -m gpt-5\.5 -/);
-  assert.match(readFileSync(stdinFile, "utf-8"), /AgentMesh doctor authentication probe/);
+  const probeCommands = readFileSync(argsFile, "utf-8").trim().split("\n");
+  assert.equal(probeCommands[0], "login status");
+  assert.doesNotMatch(probeCommands[0], /-m\s/);
+  assert.equal(readFileSync(stdinFile, "utf-8"), "");
 });
 
 test("registration readiness supports skip verify with an explicit warning", () => {
@@ -787,7 +789,7 @@ test("doctor uses configured adapter args without duplicating defaults", () => {
 
   assert.equal(report.ok, true);
   const args = readFileSync(argsFile, { encoding: "utf-8" }).trim().split(/\s+/);
-  assert.equal(args.filter((arg) => arg === "exec").length, 2);
+  assert.equal(args.filter((arg) => arg === "exec").length, 1);
 });
 
 test("doctor config rejects malformed TOML lines", () => {

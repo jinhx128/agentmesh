@@ -266,9 +266,20 @@ function availabilityStatus(
   if (!probeAuth) {
     return { status: COMMAND_OK_AUTH_NOT_CHECKED, agent: effectiveAgent, toolResolution };
   }
-  let prepared: ReturnType<typeof prepareAdapterInvocation>;
+  const adapterId = lookupRuntimeAdapter(agent.adapter).id;
+  let command: string[];
+  let stdin: string | undefined;
+  let env: Record<string, string> | undefined;
   try {
-    prepared = prepareAdapterInvocation(effectiveAgent, { prompt: DOCTOR_AUTH_PROMPT });
+    if (adapterId === "codex-cli") {
+      command = [effectiveAgent.command, "login", "status"];
+      env = prepareAdapterEnvironment(effectiveAgent);
+    } else {
+      const prepared = prepareAdapterInvocation(effectiveAgent, { prompt: DOCTOR_AUTH_PROMPT });
+      command = prepared.command;
+      stdin = prepared.stdin;
+      env = prepared.env;
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -278,9 +289,9 @@ function availabilityStatus(
       toolResolution,
     };
   }
-  const result = spawnSync(prepared.command[0], prepared.command.slice(1), {
-    env: buildAgentProcessEnv(prepared.env),
-    input: prepared.stdin,
+  const result = spawnSync(command[0], command.slice(1), {
+    env: buildAgentProcessEnv(env),
+    input: stdin,
     encoding: "utf-8",
     timeout: timeoutSecs * 1000,
   });
@@ -299,7 +310,6 @@ function availabilityStatus(
     };
   }
   if (result.status === 0) {
-    const adapterId = lookupRuntimeAdapter(agent.adapter).id;
     if (adapterId === "antigravity-cli" && !hasProbeResponse(result.stdout ?? "")) {
       return {
         status: "auth probe failed (empty response; Antigravity CLI did not confirm model readiness)",

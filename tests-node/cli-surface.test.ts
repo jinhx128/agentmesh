@@ -647,8 +647,10 @@ test("agents add generates a short id and probes before writing", () => {
   assert.match(content, /model = "gpt-5.5"/);
   assert.doesNotMatch(content, /aliases =/);
   assert.match(content, /capabilities = \[ "plan", "execute", "verify", "review", "decide" \]/);
-  assert.match(readFileSync(argsFile, "utf-8"), /exec --skip-git-repo-check -m gpt-5\.5/);
-  assert.match(readFileSync(stdinFile, "utf-8"), /AgentMesh doctor authentication probe/);
+  const probeCommands = readFileSync(argsFile, "utf-8").trim().split("\n");
+  assert.equal(probeCommands.filter((command) => command === "login status").length, 1);
+  assert.doesNotMatch(probeCommands.join("\n"), /exec --skip-git-repo-check -m gpt-5\.5/);
+  assert.equal(readFileSync(stdinFile, "utf-8"), "");
 });
 
 test("agents add resolves user model aliases after adapter discovery misses", () => {
