@@ -2090,6 +2090,11 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(`${advancedSettingsSource}\n${agentLifecycleSource}`, /hidePickedOptions/);
   assert.match(agentLifecycleSource, /onLoadAgentModels/);
   assert.match(agentLifecycleSource, /loadAgentModelOptionCache/);
+  assert.match(agentLifecycleSource, /<AgentEditForm[\s\S]*opened=\{opened\}/);
+  assert.match(agentLifecycleSource, /if \(!opened \|\| !agent \|\| !isAgentToolId\(adapter\)/);
+  assert.match(agentLifecycleSource, /\}, \[opened, agent\?\.id, adapter\]\);/);
+  assert.doesNotMatch(agentLifecycleSource, /\}, \[agent\?\.id, adapter, modelEntry\.status\]\);/);
+  assert.doesNotMatch(agentLifecycleSource, /\}, \[createModalOpen, toolId, createModelEntry\.status\]\);/);
   assert.match(agentLifecycleSource, /\[toolId\]/);
   assert.match(agentLifecycleSource, /\[adapter\]/);
   assert.doesNotMatch(agentLifecycleSource, /void onLoadAgentModels/);
@@ -2906,6 +2911,7 @@ function renderAgentLifecyclePanel(state: AgentLifecycleState): string {
 
 function renderAgentEditModal(): string {
   return renderStudioElement(React.createElement(AgentEditForm, {
+    opened: true,
     agent: {
       id: "claude-claude-opus-4-7",
       label: "Claude Opus 4.7 High",
@@ -2923,6 +2929,7 @@ function renderAgentEditModal(): string {
 
 function renderAgentEditModalWithoutModels(): string {
   return renderStudioElement(React.createElement(AgentEditForm, {
+    opened: true,
     agent: {
       id: "a-empty",
       label: "Antigravity Empty",

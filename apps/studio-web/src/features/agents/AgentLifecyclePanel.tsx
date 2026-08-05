@@ -128,7 +128,7 @@ export function AgentLifecyclePanel({
   }, [onLoadAgentModels]);
 
   useEffect(() => {
-    if (!createModalOpen || createModelEntry.status !== "idle") {
+    if (!createModalOpen || createModelEntry.status === "ready") {
       return;
     }
     let active = true;
@@ -154,7 +154,7 @@ export function AgentLifecyclePanel({
     return () => {
       active = false;
     };
-  }, [createModalOpen, toolId, createModelEntry.status]);
+  }, [createModalOpen, toolId]);
 
   function changeTool(value: string | null): void {
     const nextToolId = isAgentToolId(value) ? value : "codex-cli";
@@ -494,6 +494,7 @@ export function AgentEditModal({
     >
       <AgentEditForm
         key={agent?.id ?? "empty"}
+        opened={opened}
         agent={agent}
         busy={busy}
         onSubmit={onSubmit}
@@ -504,11 +505,13 @@ export function AgentEditModal({
 }
 
 export function AgentEditForm({
+  opened,
   agent,
   busy,
   onSubmit,
   onLoadAgentModels,
 }: {
+  opened: boolean;
   agent: AgentEditableSummary | null;
   busy: boolean;
   onSubmit: (agentId: string, request: StudioAgentUpdateRequest) => Promise<void>;
@@ -548,7 +551,7 @@ export function AgentEditForm({
   ]);
 
   useEffect(() => {
-    if (!agent || !isAgentToolId(adapter) || modelEntry.status !== "idle") {
+    if (!opened || !agent || !isAgentToolId(adapter) || modelEntry.status === "ready") {
       return;
     }
     let active = true;
@@ -574,7 +577,7 @@ export function AgentEditForm({
     return () => {
       active = false;
     };
-  }, [agent?.id, adapter, modelEntry.status]);
+  }, [opened, agent?.id, adapter]);
 
   const selectedTool = agentToolForAdapter(adapter);
   const toolData = agentToolSelectData(adapter);
