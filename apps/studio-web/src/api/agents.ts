@@ -65,7 +65,7 @@ export interface StudioAgentLifecycleOperation {
 
 export type StudioAgentLifecycleResponse = StudioApiJsonResponse<StudioAgentLifecycleOperation>;
 
-const AGENT_MODEL_CACHE_TTL_MS = 60_000;
+const AGENT_MODEL_CACHE_TTL_MS = 15_000;
 const agentModelRequests = new WeakMap<StudioApiClient, Map<string, {
   expiresAt: number;
   promise: Promise<StudioAgentModelListPayload>;

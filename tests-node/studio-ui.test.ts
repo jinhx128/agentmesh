@@ -2662,6 +2662,41 @@ test("Agent model discovery reuses the same adapter request", async () => {
   assert.deepEqual(second, first);
 });
 
+test("Agent model discovery cache expires after fifteen seconds", async () => {
+  const originalDateNow = Date.now;
+  let now = 1_000;
+  let requestCount = 0;
+  Date.now = () => now;
+  try {
+    const client = createStudioApiClient({
+      baseUrl: "http://studio.test",
+      fetch: async () => {
+        requestCount += 1;
+        return new Response(JSON.stringify({
+          adapter_id: "codex-cli",
+          status: "discovered",
+          source: "adapter-cli",
+          models: ["gpt-5.6-terra"],
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await loadStudioAgentModels(client, "codex-cli");
+    now += 14_999;
+    await loadStudioAgentModels(client, "codex-cli");
+    assert.equal(requestCount, 1);
+
+    now += 1;
+    await loadStudioAgentModels(client, "codex-cli");
+    assert.equal(requestCount, 2);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
 const testStudioCopyMessages: Partial<Record<StudioCopyKey, string>> = {
   agents: "Agents",
   exitCodeNotRecorded: "未记录",
