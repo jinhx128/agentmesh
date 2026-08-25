@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import type {
   AgentMeshSkillTarget,
   InstallAgentSkillsResponse,
@@ -56,6 +57,7 @@ export function AgentIntegrationsPanel({
 }: AgentIntegrationsPanelProps): ReactElement {
   const { t } = useStudioCopy();
   const [commandBusy, setCommandBusy] = useState(false);
+  const [skillBusy, setSkillBusy] = useState(false);
   const [forceSkill, setForceSkill] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AgentMeshSkillTarget[]>(["codex"]);
 
@@ -91,8 +93,29 @@ export function AgentIntegrationsPanel({
       expected: true,
     }));
   const selectedCount = selectedTargets.length;
-  const commandResultText = resultText(state.commandResult, t);
-  const skillResultText = resultText(state.skillResult, t);
+  async function installCommandLine(): Promise<void> {
+    setCommandBusy(true);
+    try {
+      await onInstallCommandLineTool();
+      showStudioSuccess("命令行工具安装成功");
+    } catch (error) {
+      showStudioError("命令行工具安装失败", readableError(error, "请稍后重试"));
+    } finally {
+      setCommandBusy(false);
+    }
+  }
+
+  async function installSkills(): Promise<void> {
+    setSkillBusy(true);
+    try {
+      await onInstallAgentSkills({ targets: selectedTargets, force: forceSkill });
+      showStudioSuccess("Agent Skill 安装成功", `已处理 ${selectedTargets.length} 个目标`);
+    } catch (error) {
+      showStudioError("Agent Skill 安装失败", readableError(error, "请稍后重试"));
+    } finally {
+      setSkillBusy(false);
+    }
+  }
 
   return (
     <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
@@ -137,14 +160,10 @@ export function AgentIntegrationsPanel({
               type="button"
               loading={commandBusy}
               disabled={!commandLine.supported}
-              onClick={() => {
-                setCommandBusy(true);
-                void onInstallCommandLineTool().finally(() => setCommandBusy(false));
-              }}
+              onClick={() => void installCommandLine()}
             >
               {t(commandActionKey(commandLine.status))}
             </Button>
-            {commandResultText ? <Alert mt="sm" variant="light">{commandResultText}</Alert> : null}
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="skills" pt="md" data-studio-section="agent-integrations-skill-panel">
@@ -186,15 +205,12 @@ export function AgentIntegrationsPanel({
             <Button
               mt="sm"
               type="button"
-              disabled={selectedTargets.length === 0}
-              onClick={() => void onInstallAgentSkills({
-                targets: selectedTargets,
-                force: forceSkill,
-              })}
+              loading={skillBusy}
+              disabled={selectedTargets.length === 0 || skillBusy}
+              onClick={() => void installSkills()}
             >
               {t("installSelectedSkills")}
             </Button>
-            {skillResultText ? <Alert mt="sm" variant="light">{skillResultText}</Alert> : null}
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="cli-diagnostics" pt="md" data-studio-section="agent-integrations-cli-panel">
@@ -237,27 +253,10 @@ export function AgentIntegrationsPanel({
   );
 }
 
-function resultText(
-  result: InstallCommandLineToolResponse | InstallAgentSkillsResponse | { error: string } | undefined,
-  t: (key: StudioCopyKey) => string,
-): string | undefined {
-  if (!result) {
-    return undefined;
-  }
-  if ("error" in result) {
-    return result.error;
-  }
-  if ("operation" in result) {
-    return `${t("installed")} ${result.command_line_tool.installed_version}`;
-  }
-  const installedCount = result.installed_targets.filter((target) => target.ok).length;
-  const failedTargets = result.installed_targets
-    .filter((target) => !target.ok)
-    .map((target) => target.target);
-  if (failedTargets.length > 0) {
-    return `${t("installedTargets")} ${installedCount}; failed: ${failedTargets.join(", ")}`;
-  }
-  return `${t("installedTargets")} ${installedCount}`;
+function readableError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : fallback;
 }
 
 function commandActionKey(

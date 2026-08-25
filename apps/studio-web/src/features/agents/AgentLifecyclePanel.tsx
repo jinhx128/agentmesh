@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Code,
   Group,
   Modal,
   MultiSelect,
@@ -16,10 +15,10 @@ import {
 } from "@mantine/core";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { workflowStageLabel } from "../../app/stages.js";
 import type {
   StudioAgentCreateRequest,
-  StudioAgentLifecycleOperation,
   StudioAgentLifecycleSubmit,
   StudioAgentModelListPayload,
   StudioAgentSummary,
@@ -83,7 +82,6 @@ export type AgentLifecycleState =
   | {
       status: "ready";
       agents: StudioAgentSummary[];
-      lastOperation?: StudioAgentLifecycleOperation;
     };
 
 export interface AgentLifecyclePanelProps {
@@ -111,6 +109,8 @@ export function AgentLifecyclePanel({
   const [agentNameTouched, setAgentNameTouched] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | undefined>(undefined);
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
   const [editingAgent, setEditingAgent] = useState<StudioAgentSummary | null>(null);
   const [deleteConfirmationAgent, setDeleteConfirmationAgent] = useState<StudioAgentSummary | null>(null);
   const selectedTool = agentToolById(toolId);
@@ -200,19 +200,34 @@ export function AgentLifecyclePanel({
       reasoning_effort: selectedTool.supportsReasoning ? reasoningEffort : "none",
     };
     setBusyAction("create");
+    setCreateError(undefined);
     try {
       await onCreateAgent(request);
+      showStudioSuccess("Agent 创建成功", submittedAgentName);
       resetCreateForm();
       setCreateModalOpen(false);
+    } catch (error) {
+      const message = errorMessage(error, "创建 Agent 失败");
+      setCreateError(message);
+      showStudioError("Agent 创建失败", message);
     } finally {
       setBusyAction(null);
     }
   }
 
-  async function agentAction(action: "delete" | "enable" | "disable", id: string): Promise<void> {
+  async function agentAction(action: "delete" | "enable" | "disable", id: string): Promise<boolean> {
     setBusyAction(`${action}:${id}`);
     try {
       await onAgentAction({ action, agentId: id });
+      showStudioSuccess(agentActionSuccessTitle(action));
+      return true;
+    } catch (error) {
+      const message = errorMessage(error, "Agent 操作失败");
+      if (action === "delete") {
+        setDeleteError(message);
+      }
+      showStudioError(agentActionFailureTitle(action), message);
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -222,8 +237,11 @@ export function AgentLifecyclePanel({
     if (!deleteConfirmationAgent) {
       return;
     }
-    await agentAction("delete", deleteConfirmationAgent.id);
-    setDeleteConfirmationAgent(null);
+    setDeleteError(undefined);
+    const succeeded = await agentAction("delete", deleteConfirmationAgent.id);
+    if (succeeded) {
+      setDeleteConfirmationAgent(null);
+    }
   }
 
   async function updateAgent(agentId: string, request: StudioAgentUpdateRequest): Promise<void> {
@@ -250,7 +268,10 @@ export function AgentLifecyclePanel({
         <Button
           type="button"
           data-studio-section="agent-create-open"
-          onClick={() => setCreateModalOpen(true)}
+          onClick={() => {
+            setCreateError(undefined);
+            setCreateModalOpen(true);
+          }}
         >
           {t("createAgent")}
         </Button>
@@ -310,6 +331,7 @@ export function AgentLifecyclePanel({
           <Button type="button" disabled={busyAction !== null || !canCreate} onClick={() => void createAgent()}>
             {t("createAgent")}
           </Button>
+          {createError ? <Alert color="red" variant="light" role="alert">{createError}</Alert> : null}
         </Stack>
       </Modal>
       <AgentEditModal
@@ -327,6 +349,7 @@ export function AgentLifecyclePanel({
       <AgentDeleteConfirmationModal
         agent={deleteConfirmationAgent}
         busy={busyAction !== null}
+        error={deleteError}
         onCancel={() => setDeleteConfirmationAgent(null)}
         onConfirm={() => void confirmDeleteAgent()}
       />
@@ -378,7 +401,10 @@ export function AgentLifecyclePanel({
                       type="button"
                       data-agent-action="delete"
                       disabled={busyAction !== null}
-                      onClick={() => setDeleteConfirmationAgent(agent)}
+                      onClick={() => {
+                        setDeleteError(undefined);
+                        setDeleteConfirmationAgent(agent);
+                      }}
                     >
                       {t("delete")}
                     </Button>
@@ -388,9 +414,6 @@ export function AgentLifecyclePanel({
             );
           })}
         </Stack>
-      ) : null}
-      {state.status === "ready" && state.lastOperation ? (
-        <Code block className="studio-code-block" mt="md">{formatAgentLifecycleOperation(state.lastOperation)}</Code>
       ) : null}
     </>
   );
@@ -423,11 +446,13 @@ export interface AgentEditableSummary {
 function AgentDeleteConfirmationModal({
   agent,
   busy,
+  error,
   onCancel,
   onConfirm,
 }: {
   agent: AgentEditableSummary | null;
   busy: boolean;
+  error?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }): ReactElement {
@@ -447,6 +472,7 @@ function AgentDeleteConfirmationModal({
       <Stack gap="md">
         <Text>{agent ? `${t("confirmDelete")} Agent：${agentDisplayName(agent)}` : t("confirmDelete")}</Text>
         <Text size="sm" c="dimmed">{t("deleteWarning")}</Text>
+        {error ? <Alert color="red" variant="light" role="alert">{error}</Alert> : null}
         <Group justify="flex-end">
           <Button type="button" variant="light" disabled={busy} onClick={onCancel}>
             {t("cancel")}
@@ -525,6 +551,7 @@ export function AgentEditForm({
   const [modelCache, setModelCache] = useState<AgentModelOptionCache>(() => emptyAgentModelOptionCache("idle"));
   const [reasoningEffort, setReasoningEffort] = useState(() => agent?.reasoning_effort ?? "");
   const [capabilities, setCapabilities] = useState<string[]>(() => agent?.capabilities ?? []);
+  const [submitError, setSubmitError] = useState<string | undefined>(undefined);
   const modelEntry = modelOptionCacheEntry(modelCache, adapter);
 
   useEffect(() => {
@@ -532,7 +559,7 @@ export function AgentEditForm({
   }, [onLoadAgentModels]);
 
   useEffect(() => {
-    if (!agent) {
+    if (!agent || !opened) {
       return;
     }
     setLabel(agent.label ?? "");
@@ -541,6 +568,7 @@ export function AgentEditForm({
     setModelCache(emptyAgentModelOptionCache("idle"));
     setReasoningEffort(agent.reasoning_effort ?? "");
     setCapabilities(agent.capabilities);
+    setSubmitError(undefined);
   }, [
     agent?.id,
     agent?.label,
@@ -548,6 +576,7 @@ export function AgentEditForm({
     agent?.model,
     agent?.reasoning_effort,
     agent?.capabilities.join(","),
+    opened,
   ]);
 
   useEffect(() => {
@@ -608,15 +637,23 @@ export function AgentEditForm({
     if (!agent || !canSubmit) {
       return;
     }
-    await onSubmit(agent.id, {
-      adapter,
-      model: model.trim(),
-      label: label.trim() || undefined,
-      capabilities,
-      reasoning_effort: selectedTool.supportsReasoning
-        ? (reasoningEffort.trim() || "high")
-        : "none",
-    });
+    setSubmitError(undefined);
+    try {
+      await onSubmit(agent.id, {
+        adapter,
+        model: model.trim(),
+        label: label.trim() || undefined,
+        capabilities,
+        reasoning_effort: selectedTool.supportsReasoning
+          ? (reasoningEffort.trim() || "high")
+          : "none",
+      });
+      showStudioSuccess("Agent 保存成功", label.trim() || agent.id);
+    } catch (error) {
+      const message = errorMessage(error, "保存 Agent 失败");
+      setSubmitError(message);
+      showStudioError("Agent 保存失败", message);
+    }
   }
 
   return (
@@ -680,18 +717,9 @@ export function AgentEditForm({
       <Button type="button" disabled={busy || !canSubmit} onClick={() => void submit()}>
         {t("saveChanges")}
       </Button>
+      {submitError ? <Alert color="red" variant="light" role="alert">{submitError}</Alert> : null}
     </Stack>
   );
-}
-
-export function formatAgentLifecycleOperation(operation: StudioAgentLifecycleOperation): string {
-  return [
-    `$ ${operation.command.join(" ")}`,
-    `status: ${operation.status}`,
-    `exit_code: ${operation.exit_code ?? "n/a"}`,
-    operation.stdout ? `\nstdout:\n${operation.stdout.trimEnd()}` : "",
-    operation.stderr ? `\nstderr:\n${operation.stderr.trimEnd()}` : "",
-  ].filter(Boolean).join("\n");
 }
 
 function agentToolSelectData(
@@ -704,6 +732,22 @@ function agentToolSelectData(
   return currentAdapter && !AGENT_TOOLS.some((tool) => tool.id === currentAdapter)
     ? [...options, { value: currentAdapter, label: currentAdapter }]
     : options;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : fallback;
+}
+
+function agentActionSuccessTitle(action: "delete" | "enable" | "disable"): string {
+  if (action === "delete") return "Agent 删除成功";
+  return action === "enable" ? "Agent 已启用" : "Agent 已停用";
+}
+
+function agentActionFailureTitle(action: "delete" | "enable" | "disable"): string {
+  if (action === "delete") return "Agent 删除失败";
+  return action === "enable" ? "Agent 启用失败" : "Agent 停用失败";
 }
 
 function agentModelSelectData(

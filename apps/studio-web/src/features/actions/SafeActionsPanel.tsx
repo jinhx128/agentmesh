@@ -12,6 +12,12 @@ import {
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import {
+  showStudioError,
+  showStudioSuccess,
+  studioMutationError,
+  studioMutationSucceeded,
+} from "../../app/mutation-feedback.js";
 import type {
   StudioMutationAction,
   StudioMutationRequest,
@@ -64,7 +70,9 @@ export function SafeActionsPanel({
         attachText,
       });
     } catch (error) {
-      setInternalState({ status: "error", message: errorMessage(error) });
+      const message = errorMessage(error);
+      setInternalState({ status: "error", message });
+      showStudioError("运行操作失败", message);
       return;
     }
 
@@ -73,8 +81,15 @@ export function SafeActionsPanel({
       const response = await onSubmit(request);
       setInternalState({ status: "result", response });
       onSettled?.(response);
+      if (studioMutationSucceeded(response)) {
+        showStudioSuccess("运行操作成功", actionLabel(action, t));
+      } else {
+        showStudioError("运行操作失败", studioMutationError(response, `${actionLabel(action, t)}失败`));
+      }
     } catch (error) {
-      setInternalState({ status: "error", message: errorMessage(error) });
+      const message = errorMessage(error);
+      setInternalState({ status: "error", message });
+      showStudioError("运行操作失败", message);
     }
   }
 

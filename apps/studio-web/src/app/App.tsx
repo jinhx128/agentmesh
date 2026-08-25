@@ -14,6 +14,11 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "./copy.js";
 import {
+  requireStudioMutationSuccess,
+  showStudioError,
+  showStudioSuccess,
+} from "./mutation-feedback.js";
+import {
   createActivityLoadGeneration,
   settleLatestActivityLoad,
 } from "./activity-load-generation.js";
@@ -32,7 +37,6 @@ import {
   loadStudioAgents,
   submitStudioAgentLifecycleOperation,
   type StudioAgentCreateRequest,
-  type StudioAgentLifecycleOperation,
   type StudioAgentLifecycleSubmit,
   type StudioAgentModelListPayload,
 } from "../api/agents.js";
@@ -288,7 +292,6 @@ export function App(): ReactElement {
 
   function loadAgentLifecycleWithClient(
     client: StudioApiClient,
-    lastOperation?: StudioAgentLifecycleOperation,
   ): void {
     setAgentLifecycleState({ status: "loading" });
     void loadStudioAgents(client)
@@ -296,7 +299,6 @@ export function App(): ReactElement {
         setAgentLifecycleState({
           status: "ready",
           agents,
-          ...(lastOperation ? { lastOperation } : {}),
         });
       })
       .catch((error: unknown) => {
@@ -371,12 +373,15 @@ export function App(): ReactElement {
     try {
       const saved = await saveDesktopAutoUpdatePreference(enabled);
       setDesktopAutoUpdateState({ status: "ready", enabled: saved.auto_check_updates });
+      showStudioSuccess("桌面更新设置已保存", saved.auto_check_updates ? "已开启自动检测" : "已关闭自动检测");
     } catch (error) {
+      const message = normalizeDesktopPreferenceError(error);
       setDesktopAutoUpdateState({
         status: "error",
         enabled: previousEnabled,
-        message: normalizeDesktopPreferenceError(error),
+        message,
       });
+      showStudioError("桌面更新设置保存失败", message);
     }
   }
 
@@ -717,7 +722,8 @@ export function App(): ReactElement {
       action: "create",
       request,
     });
-    loadAgentLifecycleWithClient(apiClient, response.payload);
+    requireStudioMutationSuccess(response, "创建 Agent 失败");
+    loadAgentLifecycleWithClient(apiClient);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
   }
 
@@ -726,7 +732,8 @@ export function App(): ReactElement {
       throw new Error("AgentMesh API is not ready.");
     }
     const response = await submitStudioAgentLifecycleOperation(apiClient, request);
-    loadAgentLifecycleWithClient(apiClient, response.payload);
+    requireStudioMutationSuccess(response, "Agent 操作失败");
+    loadAgentLifecycleWithClient(apiClient);
     void loadStudioCatalog(apiClient).then((catalog) => setCatalogState({ status: "ready", catalog }));
   }
 
@@ -821,6 +828,7 @@ export function App(): ReactElement {
       throw new Error("AgentMesh API is not ready.");
     }
     const response = await installCommandLineTool(apiClient, {});
+    requireStudioMutationSuccess(response, "命令行工具安装失败");
     if (response.ok && "command_line_tool" in response.payload) {
       setAgentIntegrationsState({
         status: "ready",
@@ -842,12 +850,19 @@ export function App(): ReactElement {
       throw new Error("AgentMesh API is not ready.");
     }
     const response = await installAgentSkills(apiClient, request);
+    requireStudioMutationSuccess(response, "Agent Skill 安装失败");
     if (response.ok && "skills" in response.payload) {
       setAgentIntegrationsState({
         status: "ready",
         report: response.payload,
         skillResult: response.payload,
       });
+      const failedTargets = response.payload.installed_targets.filter((target) => !target.ok);
+      if (failedTargets.length > 0) {
+        throw new Error(failedTargets
+          .map((target) => target.error ?? `${target.target} 安装失败`)
+          .join("；"));
+      }
       return;
     }
     setAgentIntegrationsState((current) => current.status === "ready"

@@ -15,6 +15,7 @@ import { useState, type ChangeEvent, type ReactElement } from "react";
 
 import { studioCallKey, type StudioCallSummary } from "../../api/calls.js";
 import { studioRunKey, type StudioRunSummary } from "../../api/runs.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { formatLocalDate, formatLocalTime } from "../../app/time.js";
 import {
   AutoRefreshSelect,
@@ -404,10 +405,13 @@ function ActivityListContent({
         setDeleteError(undefined);
         void onDeleteActivity(deleteItem)
           .then(() => {
+            showStudioSuccess("活动记录已删除", deleteItem.title);
             setDeleteItem(undefined);
           })
           .catch((error: unknown) => {
-            setDeleteError(error instanceof Error ? error.message : "删除失败，请重试");
+            const message = error instanceof Error ? error.message : "删除失败，请重试";
+            setDeleteError(message);
+            showStudioError("活动记录删除失败", message);
           })
           .finally(() => {
             setDeletePending(false);
@@ -539,7 +543,7 @@ export function ActivityDeleteDialog({
     >
       <Stack gap="md">
         <Text size="sm">
-          将删除“{item?.title ?? "这条活动"}”对应的 AgentMesh 管理的记录目录及其中全部文件。外部输出和关联记录不会被删除。
+          仅删除“{item?.title ?? "这条活动"}”这条活动记录。工作区中的输出文件、源码修改，以及关联的其他运行或调用不会被删除。
         </Text>
         {error ? <Alert color="red" variant="light" role="alert">{error}</Alert> : null}
         <Group justify="flex-end" gap="sm">

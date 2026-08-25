@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Code,
   FileInput,
   Group,
   Modal,
@@ -29,6 +28,12 @@ import {
 } from "../agents/AgentLifecyclePanel.js";
 
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import {
+  showStudioError,
+  showStudioSuccess,
+  studioMutationError,
+  studioMutationSucceeded,
+} from "../../app/mutation-feedback.js";
 import { workflowStageLabel, workflowStageListLabel } from "../../app/stages.js";
 import type {
   StudioAgentSummary,
@@ -43,13 +48,11 @@ import type {
 } from "../../api/catalog.js";
 import type {
   StudioWorkflowCreateRequest,
-  StudioWorkflowLifecycleOperation,
   StudioWorkflowLifecycleResponse,
   StudioWorkflowUpdateRequest,
 } from "../../api/workflows.js";
 import type {
   StudioPresetCreateRequest,
-  StudioPresetLifecycleOperation,
   StudioPresetLifecycleResponse,
   StudioPresetUpdateRequest,
 } from "../../api/presets.js";
@@ -102,6 +105,7 @@ export function CatalogView({
   const [editingWorkflow, setEditingWorkflow] = useState<StudioCatalogWorkflow | null>(null);
   const [editingPreset, setEditingPreset] = useState<StudioCatalogPreset | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationTarget | null>(null);
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
 
   if (state.status === "loading") {
     return (
@@ -144,7 +148,7 @@ export function CatalogView({
       });
       return;
     }
-    await runAgentAction(action, agentId);
+    await runAgentAction(action, agentId).catch(() => {});
   }
 
   async function runAgentAction(
@@ -157,6 +161,11 @@ export function CatalogView({
     setBusyAgentAction(`${action}:${agentId}`);
     try {
       await agentLifecycle.onAgentAction({ action, agentId });
+      showStudioSuccess(agentActionSuccessTitle(action));
+    } catch (error) {
+      const message = readableError(error, "Agent 操作失败");
+      showStudioError(agentActionFailureTitle(action), message);
+      throw error;
     } finally {
       setBusyAgentAction(null);
     }
@@ -167,15 +176,30 @@ export function CatalogView({
       return;
     }
     setBusyDeleteAction(true);
+    setDeleteError(undefined);
     try {
       if (deleteConfirmation.kind === "Agent") {
         await runAgentAction("delete", deleteConfirmation.id);
       } else if (deleteConfirmation.kind === "Workflow" && onDeleteWorkflow) {
-        await onDeleteWorkflow(deleteConfirmation.id);
+        const response = await onDeleteWorkflow(deleteConfirmation.id);
+        if (!studioMutationSucceeded(response)) {
+          throw new Error(studioMutationError(response, "删除 Workflow 失败"));
+        }
+        showStudioSuccess("Workflow 删除成功", deleteConfirmation.label);
       } else if (deleteConfirmation.kind === "Preset" && onDeletePreset) {
-        await onDeletePreset(deleteConfirmation.id);
+        const response = await onDeletePreset(deleteConfirmation.id);
+        if (!studioMutationSucceeded(response)) {
+          throw new Error(studioMutationError(response, "删除 Preset 失败"));
+        }
+        showStudioSuccess("Preset 删除成功", deleteConfirmation.label);
       }
       setDeleteConfirmation(null);
+    } catch (error) {
+      const message = readableError(error, `删除 ${deleteConfirmation.kind} 失败`);
+      setDeleteError(message);
+      if (deleteConfirmation.kind !== "Agent") {
+        showStudioError(`${deleteConfirmation.kind} 删除失败`, message);
+      }
     } finally {
       setBusyDeleteAction(false);
     }
@@ -333,7 +357,11 @@ export function CatalogView({
       <DeleteConfirmationModal
         target={deleteConfirmation}
         busy={busyDeleteAction || busyAgentAction !== null}
-        onCancel={() => setDeleteConfirmation(null)}
+        error={deleteError}
+        onCancel={() => {
+          setDeleteError(undefined);
+          setDeleteConfirmation(null);
+        }}
         onConfirm={() => void confirmDelete()}
       />
     </Paper>
@@ -530,7 +558,6 @@ function WorkflowLifecyclePanel({
   const [manualWorkflowFields, setManualWorkflowFields] = useState<WorkflowManualFields>(emptyWorkflowManualFields());
   const [busy, setBusy] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [lastOperation, setLastOperation] = useState<StudioWorkflowLifecycleOperation | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const trimmedWorkflowToml = workflowToml.trim();
   const canSubmitManualWorkflow = manualWorkflowFields.name.trim().length > 0
@@ -574,15 +601,21 @@ function WorkflowLifecyclePanel({
           ? { source_name: sourceNameFromId(manualWorkflowFields.name, "workflow") }
           : workflowTomlFile ? { source_name: workflowTomlFile.name } : {}),
       });
-      setLastOperation(response.payload);
       if (response.ok && response.payload.status === "succeeded") {
+        showStudioSuccess("Workflow 创建成功", manualWorkflowFields.name || response.payload.workflow_id);
         setWorkflowTomlFile(null);
         setWorkflowToml("");
         setManualWorkflowFields(emptyWorkflowManualFields());
         setCreateModalOpen(false);
+      } else {
+        const message = studioMutationError(response, "创建 Workflow 失败");
+        setErrorMessage(message);
+        showStudioError("Workflow 创建失败", message);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = readableError(error, "创建 Workflow 失败");
+      setErrorMessage(message);
+      showStudioError("Workflow 创建失败", message);
     } finally {
       setBusy(false);
     }
@@ -628,12 +661,9 @@ function WorkflowLifecyclePanel({
             onSourceFileChange={(file) => void loadWorkflowToml(file)}
             onSubmit={() => void createWorkflow()}
           />
+          {errorMessage ? <Alert color="red" variant="light" role="alert">{errorMessage}</Alert> : null}
         </Stack>
       </Modal>
-      {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-      {lastOperation ? (
-        <Code block className="studio-code-block">{formatWorkflowLifecycleOperation(lastOperation)}</Code>
-      ) : null}
     </Stack>
   );
 }
@@ -660,7 +690,6 @@ function PresetLifecyclePanel({
   });
   const [busy, setBusy] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [lastOperation, setLastOperation] = useState<StudioPresetLifecycleOperation | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const trimmedPresetToml = presetToml.trim();
   const canSubmitManualPreset = manualPresetFields.name.trim().length > 0
@@ -704,8 +733,8 @@ function PresetLifecyclePanel({
           ? { source_name: sourceNameFromId(manualPresetFields.name, "preset") }
           : presetTomlFile ? { source_name: presetTomlFile.name } : {}),
       });
-      setLastOperation(response.payload);
       if (response.ok && response.payload.status === "succeeded") {
+        showStudioSuccess("Preset 创建成功", manualPresetFields.name || response.payload.preset_id);
         setPresetTomlFile(null);
         setPresetToml("");
         setManualPresetFields({
@@ -716,9 +745,15 @@ function PresetLifecyclePanel({
           stageAssignments: {},
         });
         setCreateModalOpen(false);
+      } else {
+        const message = studioMutationError(response, "创建 Preset 失败");
+        setErrorMessage(message);
+        showStudioError("Preset 创建失败", message);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = readableError(error, "创建 Preset 失败");
+      setErrorMessage(message);
+      showStudioError("Preset 创建失败", message);
     } finally {
       setBusy(false);
     }
@@ -766,12 +801,9 @@ function PresetLifecyclePanel({
             onSourceFileChange={(file) => void loadPresetToml(file)}
             onSubmit={() => void createPreset()}
           />
+          {errorMessage ? <Alert color="red" variant="light" role="alert">{errorMessage}</Alert> : null}
         </Stack>
       </Modal>
-      {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-      {lastOperation ? (
-        <Code block className="studio-code-block">{formatPresetLifecycleOperation(lastOperation)}</Code>
-      ) : null}
     </Stack>
   );
 }
@@ -793,7 +825,6 @@ function WorkflowEditModal({
   const [workflowSourceMode, setWorkflowSourceMode] = useState<TomlSourceMode>("manual");
   const [manualWorkflowFields, setManualWorkflowFields] = useState<WorkflowManualFields>(emptyWorkflowManualFields());
   const [busy, setBusy] = useState(false);
-  const [lastOperation, setLastOperation] = useState<StudioWorkflowLifecycleOperation | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const trimmedWorkflowToml = workflowToml.trim();
   const canSubmitManualWorkflow = manualWorkflowFields.name.trim().length > 0
@@ -813,7 +844,6 @@ function WorkflowEditModal({
     setWorkflowToml("");
     setWorkflowSourceMode("manual");
     setManualWorkflowFields(workflowToManualFields(workflow));
-    setLastOperation(undefined);
     setErrorMessage(undefined);
   }, [opened, workflow]);
 
@@ -852,12 +882,18 @@ function WorkflowEditModal({
           ? { source_name: sourceNameFromId(manualWorkflowFields.name, "workflow") }
           : workflowTomlFile ? { source_name: workflowTomlFile.name } : {}),
       });
-      setLastOperation(response.payload);
       if (response.ok && response.payload.status === "succeeded") {
+        showStudioSuccess("Workflow 保存成功", manualWorkflowFields.name || workflow.name || workflow.workflowId);
         onClose();
+      } else {
+        const message = studioMutationError(response, "保存 Workflow 失败");
+        setErrorMessage(message);
+        showStudioError("Workflow 保存失败", message);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = readableError(error, "保存 Workflow 失败");
+      setErrorMessage(message);
+      showStudioError("Workflow 保存失败", message);
     } finally {
       setBusy(false);
     }
@@ -894,9 +930,6 @@ function WorkflowEditModal({
           onSubmit={() => void updateWorkflow()}
         />
         {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-        {lastOperation ? (
-          <Code block className="studio-code-block">{formatWorkflowLifecycleOperation(lastOperation)}</Code>
-        ) : null}
       </Stack>
     </Modal>
   );
@@ -923,7 +956,6 @@ function PresetEditModal({
   const [presetSourceMode, setPresetSourceMode] = useState<TomlSourceMode>("manual");
   const [manualPresetFields, setManualPresetFields] = useState<PresetManualFields>(emptyPresetManualFields());
   const [busy, setBusy] = useState(false);
-  const [lastOperation, setLastOperation] = useState<StudioPresetLifecycleOperation | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const trimmedPresetToml = presetToml.trim();
   const canSubmitManualPreset = manualPresetFields.name.trim().length > 0
@@ -943,7 +975,6 @@ function PresetEditModal({
     setPresetToml("");
     setPresetSourceMode("manual");
     setManualPresetFields(presetToManualFields(preset));
-    setLastOperation(undefined);
     setErrorMessage(undefined);
   }, [opened, preset]);
 
@@ -982,12 +1013,18 @@ function PresetEditModal({
           ? { source_name: sourceNameFromId(manualPresetFields.name, "preset") }
           : presetTomlFile ? { source_name: presetTomlFile.name } : {}),
       });
-      setLastOperation(response.payload);
       if (response.ok && response.payload.status === "succeeded") {
+        showStudioSuccess("Preset 保存成功", manualPresetFields.name || preset.name || preset.presetId);
         onClose();
+      } else {
+        const message = studioMutationError(response, "保存 Preset 失败");
+        setErrorMessage(message);
+        showStudioError("Preset 保存失败", message);
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = readableError(error, "保存 Preset 失败");
+      setErrorMessage(message);
+      showStudioError("Preset 保存失败", message);
     } finally {
       setBusy(false);
     }
@@ -1026,9 +1063,6 @@ function PresetEditModal({
           onSubmit={() => void updatePreset()}
         />
         {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-        {lastOperation ? (
-          <Code block className="studio-code-block">{formatPresetLifecycleOperation(lastOperation)}</Code>
-        ) : null}
       </Stack>
     </Modal>
   );
@@ -1433,28 +1467,6 @@ function sourceNameFromId(value: string, fallback: string): string {
   return `${slug || fallback}.toml`;
 }
 
-function formatPresetLifecycleOperation(operation: StudioPresetLifecycleOperation): string {
-  return [
-    `$ ${operation.command.join(" ")}`,
-    `status: ${operation.status}`,
-    `exit_code: ${operation.exit_code ?? "n/a"}`,
-    operation.preset_id ? `preset_id: ${operation.preset_id}` : "",
-    operation.stdout ? `\nstdout:\n${operation.stdout.trimEnd()}` : "",
-    operation.stderr ? `\nstderr:\n${operation.stderr.trimEnd()}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-function formatWorkflowLifecycleOperation(operation: StudioWorkflowLifecycleOperation): string {
-  return [
-    `$ ${operation.command.join(" ")}`,
-    `status: ${operation.status}`,
-    `exit_code: ${operation.exit_code ?? "n/a"}`,
-    operation.workflow_id ? `workflow_id: ${operation.workflow_id}` : "",
-    operation.stdout ? `\nstdout:\n${operation.stdout.trimEnd()}` : "",
-    operation.stderr ? `\nstderr:\n${operation.stderr.trimEnd()}` : "",
-  ].filter(Boolean).join("\n");
-}
-
 function catalogTabCount(
   tabId: CatalogTabId,
   agentCount: number,
@@ -1785,6 +1797,22 @@ function EmptyCatalogRow({ label }: { label: string }): ReactElement {
   return <Alert variant="light" color="gray">{label}</Alert>;
 }
 
+function readableError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : fallback;
+}
+
+function agentActionSuccessTitle(action: "delete" | "enable" | "disable"): string {
+  if (action === "delete") return "Agent 删除成功";
+  return action === "enable" ? "Agent 已启用" : "Agent 已停用";
+}
+
+function agentActionFailureTitle(action: "delete" | "enable" | "disable"): string {
+  if (action === "delete") return "Agent 删除失败";
+  return action === "enable" ? "Agent 启用失败" : "Agent 停用失败";
+}
+
 function PanelHeader({ title, meta }: { title: string; meta: string }): ReactElement {
   return (
     <Group justify="space-between" align="flex-start" gap="md">
@@ -1797,11 +1825,13 @@ function PanelHeader({ title, meta }: { title: string; meta: string }): ReactEle
 function DeleteConfirmationModal({
   target,
   busy,
+  error,
   onCancel,
   onConfirm,
 }: {
   target: DeleteConfirmationTarget | null;
   busy: boolean;
+  error?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }): ReactElement {
@@ -1823,6 +1853,7 @@ function DeleteConfirmationModal({
           {target ? `${t("confirmDelete")} ${target.kind}：${target.label}` : t("confirmDelete")}
         </Text>
         <Text size="sm" c="dimmed">{t("deleteWarning")}</Text>
+        {error ? <Alert color="red" variant="light" role="alert">{error}</Alert> : null}
         <Group justify="flex-end">
           <Button type="button" variant="light" disabled={busy} onClick={onCancel}>
             {t("cancel")}

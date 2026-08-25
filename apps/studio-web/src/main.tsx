@@ -1,6 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "@mantine/core/styles.layer.css";
+import { Notifications } from "@mantine/notifications";
+import "@mantine/notifications/styles.layer.css";
 import { App } from "./app/App";
 import { StudioThemeProvider } from "./app/StudioThemeProvider";
 import "./styles.css";
@@ -14,6 +16,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <React.StrictMode>
     <StudioThemeProvider>
+      <Notifications position="top-right" limit={4} />
       <App />
     </StudioThemeProvider>
   </React.StrictMode>,

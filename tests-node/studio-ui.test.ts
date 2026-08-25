@@ -34,6 +34,7 @@ import {
   loadStudioAgentModels,
   loadStudioAgents,
   submitStudioAgentLifecycleOperation,
+  type StudioAgentLifecycleOperation,
   type StudioAgentModelListPayload,
   type StudioAgentSummary,
 } from "../apps/studio-web/src/api/agents.js";
@@ -161,7 +162,6 @@ import {
 import {
   AgentEditForm,
   AgentLifecyclePanel,
-  formatAgentLifecycleOperation,
   loadAgentModelOptionCache,
   suggestAgentLabel,
   type AgentLifecyclePanelProps,
@@ -775,7 +775,6 @@ test("Catalog view renders Mantine tabs, cards, diagnostics and states", () => {
     state: {
       status: "ready",
       agents: studioAgentsFixture(),
-      lastOperation: agentOperationFixture(),
     },
     onCreateAgent: async () => {},
     onAgentAction: async () => {},
@@ -1162,7 +1161,8 @@ test("Unified activity groups preview five items and keep partial data visible o
   }));
   assert.match(deleteDialog, /删除活动记录/);
   assert.match(deleteDialog, /可用调用记录/);
-  assert.match(deleteDialog, /AgentMesh 管理的记录目录/);
+  assert.match(deleteDialog, /仅删除.*这条活动记录/);
+  assert.match(deleteDialog, /工作区中的输出文件、源码修改，以及关联的其他运行或调用不会被删除/);
   assert.match(deleteDialog, /目录暂时无法删除/);
   assert.match(deleteDialog, /正在删除/);
   assert.match(deleteDialog, /disabled/);
@@ -2081,6 +2081,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   const agentLifecycleSource = readFileSync(path.resolve("apps/studio-web/src/features/agents/AgentLifecyclePanel.tsx"), "utf-8");
   const agentServerSource = readFileSync(path.resolve("packages/app-server/src/agent-lifecycle.ts"), "utf-8");
   const catalogViewSource = readFileSync(path.resolve("apps/studio-web/src/features/catalog/CatalogView.tsx"), "utf-8");
+  const appSource = readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8");
   const themeSource = readFileSync(path.resolve("apps/studio-web/src/app/StudioThemeProvider.tsx"), "utf-8");
   const copySource = readFileSync(path.resolve("apps/studio-web/src/app/copy.ts"), "utf-8");
   assert.match(themeSource, /Select\.extend\(\{[\s\S]*defaultProps:\s*\{[\s\S]*searchable:\s*true/s);
@@ -2088,6 +2089,19 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(themeSource, /MultiSelect\.extend\(\{[\s\S]*defaultProps:\s*\{[\s\S]*hidePickedOptions:\s*false/s);
   assert.match(themeSource, /MultiSelect\.extend\(\{[\s\S]*defaultProps:\s*\{[\s\S]*withCheckIcon:\s*true/s);
   assert.doesNotMatch(`${advancedSettingsSource}\n${agentLifecycleSource}`, /hidePickedOptions/);
+  assert.match(appSource, /requireStudioMutationSuccess/);
+  assert.match(agentLifecycleSource, /showStudioSuccess/);
+  assert.match(agentLifecycleSource, /showStudioError/);
+  assert.match(agentLifecycleSource, /setCreateError/);
+  assert.match(agentLifecycleSource, /setSubmitError/);
+  assert.doesNotMatch(agentLifecycleSource, /formatAgentLifecycleOperation|state\.lastOperation/);
+  assert.match(catalogViewSource, /studioMutationSucceeded/);
+  assert.match(catalogViewSource, /studioMutationError/);
+  assert.doesNotMatch(catalogViewSource, /formatWorkflowLifecycleOperation|formatPresetLifecycleOperation/);
+  const workflowCreateModalSource = catalogViewSource.match(/data-studio-section="workflow-create-modal"[\s\S]*?<\/Modal>/)?.[0] ?? "";
+  const presetCreateModalSource = catalogViewSource.match(/data-studio-section="preset-create-modal"[\s\S]*?<\/Modal>/)?.[0] ?? "";
+  assert.match(workflowCreateModalSource, /errorMessage \? <Alert/);
+  assert.match(presetCreateModalSource, /errorMessage \? <Alert/);
   assert.match(agentLifecycleSource, /onLoadAgentModels/);
   assert.match(agentLifecycleSource, /loadAgentModelOptionCache/);
   assert.match(agentLifecycleSource, /<AgentEditForm[\s\S]*opened=\{opened\}/);
@@ -2160,7 +2174,6 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   const lifecycle = renderAgentLifecyclePanel({
     status: "ready",
     agents: studioAgentsFixture(),
-    lastOperation: agentOperationFixture(),
   });
   assert.match(lifecycle, /创建 Agent/);
   assert.match(lifecycle, /data-studio-section="agent-create-open"/);
@@ -2168,7 +2181,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(lifecycle, /<p[^>]*>Codex GPT-5\.5<\/p>[\s\S]*?<p[^>]*>codex · gpt-5\.5/);
   assert.doesNotMatch(lifecycle, /<p[^>]*>codex-gpt-5-5<\/p>[\s\S]*?<p[^>]*>Codex GPT-5\.5 · codex/);
   assert.match(lifecycle, /data-agent-action="edit"/);
-  assert.match(lifecycle, /agentmesh agents add/);
+  assert.doesNotMatch(lifecycle, /agentmesh agents add/);
   const editModal = renderAgentEditModal();
   assert.match(editModal, /data-studio-section="agent-edit-tool-select"/);
   assert.match(editModal, /data-studio-section="agent-edit-id-field"/);
@@ -2366,6 +2379,41 @@ test("browser Studio keeps native updater APIs unavailable", async () => {
   );
   assert.match(preferencesSource, /get_desktop_preferences|set_desktop_preferences/);
   assert.doesNotMatch(preferencesSource, /localStorage|sessionStorage|indexedDB/);
+});
+
+test("Studio write operations use shared toast feedback while preserving diagnostics", () => {
+  const sources = {
+    app: readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8"),
+    advanced: readFileSync(path.resolve("apps/studio-web/src/features/settings/AdvancedSettingsPanel.tsx"), "utf-8"),
+    integrations: readFileSync(path.resolve("apps/studio-web/src/features/settings/AgentIntegrationsPanel.tsx"), "utf-8"),
+    activity: readFileSync(path.resolve("apps/studio-web/src/features/navigation/ActivityNavigator.tsx"), "utf-8"),
+    call: readFileSync(path.resolve("apps/studio-web/src/features/calls/CallDetailView.tsx"), "utf-8"),
+    run: readFileSync(path.resolve("apps/studio-web/src/features/runs/RunOverview.tsx"), "utf-8"),
+    actions: readFileSync(path.resolve("apps/studio-web/src/features/actions/SafeActionsPanel.tsx"), "utf-8"),
+    about: readFileSync(path.resolve("apps/studio-web/src/features/settings/SettingsAboutPanel.tsx"), "utf-8"),
+  };
+
+  for (const source of [
+    sources.advanced,
+    sources.integrations,
+    sources.activity,
+    sources.call,
+    sources.run,
+    sources.actions,
+  ]) {
+    assert.match(source, /showStudioSuccess/);
+    assert.match(source, /showStudioError/);
+  }
+  assert.match(sources.app, /requireStudioMutationSuccess/);
+  assert.match(sources.app, /showStudioSuccess\("桌面更新设置已保存"/);
+  assert.match(sources.app, /showStudioError\("桌面更新设置保存失败"/);
+  assert.doesNotMatch(sources.advanced, /const \[saved, setSaved\]/);
+  assert.doesNotMatch(sources.integrations, /commandResultText|skillResultText/);
+  assert.match(sources.actions, /id="mutation-output"/);
+  assert.match(sources.about, /state\.status === "downloading"/);
+  assert.match(sources.activity, /setDeleteError/);
+  assert.match(sources.call, /submission\.status === "error"/);
+  assert.match(sources.run, /setActionError/);
 });
 
 test("desktop updater errors preserve safe native diagnostics", () => {
@@ -3530,7 +3578,7 @@ function agentModelsFixture(adapter = "claude-code-cli"): StudioAgentModelListPa
   };
 }
 
-function agentOperationFixture(): NonNullable<Extract<AgentLifecycleState, { status: "ready" }>["lastOperation"]> {
+function agentOperationFixture(): StudioAgentLifecycleOperation {
   return {
     operation_id: "op-1",
     action: "create",

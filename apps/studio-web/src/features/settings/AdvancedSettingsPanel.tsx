@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useState, type ReactElement } from "react";
 import { useStudioCopy } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import type {
   StudioAdvancedSettingsPayload,
   StudioAdvancedSettingsUpdateRequest,
@@ -66,7 +67,6 @@ export function AdvancedSettingsPanel({
   const [requireUserGate, setRequireUserGate] = useState(() => initialFormSettings?.execution_policy.require_user_gate ?? false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
-  const [saved, setSaved] = useState(false);
   const settings = state.status === "ready" ? state.settings : undefined;
 
   useEffect(() => {
@@ -83,13 +83,11 @@ export function AdvancedSettingsPanel({
     setAdapterTimeout(numberText(formSettings.run_defaults.adapter_timeout_secs));
     setAllowAutoDispatch(formSettings.execution_policy.allow_auto_dispatch ?? false);
     setRequireUserGate(formSettings.execution_policy.require_user_gate ?? false);
-    setSaved(false);
     setErrorMessage(undefined);
   }, [settings]);
 
   async function save(): Promise<void> {
     setBusy(true);
-    setSaved(false);
     setErrorMessage(undefined);
     try {
       await onSaveAdvancedSettings({
@@ -111,9 +109,11 @@ export function AdvancedSettingsPanel({
           require_user_gate: requireUserGate,
         },
       });
-      setSaved(true);
+      showStudioSuccess("高级设置已保存");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const message = readableError(error, "高级设置保存失败");
+      setErrorMessage(message);
+      showStudioError("高级设置保存失败", message);
     } finally {
       setBusy(false);
     }
@@ -167,7 +167,6 @@ export function AdvancedSettingsPanel({
           <Alert color="yellow" variant="light" key={diagnostic.message}>{diagnostic.message}</Alert>
         ))}
         {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-        {saved ? <Alert color="green" variant="light">{t("advancedSettingsSaved")}</Alert> : null}
         <Card withBorder radius="md" p="md">
           <Stack gap={4}>
             <Text size="sm" c="dimmed">{t("userConfig")}</Text>
@@ -312,6 +311,12 @@ function PanelHeader({ title, meta }: { title: string; meta: string }): ReactEle
       <Text size="sm" c="dimmed" fw={700}>{meta}</Text>
     </Group>
   );
+}
+
+function readableError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : fallback;
 }
 
 interface AdvancedSwitchRowProps {

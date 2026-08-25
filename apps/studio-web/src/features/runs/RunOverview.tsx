@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { workflowStageLabel } from "../../app/stages.js";
 import { formatLocalDateTime, formatLocalTime } from "../../app/time.js";
 import type {
@@ -203,8 +204,11 @@ function ReviewerSessionsPanel({
     setActionError(null);
     try {
       await operation();
+      showStudioSuccess(action === "purge" ? "过期 reviewer session 已清理" : "Reviewer session 已关闭");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setActionError(message);
+      showStudioError(action === "purge" ? "清理 reviewer session 失败" : "关闭 reviewer session 失败", message);
     } finally {
       setPendingAction(null);
     }

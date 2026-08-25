@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/studio-web",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "type": "module",
   "description": "AgentMesh React frontend.",
@@ -10,6 +10,7 @@
   "dependencies": {
     "@mantine/core": "9.2.1",
     "@mantine/hooks": "9.2.1",
+    "@mantine/notifications": "9.2.1",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
@@ -20,7 +21,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
-    "postcss": "8.5.14",
+    "postcss": "8.5.26",
     "postcss-preset-mantine": "1.18.0",
     "postcss-simple-vars": "7.0.1",
     "vite": "^8.0.16"

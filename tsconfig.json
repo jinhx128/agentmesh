@@ -7,6 +7,10 @@
     "strict": true,
     "jsx": "react-jsx",
     "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mantine/notifications": ["apps/studio-web/src/types/mantine-notifications.d.ts"]
+    },
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,

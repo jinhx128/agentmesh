@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { formatLocalDateTime } from "../../app/time.js";
 import type {
   StudioCallAdoptionEvent,
@@ -243,7 +244,9 @@ function CallAdoptionControls({
 
   async function submit(status: StudioCallAdoptionRequest["status"]): Promise<void> {
     if (!onSubmitAdoption) {
-      setSubmission({ status: "error", message: t("adoptionActionsUnavailable") });
+      const message = t("adoptionActionsUnavailable");
+      setSubmission({ status: "error", message });
+      showStudioError("Call 标记失败", message);
       return;
     }
     setSubmission({ status: "submitting", message: `${t("markedLocalEvidence")}: ${status}...` });
@@ -261,17 +264,16 @@ function CallAdoptionControls({
       });
       if (response.ok) {
         setSubmission({ status: "success", message: `${t("markedLocalEvidence")}: ${status}` });
+        showStudioSuccess("Call 标记成功", adoptionStatusLabel(status));
         return;
       }
-      setSubmission({
-        status: "error",
-        message: `${t("actionRejected")}: ${adoptionResponseMessage(response.payload)}`,
-      });
+      const message = `${t("actionRejected")}: ${adoptionResponseMessage(response.payload)}`;
+      setSubmission({ status: "error", message });
+      showStudioError("Call 标记失败", message);
     } catch (error) {
-      setSubmission({
-        status: "error",
-        message: `${t("actionRejected")}: ${error instanceof Error ? error.message : String(error)}`,
-      });
+      const message = `${t("actionRejected")}: ${error instanceof Error ? error.message : String(error)}`;
+      setSubmission({ status: "error", message });
+      showStudioError("Call 标记失败", message);
     }
   }
 
@@ -335,14 +337,20 @@ function CallAdoptionControls({
             {t("supersede")}
           </Button>
         </Group>
-        {submission.status !== "idle" ? (
-          <Alert color={submission.status === "error" ? "red" : "green"} variant="light">
+        {submission.status === "error" ? (
+          <Alert color="red" variant="light">
             {submission.message}
           </Alert>
         ) : null}
       </Stack>
     </Card>
   );
+}
+
+function adoptionStatusLabel(status: StudioCallAdoptionRequest["status"]): string {
+  if (status === "accepted") return "已采纳";
+  if (status === "rejected") return "已拒绝";
+  return "已标记为被替代";
 }
 
 function BoxedCopy({ disabledReason }: { disabledReason?: string }): ReactElement {
