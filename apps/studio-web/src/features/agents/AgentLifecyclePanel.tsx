@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { workflowStageLabel } from "../../app/stages.js";
+import { viewStateLabel } from "../../app/status-labels.js";
 import type {
   StudioAgentCreateRequest,
   StudioAgentLifecycleSubmit,
@@ -259,7 +260,7 @@ export function AgentLifecyclePanel({
   const content = (
     <>
       {embedded ? null : (
-        <PanelHeader title="Agent Lifecycle" meta={state.status === "ready" ? `${t("agents")} · ${agents.length}` : state.status} />
+        <PanelHeader title="Agent Lifecycle" meta={state.status === "ready" ? `${t("agents")} · ${agents.length}` : viewStateLabel(state.status)} />
       )}
       {state.status === "error" ? (
         <Alert mt="md" color="red" variant="light">{state.message}</Alert>

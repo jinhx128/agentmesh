@@ -13,6 +13,7 @@ import {
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy } from "../../app/copy.js";
+import { releaseVerdictLabel } from "../../app/status-labels.js";
 import type {
   StudioMarkdownSectionView,
   StudioRawReviewView,
@@ -83,7 +84,7 @@ function ReleaseVerdictCard({ view }: { view: StudioReviewReleaseView }): ReactE
       <Title order={3} size="h4" mb="sm">{t("releaseVerdict")}</Title>
       {view.release_verdict ? (
         <Stack gap="xs">
-          <Badge color={verdictColor(view.release_verdict.value)}>{view.release_verdict.value ?? "invalid"}</Badge>
+          <Badge color={verdictColor(view.release_verdict.value)}>{releaseVerdictLabel(view.release_verdict.value)}</Badge>
           {view.release_verdict.diagnostic ? <p>{view.release_verdict.diagnostic}</p> : null}
         </Stack>
       ) : <Text c="dimmed">{t("noVerdict")}</Text>}
@@ -94,7 +95,7 @@ function ReleaseVerdictCard({ view }: { view: StudioReviewReleaseView }): ReactE
 function VerdictBadge({ view }: { view: StudioReviewReleaseView }): ReactElement {
   const { t } = useStudioCopy();
   const verdict = view.release_verdict?.value;
-  return <Badge color={verdictColor(verdict)} size="lg">{verdict ?? t("noVerdict")}</Badge>;
+  return <Badge color={verdictColor(verdict)} size="lg">{verdict ? releaseVerdictLabel(verdict) : t("noVerdict")}</Badge>;
 }
 
 function FindingsSection({ view }: { view: StudioReviewReleaseView }): ReactElement {

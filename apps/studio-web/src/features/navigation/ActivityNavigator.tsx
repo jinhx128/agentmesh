@@ -476,8 +476,8 @@ function ActivityButton({
               size="xs"
               variant="light"
               color={statusPresentation.tone}
-              title={status || "unknown"}
-              aria-label={`状态：${statusPresentation.label}（${status || "unknown"}）`}
+              title={statusPresentation.label}
+              aria-label={`状态：${statusPresentation.label}`}
             >
               {statusPresentation.label}
             </Badge>

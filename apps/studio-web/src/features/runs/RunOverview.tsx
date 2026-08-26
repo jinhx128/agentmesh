@@ -16,6 +16,11 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { workflowStageLabel } from "../../app/stages.js";
+import {
+  reviewerSessionModeLabel,
+  runStatusLabel,
+  viewStateLabel,
+} from "../../app/status-labels.js";
 import { formatLocalDateTime, formatLocalTime } from "../../app/time.js";
 import type {
   StudioRunDetail,
@@ -78,7 +83,7 @@ export function RunOverview({
       ) : null}
       {shouldRenderRunPanel(view, "stages") ? (
         <Paper className="studio-panel" data-studio-section="workflow-flow" withBorder radius="md" p="lg">
-          <PanelHeader title={t("workflowFlow")} meta={state.status === "error" ? "Error" : ""} />
+          <PanelHeader title={t("workflowFlow")} meta={state.status === "error" ? viewStateLabel(state.status) : ""} />
           <Alert mt="md" color={state.status === "error" ? "red" : "gray"} variant="light">
             {message}
           </Alert>
@@ -86,7 +91,7 @@ export function RunOverview({
       ) : null}
       {shouldRenderRunPanel(view, "diagnostics") ? (
         <Paper className="studio-panel" data-studio-section="run-diagnostics" withBorder radius="md" p="lg">
-          <PanelHeader title={t("runDiagnostics")} meta={state.status === "error" ? "Error" : ""} />
+          <PanelHeader title={t("runDiagnostics")} meta={state.status === "error" ? viewStateLabel(state.status) : ""} />
           <Alert mt="md" color={state.status === "error" ? "red" : "gray"} variant="light">
             {message}
           </Alert>
@@ -253,7 +258,7 @@ function ReviewerSessionsPanel({
             </Group>
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm" mt="md">
               <OverviewMetric label={t("host")} value={reviewerSessionHostLabel(session.host_kind)} />
-              <OverviewMetric label={t("sessionMode")} value={session.mode} />
+              <OverviewMetric label={t("sessionMode")} value={reviewerSessionModeLabel(session.mode)} />
               <OverviewMetric label={t("hermetic")} value={session.hermetic ? t("yes") : t("no")} />
               <OverviewMetric label={t("lastUsedAt")} value={formatTimestamp(session.last_used_at)} />
               <OverviewMetric label={t("expiresAt")} value={formatTimestamp(session.expires_at)} />
@@ -297,7 +302,7 @@ function RunSummaryPanel({
   const summary = detail.summary;
   const summaryItems = [
     { field: "workspace", label: t("workspace"), value: summary.workspace.label },
-    { field: "status", label: t("status"), value: summary.status },
+    { field: "status", label: t("status"), value: runStatusLabel(summary.status) },
     { field: "run", label: t("run"), value: summary.run_id },
     { field: "workflow", label: t("workflow"), value: workflowDisplayName(summary.workflow, workflowLabels, t) },
     { field: "stage", label: t("stage"), value: `${summary.completed_stages.length}/${stages.length}` },
@@ -307,7 +312,7 @@ function RunSummaryPanel({
   ];
   return (
     <Paper className="studio-panel" data-studio-section="current-run-overview" withBorder radius="md" p="lg">
-      <PanelHeader title={t("overview")} meta={summary.status} />
+      <PanelHeader title={t("overview")} meta={runStatusLabel(summary.status)} />
       <div className="run-summary-row" data-studio-section="run-summary-row">
         {summaryItems.map((item) => (
           <CompactDetailItem field={item.field} key={item.field} label={item.label} value={item.value} />

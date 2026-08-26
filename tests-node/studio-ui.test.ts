@@ -1096,7 +1096,8 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.match(markup, />调用</);
   assert.doesNotMatch(markup, /\[调用\]/);
   assert.match(markup, /失败/);
-  assert.match(markup, /title="failed"/);
+  assert.match(markup, /title="失败"/);
+  assert.doesNotMatch(markup, /title="failed"/);
   assert.match(markup, /aria-label="删除调用：可用调用记录"/);
   assert.match(markup, new RegExp(formatLocalTime(call.created_at)));
   assert.doesNotMatch(markup, /internal-summary-must-not-render/);
@@ -1167,7 +1168,8 @@ test("Unified activity groups preview five items and keep partial data visible o
     { status: "ready", calls: [] },
   );
   assert.match(packetStatusMarkup, /真实阶段状态运行/);
-  assert.match(packetStatusMarkup, /title="execute_2_failed"/);
+  assert.match(packetStatusMarkup, /title="失败"/);
+  assert.doesNotMatch(packetStatusMarkup, /execute_2_failed/);
   assert.match(packetStatusMarkup, />失败</);
 
   const deleteItem = activityItems([], [call])[0];
@@ -1193,6 +1195,7 @@ test("Unified activity groups preview five items and keep partial data visible o
 
 test("Run overview, artifacts, events and review release render Mantine panels", () => {
   const detail = studioRunDetailFixture();
+  detail.summary.status = "review_running";
   const overview = renderRunOverview({ status: "ready", detail });
   assert.match(overview, /Workflow Flow/);
   assert.doesNotMatch(overview, /工作流流程/);
@@ -1215,6 +1218,8 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.ok(overviewIndex < workflowIndex);
   const summaryHtml = details.slice(overviewIndex, workflowIndex);
   assert.match(summaryHtml, /data-studio-section="run-summary-row"/);
+  assert.match(summaryHtml, /data-summary-field="status"[\s\S]*审查中/);
+  assert.doesNotMatch(summaryHtml, />review_running</);
   assert.match(summaryHtml, /data-summary-field="workspace"[\s\S]*工作区[\s\S]*project/);
   assert.match(summaryHtml, /data-summary-field="run"[\s\S]*运行[\s\S]*run-1/);
   assert.match(summaryHtml, /data-summary-field="workflow"[\s\S]*Workflow[\s\S]*w-7db15660/);
@@ -1752,6 +1757,8 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(reviewerSessionOverview, /Reviewer Session/);
   assert.match(reviewerSessionOverview, /Claude Reviewer/);
   assert.match(reviewerSessionOverview, /Claude Code/);
+  assert.match(reviewerSessionOverview, /连续会话/);
+  assert.doesNotMatch(reviewerSessionOverview, />interactive_continuous</);
   assert.match(reviewerSessionOverview, /上次使用[\s\S]*2026-05-18 15:02:00/);
   assert.match(reviewerSessionOverview, /过期时间[\s\S]*2026-05-18 17:02:00/);
   assert.match(reviewerSessionOverview, /关闭会话/);
@@ -1775,7 +1782,8 @@ test("Run overview, artifacts, events and review release render Mantine panels",
 
   const releaseHtml = renderReviewReleaseView(detail);
   assert.match(releaseHtml, /审查 \/ 发布/);
-  assert.match(releaseHtml, /needs_decision/);
+  assert.match(releaseHtml, />需要决策</);
+  assert.doesNotMatch(releaseHtml, />needs_decision</);
   assert.match(releaseHtml, /manual approval required/);
   assert.match(releaseHtml, /data-studio-section="review-finding-item"/);
   assert.match(releaseHtml, /已接受 #1[\s\S]*fix run scroll/);
@@ -2041,6 +2049,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(integrations, /0\.1\.10/);
   assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
   assert.match(integrations, /安装选中的 Skill/);
+  assert.match(integrations, />正常</);
+  assert.doesNotMatch(integrations, />ok</);
   assert.doesNotMatch(integrations, />studio-desktop</);
 
   const settingsResources = renderSettingsView("resources");
@@ -2212,6 +2222,9 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(lifecycle, /<p[^>]*>codex-gpt-5-5<\/p>[\s\S]*?<p[^>]*>Codex GPT-5\.5 · codex/);
   assert.match(lifecycle, /data-agent-action="edit"/);
   assert.doesNotMatch(lifecycle, /agentmesh agents add/);
+  const loadingLifecycle = renderAgentLifecyclePanel({ status: "loading" });
+  assert.match(loadingLifecycle, />加载中</);
+  assert.doesNotMatch(loadingLifecycle, />loading</);
   const editModal = renderAgentEditModal();
   assert.match(editModal, /data-studio-section="agent-edit-tool-select"/);
   assert.match(editModal, /data-studio-section="agent-edit-id-field"/);

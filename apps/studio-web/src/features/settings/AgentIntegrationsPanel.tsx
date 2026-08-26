@@ -15,6 +15,7 @@ import {
 import { useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
+import { skillTargetStatusLabel } from "../../app/status-labels.js";
 import type {
   AgentMeshSkillTarget,
   InstallAgentSkillsResponse,
@@ -190,7 +191,7 @@ export function AgentIntegrationsPanel({
                         <Text size="sm" fw={800}>{target.target}</Text>
                         <Text size="xs" c="dimmed">{target.hint ?? target.expected_path}</Text>
                       </Stack>
-                      <Code>{target.status}</Code>
+                      <Code>{skillTargetStatusLabel(target.status)}</Code>
                     </Group>
                   )}
                 />
