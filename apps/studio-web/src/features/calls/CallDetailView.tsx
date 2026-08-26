@@ -18,6 +18,12 @@ import {
 import { useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
+import {
+  callAdoptionStatusLabel,
+  callErrorKindLabel,
+  callStatusLabel,
+  viewStateLabel,
+} from "../../app/status-labels.js";
 import { formatLocalDateTime } from "../../app/time.js";
 import type {
   StudioCallAdoptionEvent,
@@ -47,7 +53,7 @@ export function CallDetailView({ state, onSubmitAdoption }: CallDetailViewProps)
   }
   return (
     <Paper component="section" className="studio-panel" data-studio-section="react-call-detail" withBorder radius="md" p="lg">
-      <PanelHeader title="Calls" meta={state.status === "error" ? "Error" : ""} />
+      <PanelHeader title="Calls" meta={state.status === "error" ? viewStateLabel(state.status) : ""} />
       <Alert mt="md" color={state.status === "error" ? "red" : "gray"} title={state.status === "error" ? t("callDetailsFailed") : undefined} variant="light">
         {callDetailMessage(state, t)}
       </Alert>
@@ -64,16 +70,18 @@ function ReadyCallDetail({
 }): ReactElement {
   const { t } = useStudioCopy();
   const call = detail.call;
+  const statusLabel = callStatusLabel(call.status);
+  const adoptionLabel = callAdoptionStatusLabel(call.adoption_status);
   return (
     <Paper component="section" className="studio-panel" data-studio-section="react-call-detail" withBorder radius="md" p="lg">
-      <PanelHeader title={t("directCall")} meta={`${call.status} · ${t("adoption")} · ${call.adoption_status}`} />
+      <PanelHeader title={t("directCall")} meta={`${statusLabel} · ${t("adoption")} · ${adoptionLabel}`} />
       <SimpleGrid mt="md" cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
         <CallMetric label={t("call")} value={call.id} />
-        <CallMetric label={t("status")} value={call.status} className={`status ${call.status}`} />
+        <CallMetric label={t("status")} value={statusLabel} className={`status ${call.status}`} />
         <CallMetric label={t("agent")} value={call.agent_id ?? t("unknown")} />
         <CallMetric label={t("adapter")} value={call.adapter} />
         <CallMetric label={t("purpose")} value={call.purpose} />
-        <CallMetric label={t("adoption")} value={call.adoption_status} />
+        <CallMetric label={t("adoption")} value={adoptionLabel} />
         <CallMetric label={t("createdAt")} value={formatTimestamp(call.created_at)} />
         <CallMetric label={t("completedAt")} value={formatTimestamp(call.completed_at)} />
       </SimpleGrid>
@@ -217,7 +225,7 @@ function CallFailureSummary({ call }: { call: StudioCallSummary }): ReactElement
   const exit = call.exit_code === null ? `exit=${t("unknown")}` : `exit=${call.exit_code}`;
   return (
     <Alert mt="md" color="red" title={t("failureSummary")} variant="light">
-      {call.error_kind} · {exit} · {call.error_summary ?? t("noRelatedItems")}
+      {callErrorKindLabel(call.error_kind)} · {exit} · {call.error_summary ?? t("noRelatedItems")}
     </Alert>
   );
 }
@@ -249,7 +257,7 @@ function CallAdoptionControls({
       showStudioError("Call 标记失败", message);
       return;
     }
-    setSubmission({ status: "submitting", message: `${t("markedLocalEvidence")}: ${status}...` });
+    setSubmission({ status: "submitting", message: `${t("markedLocalEvidence")}: ${callAdoptionStatusLabel(status)}...` });
     try {
       const trimmedReason = trimmedValue(reason);
       const trimmedRelatedCommit = trimmedValue(relatedCommit);
@@ -263,8 +271,8 @@ function CallAdoptionControls({
         ...(trimmedSupersededByCallId ? { superseded_by_call_id: trimmedSupersededByCallId } : {}),
       });
       if (response.ok) {
-        setSubmission({ status: "success", message: `${t("markedLocalEvidence")}: ${status}` });
-        showStudioSuccess("Call 标记成功", adoptionStatusLabel(status));
+        setSubmission({ status: "success", message: `${t("markedLocalEvidence")}: ${callAdoptionStatusLabel(status)}` });
+        showStudioSuccess("Call 标记成功", callAdoptionStatusLabel(status));
         return;
       }
       const message = `${t("actionRejected")}: ${adoptionResponseMessage(response.payload)}`;
@@ -347,12 +355,6 @@ function CallAdoptionControls({
   );
 }
 
-function adoptionStatusLabel(status: StudioCallAdoptionRequest["status"]): string {
-  if (status === "accepted") return "已采纳";
-  if (status === "rejected") return "已拒绝";
-  return "已标记为被替代";
-}
-
 function BoxedCopy({ disabledReason }: { disabledReason?: string }): ReactElement {
   const { t } = useStudioCopy();
   return (
@@ -376,7 +378,7 @@ function CallAdoptionHistory({ events }: { events: StudioCallAdoptionEvent[] }):
           {events.map((event) => (
             <List.Item key={`${event.updated_at}:${event.status}`}>
               <Stack gap={2}>
-                <Text fw={800}>{event.status}</Text>
+                <Text fw={800}>{callAdoptionStatusLabel(event.status)}</Text>
                 <Text size="xs" c="dimmed">{formatTimestamp(event.updated_at)} · {event.updated_by_entrypoint}</Text>
                 {event.reason ? <Text size="sm">{event.reason}</Text> : null}
                 {event.related_commit ? <Text size="xs">{event.related_commit}</Text> : null}
@@ -402,7 +404,7 @@ function callAdoptionDisabledReason(
     return t("readOnly");
   }
   if (call.adoption_status !== "unreviewed") {
-    return `${t("alreadyReviewed")}: ${call.adoption_status}`;
+    return `${t("alreadyReviewed")}: ${callAdoptionStatusLabel(call.adoption_status)}`;
   }
   if (!onSubmitAdoption) {
     return t("adoptionActionsUnavailable");
@@ -416,7 +418,7 @@ function trimmedValue(value: string): string | undefined {
 }
 
 function adoptionResponseMessage(payload: StudioCallAdoptionResponse["payload"]): string {
-  return "error" in payload ? payload.error : `marked ${payload.call.adoption_status}`;
+  return "error" in payload ? payload.error : `${payload.call.id}: ${callAdoptionStatusLabel(payload.call.adoption_status)}`;
 }
 
 function warningLabel(warning: StudioCallWarning, t: (key: StudioCopyKey) => string): string {

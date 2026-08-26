@@ -1896,6 +1896,14 @@ test("Call detail renders previews, warnings, adoption controls and history", ()
   assert.match(html, /本地证据标记/);
   assert.match(html, /接受/);
   assert.match(html, /采纳历史/);
+  detail.call.status = "success";
+  detail.call.adoption_status = "superseded";
+  detail.adoption_events[0]!.status = "superseded";
+  const localizedHtml = renderCallDetailView({ status: "ready", detail });
+  assert.match(localizedHtml, /成功 · 采纳 · 已取代/);
+  assert.match(localizedHtml, />已取代</);
+  assert.doesNotMatch(localizedHtml, />success</);
+  assert.doesNotMatch(localizedHtml, />superseded</);
   assert.match(renderCallDetailView({ status: "empty" }), /请选择调用。/);
   assert.match(renderCallDetailView({ status: "error", message: "no call" }), /调用详情加载失败/);
 });
