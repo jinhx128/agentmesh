@@ -96,6 +96,16 @@ import {
 import {
   workflowStageLabel,
 } from "../apps/studio-web/src/app/stages.js";
+import {
+  callAdoptionStatusLabel,
+  callErrorKindLabel,
+  callStatusLabel,
+  releaseVerdictLabel,
+  reviewerSessionModeLabel,
+  runStatusLabel,
+  skillTargetStatusLabel,
+  viewStateLabel,
+} from "../apps/studio-web/src/app/status-labels.js";
 import type { StudioCopyKey } from "../apps/studio-web/src/app/copy.js";
 import { StudioThemeProvider } from "../apps/studio-web/src/app/StudioThemeProvider.js";
 import {
@@ -993,6 +1003,18 @@ test("Unified activities sort runs and calls, group missing timestamps, and sear
   ] as const) {
     assert.deepEqual(filterActivityItems(items, query).map((item) => item.kind), [expectedKind]);
   }
+});
+
+test("Studio status labels localize known domain values and hide unknown enums", () => {
+  assert.equal(callStatusLabel("success"), "成功");
+  assert.equal(callAdoptionStatusLabel("superseded"), "已取代");
+  assert.equal(runStatusLabel("review_running"), "审查中");
+  assert.equal(reviewerSessionModeLabel("interactive_continuous"), "连续会话");
+  assert.equal(releaseVerdictLabel("not_ready"), "暂不可发布");
+  assert.equal(skillTargetStatusLabel("content_mismatch"), "内容不一致");
+  assert.equal(callErrorKindLabel("provider_auth"), "Provider 登录失败");
+  assert.equal(viewStateLabel("error"), "错误");
+  assert.equal(runStatusLabel("future_state"), "未知状态");
 });
 
 test("Unified activity groups preview five items and keep partial data visible on errors", () => {
