@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { BUILTIN_WORKFLOW_IDS } from "@agentmesh/core";
 import { createFlowRun } from "../packages/runtime/src/flow/index.js";
-import { setStageState } from "../packages/runtime/src/flow/state.js";
+import { setStageStatus } from "../packages/runtime/src/flow/state.js";
 import { loadStatus, saveStatus } from "../packages/runtime/src/packet/io.js";
 import {
   readWorkspaceCompatibilityMetadata,
@@ -28,7 +28,7 @@ test("workflow run accepts a temporary workflow file with packet provenance", ()
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "One Off Release"',
       'stages = ["review", "decide"]',
       'description = "Run one release review and decision."',
@@ -68,7 +68,7 @@ test("workflow run accepts a temporary workflow file with packet provenance", ()
     hash: workflowHash(workflowPath),
     schema_version: 1,
     workflow_recipe_version: 1,
-    compatible_packet_schema_versions: [1],
+    compatible_packet_schema_versions: [2],
   });
   const assignment = readFileSync(
     path.join(workspace, ".agentmesh", "runs", "temporary-flow", "assignment.toml"),
@@ -78,7 +78,9 @@ test("workflow run accepts a temporary workflow file with packet provenance", ()
 
   const runDir = path.join(workspace, ".agentmesh", "runs", "temporary-flow");
   const reloadedStatus = loadStatus(runDir);
-  setStageState(reloadedStatus, "review", "running");
+  reloadedStatus.run_status = "running";
+  reloadedStatus.current_stage = "review";
+  setStageStatus(reloadedStatus, "review", "running");
   saveStatus(runDir, reloadedStatus);
   assert.equal(loadStatus(runDir).title, status.title);
 
@@ -114,16 +116,16 @@ test("workflow run writes workspace compatibility metadata", () => {
 
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.schema_version, 1);
-  assert.equal(metadata.packet_schema_version, 1);
-  assert.equal(metadata.min_read_runtime_version, "0.1.15");
-  assert.equal(metadata.min_write_runtime_version, "0.1.15");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.15");
+  assert.equal(metadata.packet_schema_version, 2);
+  assert.equal(metadata.min_read_runtime_version, "0.2.0");
+  assert.equal(metadata.min_write_runtime_version, "0.2.0");
+  assert.equal(metadata.last_writer_runtime_version, "0.2.0");
   assert.equal(metadata.last_writer_entrypoint, "cli");
   assert.match(metadata.updated_at, /^\d{4}-\d{2}-\d{2}T/);
 
   const diagnostics = workspaceCompatibilityDiagnostics(workspace, { entrypoint: "cli" });
   assert.equal(diagnostics.decision, "read_write");
-  assert.equal(diagnostics.current_runtime_version, "0.1.15");
+  assert.equal(diagnostics.current_runtime_version, "0.2.0");
   assert.equal(diagnostics.current_entrypoint, "cli");
 });
 
@@ -466,7 +468,7 @@ test("legacy workspace stays readable and first successful mutation backfills co
   assert.equal(attached.status, 0, attached.stderr);
   const metadata = readWorkspaceCompatibilityMetadata(workspace);
   assert.equal(metadata.last_writer_entrypoint, "cli");
-  assert.equal(metadata.last_writer_runtime_version, "0.1.15");
+  assert.equal(metadata.last_writer_runtime_version, "0.2.0");
 });
 
 test("workspace compatibility diagnostics refuse unsupported reads and newer write runtimes", () => {
@@ -506,7 +508,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
 
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
-    packet_schema_version: 1,
+    packet_schema_version: 2,
     min_read_runtime_version: "0.1.8",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
@@ -521,7 +523,7 @@ test("workspace compatibility diagnostics refuse unsupported reads and newer wri
   assert.equal(cliDiagnostics.status, 0, cliDiagnostics.stderr);
   const cliCompatibility = JSON.parse(cliDiagnostics.stdout);
   assert.equal(cliCompatibility.decision, "read_only");
-  assert.equal(cliCompatibility.current_runtime_version, "0.1.15");
+  assert.equal(cliCompatibility.current_runtime_version, "0.2.0");
   assert.equal(cliCompatibility.current_entrypoint, "cli");
   assert.equal(cliCompatibility.metadata.last_writer_entrypoint, "desktop");
 
@@ -620,7 +622,7 @@ test("workflow run creation rejects incompatible workflow versions before writin
         },
         workspace,
       ),
-    /workflow unit-test compatible_packet_schema_versions must equal \[1\]/,
+    /workflow unit-test compatible_packet_schema_versions must equal \[2\]/,
   );
   assert.equal(existsSync(path.join(workspace, ".agentmesh", "runs", "incompatible-workflow")), false);
 });
@@ -754,7 +756,7 @@ test("workflow run expands CLI role flags across repeated stage node ids", () =>
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide", "review", "decide"]',
       'description = "Repeated review checkpoints."',
       'when_to_use = ["A repeated review workflow is tested."]',
@@ -889,7 +891,7 @@ test("workflow run materializes failure policy, global fallback, and timeout pro
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["verify", "decide"]',
       'description = "Verify then decide."',
       'when_to_use = ["A verify checkpoint is tested."]',
@@ -991,7 +993,7 @@ test("workflow run materializes CLI timeout override for primary and fallback la
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Review then decide."',
       'when_to_use = ["A required review fallback is tested."]',
@@ -1042,7 +1044,7 @@ test("workflow run rejects required fallback on pure current nodes", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Current required fallback is invalid."',
       'when_to_use = ["A current fallback policy is tested."]',
@@ -1467,7 +1469,7 @@ test("workflow run writes resolved multi-agent stage assignments", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "review", "decide"]',
       'description = "Exercise multi-agent assignment shape."',
       'when_to_use = ["A packet needs resolved multi-agent assignments."]',
@@ -1567,7 +1569,7 @@ test("workflow run records repeated stage nodes and node-id assignments", () => 
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "review", "execute", "review", "decide"]',
       'description = "Exercise repeated workflow nodes."',
       'when_to_use = ["A delivery needs two execution and review rounds."]',
@@ -1625,7 +1627,7 @@ test("workflow run records repeated stage nodes and node-id assignments", () => 
     review_2: ["reviewer"],
     decide: ["decider"],
   });
-  assert.deepEqual(status.stage_state, {
+  assert.deepEqual(status.stage_status, {
     plan: "planned",
     execute: "planned",
     review: "planned",
@@ -1662,7 +1664,7 @@ test("workflow run accepts verify stage assignments without legacy verify status
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Verify Flow"',
       'stages = ["plan", "execute", "verify", "review", "decide"]',
       'description = "Exercise verify runtime stage."',
@@ -1788,7 +1790,7 @@ test("workflow file is mutually exclusive with registry workflow id", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan"]',
       'description = "Custom plan."',
       'when_to_use = ["A custom plan is needed."]',
@@ -1837,7 +1839,7 @@ test("temporary workflow run rejects unknown assigned agents before packet creat
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Custom review."',
       'when_to_use = ["A custom review is needed."]',

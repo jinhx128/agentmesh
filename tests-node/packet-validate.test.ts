@@ -120,7 +120,7 @@ test("rejects unsupported newer packet status files", () => {
   const result = validatePacket(runDir);
 
   assert.equal(result.ok, false);
-  assert.match(result.errors.join("\n"), /status\.json\.schema_version must be 1/);
+  assert.match(result.errors.join("\n"), /status\.json\.schema_version must be 2/);
 });
 
 test("reports packet artifacts that point at missing files", () => {
@@ -167,7 +167,7 @@ test("reports packet status schema errors with readable paths", () => {
     JSON.stringify(currentPacketStatus({
       run_id: "",
       stages: ["plan"],
-      completed_stages: ["review"],
+      stage_status: { plan: "planned", review: "completed" },
     })) + "\n",
   );
 
@@ -177,7 +177,7 @@ test("reports packet status schema errors with readable paths", () => {
   assert.match(result.errors.join("\n"), /status\.json\.run_id must be a non-empty string/);
   assert.match(
     result.errors.join("\n"),
-    /status\.json\.completed_stages contains unknown stage: review/,
+    /status\.json\.stage_status contains unknown stage: review/,
   );
 });
 
@@ -189,7 +189,8 @@ test("validates repeated packet status against stage node ids", () => {
       stages: ["plan", "execute", "review", "execute", "review", "decide"],
     }),
     run_id: "repeated-validate",
-    status: "execute_2_failed",
+    run_status: "failed",
+    current_stage: "execute_2",
     stage_assignments: {
       plan: ["planner"],
       execute: ["worker"],
@@ -198,8 +199,14 @@ test("validates repeated packet status against stage node ids", () => {
       review_2: ["reviewer"],
       decide: ["decider"],
     },
-    completed_stages: ["plan", "execute", "review"],
-    failed_stage: "execute_2",
+    stage_status: {
+      plan: "completed",
+      execute: "completed",
+      review: "completed",
+      execute_2: "failed",
+      review_2: "planned",
+      decide: "planned",
+    },
     stage_timing: {
       plan: {
         started_at: "2026-05-13T00:00:00.000Z",
@@ -238,11 +245,11 @@ test("validates repeated packet status against stage node ids", () => {
 
   writeFileSync(
     path.join(runDir, "status.json"),
-    `${JSON.stringify({ ...repeatedStatus, failed_stage: "missing_node" }, null, 2)}\n`,
+    `${JSON.stringify({ ...repeatedStatus, current_stage: "missing_node" }, null, 2)}\n`,
   );
   const invalid = validatePacket(runDir);
   assert.equal(invalid.ok, false);
-  assert.match(invalid.errors.join("\n"), /failed_stage contains unknown stage: missing_node/);
+  assert.match(invalid.errors.join("\n"), /current_stage contains unknown stage: missing_node/);
 });
 
 test("validates verify packet status and verification artifact", () => {
@@ -254,7 +261,8 @@ test("validates verify packet status and verification artifact", () => {
     JSON.stringify(
       currentPacketStatus({
         run_id: "verify-validate",
-        status: "verify_completed",
+        run_status: "pending",
+        current_stage: "review",
         stages: ["plan", "execute", "verify", "review", "decide"],
         stage_assignments: {
           plan: ["planner"],
@@ -263,8 +271,7 @@ test("validates verify packet status and verification artifact", () => {
           review: ["reviewer"],
           decide: ["decider"],
         },
-        completed_stages: ["plan", "execute", "verify"],
-        stage_state: {
+        stage_status: {
           plan: "completed",
           execute: "completed",
           verify: "completed",

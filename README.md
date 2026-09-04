@@ -9,7 +9,7 @@ shell command 注册成可复用的 agents，再用统一的 workflow、packet�
 同一套本地协议里，让 plan、execute、verify、review、decide 这些步骤可以被追踪、
 重试、交接和复盘。
 
-## v0.1.15 发布资产
+## v0.2.0 发布资产
 
 GitHub 仓库：
 
@@ -17,23 +17,23 @@ GitHub 仓库：
 https://github.com/jinhx128/agentmesh
 ```
 
-v0.1.15 Release：
+v0.2.0 Release：
 
 ```text
-https://github.com/jinhx128/agentmesh/releases/tag/v0.1.15
+https://github.com/jinhx128/agentmesh/releases/tag/v0.2.0
 ```
 
 Release 资产：
 
-- `agentmesh-0.1.15.tgz`：CLI npm tarball，可用 `npm install -g` 安装。
-- `AgentMesh_0.1.15_aarch64.dmg`：macOS Apple Silicon Desktop Studio，未签名、未 notarize。
-- `AgentMesh_0.1.15_aarch64.app.tar.gz`：Tauri 应用内更新归档。
-- `AgentMesh_0.1.15_aarch64.app.tar.gz.sig`：更新归档签名。
-- `latest.json`：stable updater 元数据，使用不可变 `v0.1.15` 资产 URL。
-- `agentmesh-skill-0.1.15.md`：单独下载的 AgentMesh Skill markdown。
+- `agentmesh-0.2.0.tgz`：CLI npm tarball，可用 `npm install -g` 安装。
+- `AgentMesh_0.2.0_aarch64.dmg`：macOS Apple Silicon Desktop Studio，未签名、未 notarize。
+- `AgentMesh_0.2.0_aarch64.app.tar.gz`：Tauri 应用内更新归档。
+- `AgentMesh_0.2.0_aarch64.app.tar.gz.sig`：更新归档签名。
+- `latest.json`：stable updater 元数据，使用不可变 `v0.2.0` 资产 URL。
+- `agentmesh-skill-0.2.0.md`：单独下载的 AgentMesh Skill markdown。
 - `SHA256SUMS`：发布文件校验值。
 
-v0.1.15 主要增加跨 Codex、Cursor、Claude Code、Antigravity 和 OpenCode 入口的
+v0.2.0 主要增加跨 Codex、Cursor、Claude Code、Antigravity 和 OpenCode 入口的
 Reviewer Scope 协议、本机 session 生命周期管理与 Studio 脱敏管理界面。真实 A/B 没有
 产生合格 resumed arm，因此五个内置 reviewer provider 默认仍为 fresh-only；正式 review、
 release、安全和审批 gate 固定使用 `independent`，不会为了性能放宽独立性。
@@ -129,7 +129,7 @@ agentmesh cli detect --json
 ### 从 GitHub Release 安装
 
 ```bash
-npm install -g https://github.com/jinhx128/agentmesh/releases/download/v0.1.15/agentmesh-0.1.15.tgz
+npm install -g https://github.com/jinhx128/agentmesh/releases/download/v0.2.0/agentmesh-0.2.0.tgz
 agentmesh --help
 agentmesh --version
 agentmesh doctor --json
@@ -138,7 +138,7 @@ agentmesh doctor --json
 如果已经下载了 tarball：
 
 ```bash
-npm install -g ./agentmesh-0.1.15.tgz
+npm install -g ./agentmesh-0.2.0.tgz
 agentmesh --help
 agentmesh --version
 agentmesh doctor --json
@@ -189,10 +189,10 @@ clone 或安装 Release tarball。
 从 Release 下载：
 
 ```text
-AgentMesh_0.1.15_aarch64.dmg
+AgentMesh_0.2.0_aarch64.dmg
 ```
 
-打开 DMG，把 `AgentMesh.app` 拖到 Applications。因为 v0.1.15 的 DMG 未签名且未 notarize，macOS
+打开 DMG，把 `AgentMesh.app` 拖到 Applications。因为 v0.2.0 的 DMG 未签名且未 notarize，macOS
 可能提示无法验证开发者。可以右键应用选择 Open，或在 System Settings / Privacy &
 Security 里允许打开。
 
@@ -262,7 +262,7 @@ agentmesh skill verify --target antigravity --json
 agentmesh skill export --format markdown > agentmesh-skill.md
 ```
 
-Release 里的 `agentmesh-skill-0.1.15.md` 是同一份可单独下载的 markdown。手动安装时，
+Release 里的 `agentmesh-skill-0.2.0.md` 是同一份可单独下载的 markdown。手动安装时，
 Codex、Cursor、Antigravity CLI 和 OpenCode 使用：
 
 ```text
@@ -390,7 +390,7 @@ Agent 注册写入用户级配置：
 `call` 用于对单个 agent 发起一次直接调用，并在 `.agentmesh/calls/` 下记录证据。
 
 ```bash
-agentmesh call --agent <agent-id> --prompt "检查当前改动有没有明显风险"
+agentmesh call --agent <agent-id> --prompt "检查当前改动有没有明显风险" --json
 agentmesh call --agent <agent-id> --prompt-file ./prompt.md --output-file ./review.md
 ```
 
@@ -400,7 +400,11 @@ agentmesh call --agent <agent-id> --prompt-file ./prompt.md --output-file ./revi
 agentmesh call --agent <agent-id> --prompt "hello" --no-record
 ```
 
-Call record 包含 prompt、output、stderr、exit code、timing 和 adoption 状态。
+Call record 包含 prompt、output、stderr、exit code、timing 和结果处理状态。
+只有实际消费调用结果的主控 Agent 或 Workflow 才能确认结果状态；Studio
+只读展示调用证据。主控从 `call --json` 取得 `call_id` 后，在确实采用或放弃
+结果时调用 `agentmesh calls mark`；同一 `--comparison-group` 的多个结果最终
+通过 `agentmesh calls select` 选择。调用成功本身不等于结果被采用。
 
 ## Workflows
 
@@ -414,7 +418,7 @@ AgentMesh 的运行语义：
 
 - `preset-first UX`：如果已有 preset，可以直接使用 `agentmesh run <preset-id> --task "..."`。
 - `decide checkpoint`：workflow 中的 decide stage 可以作为中途决策点，也可以作为最终决策点。
-- `current packet schema is active`：v0.1.15 只按当前 packet schema 创建和推进 run。
+- `current packet schema is active`：v0.2.0 只按当前 packet schema 创建和推进 run。
 - `legacy packet migration is unsupported`：旧 packet 不自动迁移；需要按当前 schema 重新创建 run。
 - `[default_stage_agents]`、`[fallback]` 和 `[failure_policy]` 是项目配置里的运行策略入口。
 - Agent id 使用短内部 id，例如 `a-12d58754`，命令和配置都以 id 作为稳定引用。
@@ -427,7 +431,7 @@ agentmesh run <preset-id> --task "实现一个可验证的小修复" --title "�
 
 `run`、`flow run` 和被记录的 `call` 都支持可选的 `--title <title>`。用户未指定时，主控 Agent 应根据任务生成 4–24 字的中文标题并传入；若最终仍未传入，Runtime 会使用 `工作区名-摘要`，没有摘要时使用 `工作区名-HH:mm:ss`。标题只用于展示，不改变 run/call 技术 ID、目录或关联键。
 
-v0.1.15 包含这些内置 workflow：
+v0.2.0 包含这些内置 workflow：
 
 - `Verified Delivery`：plan、execute、verify、review、decide
 - `Guided Delivery`：plan、execute、review、decide

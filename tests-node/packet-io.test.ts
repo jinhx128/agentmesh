@@ -92,15 +92,16 @@ test("loads and saves packet status JSON without losing extension fields", () =>
   test.after(() => rmSync(runDir, { recursive: true, force: true }));
 
   const status = loadStatus(runDir);
-  status.status = "plan_completed";
-  status.completed_stages = ["plan"];
+  status.run_status = "awaiting_current";
+  status.current_stage = "execute";
+  status.stage_status = { ...status.stage_status, plan: "completed" };
   status.custom_extension = "kept";
   saveStatus(runDir, status);
 
   const reloaded = loadStatus(runDir);
 
-  assert.equal(reloaded.status, "plan_completed");
-  assert.deepEqual(reloaded.completed_stages, ["plan"]);
+  assert.equal(reloaded.run_status, "awaiting_current");
+  assert.deepEqual(reloaded.stage_status, { plan: "completed", execute: "planned", review: "planned", decide: "planned" });
   assert.equal(reloaded.custom_extension, "kept");
   assert.match(readFileSync(path.join(runDir, "status.json"), "utf-8"), /\n$/);
 });
@@ -179,7 +180,7 @@ test("packet status, events, and artifacts CLI commands emit JSON", () => {
     { encoding: "utf-8" },
   );
   assert.equal(statusResult.status, 0, statusResult.stderr);
-  assert.equal(JSON.parse(statusResult.stdout).status, "created");
+  assert.equal(JSON.parse(statusResult.stdout).run_status, "awaiting_current");
 
   const eventsResult = spawnSync(
     process.execPath,

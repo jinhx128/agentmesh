@@ -15,7 +15,7 @@ import { formatLocalTimestamp, reserveTimestampedId } from "../generated-id.js";
 import { writeFileAtomic } from "../packet/io.js";
 import { resolveDisplayTitle } from "../display-title.js";
 
-export const CALL_RECORD_SCHEMA_VERSION = 1 as const;
+export const CALL_RECORD_SCHEMA_VERSION = 2 as const;
 export const CALLS_RELATIVE_DIR = path.join(".agentmesh", "calls");
 const STALE_RUNNING_MS = 2 * 60 * 60 * 1000;
 
@@ -38,8 +38,8 @@ export type CallErrorKind =
   | "internal"
   | "unknown";
 export type CallPromptSource = "inline" | "stdin" | "file" | "generated" | "unknown";
-export type CallAdoptionStatus = "unreviewed" | "accepted" | "rejected" | "superseded";
-export type FinalCallAdoptionStatus = Exclude<CallAdoptionStatus, "unreviewed">;
+export type CallResultStatus = "unprocessed" | "accepted" | "rejected" | "superseded";
+export type FinalCallResultStatus = Exclude<CallResultStatus, "unprocessed">;
 
 export interface CallArtifactRef {
   kind: "file";
@@ -79,22 +79,22 @@ export interface DirectCallRecord {
   tokens_in: number | null;
   tokens_out: number | null;
   cost_estimate_usd: number | null;
-  adoption_status: CallAdoptionStatus;
+  result_status: CallResultStatus;
+  comparison_group_id: string | null;
+  replaced_by_call_id: string | null;
   read_only?: boolean;
   schema_warning?: string;
 }
 
-export interface CallAdoptionEvent {
+export interface CallResultEvent {
   schema_version: number;
   call_id: string;
-  previous_status: CallAdoptionStatus;
-  status: FinalCallAdoptionStatus;
+  previous_status: CallResultStatus;
+  status: FinalCallResultStatus;
   updated_at: string;
   updated_by_entrypoint: string;
   reason: string | null;
-  related_commit: string | null;
-  related_run_id: string | null;
-  superseded_by_call_id: string | null;
+  replaced_by_call_id: string | null;
 }
 
 export interface CreateCallRecordInput {
@@ -108,6 +108,7 @@ export interface CreateCallRecordInput {
   promptSource: CallPromptSource;
   promptContent?: string;
   createdAt?: Date | string;
+  comparisonGroupId?: string;
 }
 
 export interface CreatedCallRecord {
@@ -125,14 +126,18 @@ export interface CompleteCallRecordInput {
   errorSummary?: string;
 }
 
-export interface AppendCallAdoptionInput {
+export interface MarkCallResultInput {
   callDir: string;
-  status: FinalCallAdoptionStatus;
+  status: "accepted" | "rejected";
   updatedByEntrypoint: string;
   reason?: string;
-  relatedCommit?: string;
-  relatedRunId?: string;
-  supersededByCallId?: string;
+  updatedAt?: string;
+}
+
+export interface SelectCallResultInput {
+  callDir: string;
+  updatedByEntrypoint: string;
+  reason?: string;
   updatedAt?: string;
 }
 
@@ -201,7 +206,9 @@ export function createCallRecord(input: CreateCallRecordInput): CreatedCallRecor
     tokens_in: null,
     tokens_out: null,
     cost_estimate_usd: null,
-    adoption_status: "unreviewed",
+    result_status: "unprocessed",
+    comparison_group_id: input.comparisonGroupId ?? null,
+    replaced_by_call_id: null,
   };
   writeCallRecord(callDir, record);
   return { callDir, record };
@@ -280,82 +287,123 @@ export function listCallRecords(workspace: string): DirectCallRecord[] {
     .sort((left, right) => right.created_at.localeCompare(left.created_at));
 }
 
-export function appendCallAdoptionEvent(input: AppendCallAdoptionInput): DirectCallRecord {
-  validateCallAdoptionInput(input);
+export function markCallResult(input: MarkCallResultInput): DirectCallRecord {
+  validateResultInput(input);
   const record = readCallRecord(input.callDir);
   if (record.read_only) {
-    throw new Error("cannot mutate adoption for newer call record schema");
+    throw new Error("cannot mutate result status for newer call record schema");
   }
-  if (record.adoption_status !== "unreviewed") {
-    throw new Error(
-      `cannot transition call adoption from ${record.adoption_status} to ${input.status}`,
-    );
-  }
-  if (input.status === "superseded" && !input.supersededByCallId) {
-    throw new Error("superseded adoption requires superseded_by_call_id");
-  }
-
-  const event: CallAdoptionEvent = {
+  const event: CallResultEvent = {
     schema_version: CALL_RECORD_SCHEMA_VERSION,
     call_id: record.id,
-    previous_status: record.adoption_status,
+    previous_status: record.result_status,
     status: input.status,
     updated_at: input.updatedAt ?? new Date().toISOString(),
     updated_by_entrypoint: input.updatedByEntrypoint,
     reason: input.reason ?? null,
-    related_commit: input.relatedCommit ?? null,
-    related_run_id: input.relatedRunId ?? null,
-    superseded_by_call_id: input.supersededByCallId ?? null,
+    replaced_by_call_id: null,
   };
   appendFileSync(
-    path.join(input.callDir, "adoption.jsonl"),
+    path.join(input.callDir, "result-events.jsonl"),
     `${JSON.stringify(event)}\n`,
     { encoding: "utf-8" },
   );
 
   const updated: DirectCallRecord = {
     ...record,
-    adoption_status: input.status,
-    related_run_ids: addUnique(record.related_run_ids, input.relatedRunId),
-    related_call_ids: addUnique(record.related_call_ids, input.supersededByCallId),
+    result_status: input.status,
   };
   writeCallRecord(input.callDir, updated);
   return updated;
 }
 
-function validateCallAdoptionInput(input: AppendCallAdoptionInput): void {
-  validateAdoptionToken(input.updatedByEntrypoint, "entrypoint");
-  validateAdoptionText(input.reason);
-  validateAdoptionText(input.relatedCommit);
-  if (input.relatedRunId !== undefined) {
-    validateAdoptionToken(input.relatedRunId, "related-run-id");
+export function selectCallResult(input: SelectCallResultInput): DirectCallRecord {
+  validateResultInput(input);
+  const current = readCallRecord(input.callDir);
+  if (!current.comparison_group_id) {
+    throw new Error("call does not belong to a comparison group");
   }
-  if (input.supersededByCallId !== undefined) {
-    validateAdoptionToken(input.supersededByCallId, "superseded-by-call-id");
+  const updatedAt = input.updatedAt ?? new Date().toISOString();
+  for (const previous of listCallRecords(workspaceFromCallDir(input.callDir))) {
+    if (previous.id === current.id
+      || previous.comparison_group_id !== current.comparison_group_id
+      || previous.result_status !== "accepted") {
+      continue;
+    }
+    appendResultEvent(resolveSiblingCallDirectory(input.callDir, previous.id), previous, {
+      status: "superseded",
+      updatedByEntrypoint: input.updatedByEntrypoint,
+      reason: input.reason,
+      replacedByCallId: current.id,
+      updatedAt,
+    });
   }
+  const currentUpdated = appendResultEvent(input.callDir, current, {
+    status: "accepted",
+    updatedByEntrypoint: input.updatedByEntrypoint,
+    reason: input.reason,
+    updatedAt,
+  });
+  return currentUpdated;
 }
 
-function validateAdoptionToken(value: string, label: string): void {
+function appendResultEvent(
+  callDir: string,
+  record: DirectCallRecord,
+  input: {
+    status: FinalCallResultStatus;
+    updatedByEntrypoint: string;
+    reason?: string;
+    replacedByCallId?: string;
+    updatedAt: string;
+  },
+): DirectCallRecord {
+  const event: CallResultEvent = {
+    schema_version: CALL_RECORD_SCHEMA_VERSION,
+    call_id: record.id,
+    previous_status: record.result_status,
+    status: input.status,
+    updated_at: input.updatedAt,
+    updated_by_entrypoint: input.updatedByEntrypoint,
+    reason: input.reason ?? null,
+    replaced_by_call_id: input.replacedByCallId ?? null,
+  };
+  appendFileSync(path.join(callDir, "result-events.jsonl"), `${JSON.stringify(event)}\n`, { encoding: "utf-8" });
+  const updated: DirectCallRecord = {
+    ...record,
+    result_status: input.status,
+    replaced_by_call_id: input.replacedByCallId ?? record.replaced_by_call_id,
+  };
+  writeCallRecord(callDir, updated);
+  return updated;
+}
+
+function validateResultInput(input: { updatedByEntrypoint: string; reason?: string }): void {
+  validateResultToken(input.updatedByEntrypoint, "entrypoint");
+  validateResultText(input.reason);
+}
+
+function validateResultToken(value: string, label: string): void {
   if (!/^[A-Za-z0-9._-]+$/.test(value)) {
     throw new Error(`invalid ${label}: ${value}`);
   }
 }
 
-function validateAdoptionText(value: string | undefined): void {
+function validateResultText(value: string | undefined): void {
   if (value?.includes("\0")) {
     throw new Error("text values cannot contain null bytes");
   }
 }
 
-export function readCallAdoptionEvents(callDir: string): CallAdoptionEvent[] {
-  const eventsPath = path.join(callDir, "adoption.jsonl");
+export function listCallResultEvents(callDir: string): CallResultEvent[] {
+  const eventsPath = path.join(callDir, "result-events.jsonl");
   if (!existsSync(eventsPath)) {
     return [];
   }
   return readFileSync(eventsPath, "utf-8")
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line, index) => parseCallAdoptionEvent(line, `${eventsPath}:${index + 1}`));
+    .map((line, index) => parseCallResultEvent(line, `${eventsPath}:${index + 1}`));
 }
 
 function writeCallRecord(callDir: string, record: DirectCallRecord): void {
@@ -378,7 +426,7 @@ function parseCallRecord(value: unknown, label: string): DirectCallRecord {
   return record;
 }
 
-function parseCallAdoptionEvent(line: string, label: string): CallAdoptionEvent {
+function parseCallResultEvent(line: string, label: string): CallResultEvent {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
@@ -388,7 +436,21 @@ function parseCallAdoptionEvent(line: string, label: string): CallAdoptionEvent 
   if (!isRecord(parsed)) {
     throw new Error(`${label} must be a JSON object`);
   }
-  return parsed as unknown as CallAdoptionEvent;
+  return parsed as unknown as CallResultEvent;
+}
+
+function resolveSiblingCallDirectory(callDir: string, callId: string): string {
+  validateResultToken(callId, "selected-call-id");
+  const callsDir = path.dirname(callDir);
+  const selectedDir = path.resolve(callsDir, callId);
+  const relative = path.relative(callsDir, selectedDir);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`invalid selected call id: ${callId}`);
+  }
+  if (!existsSync(path.join(selectedDir, "call.json"))) {
+    throw new Error(`selected call not found: ${callId}`);
+  }
+  return selectedDir;
 }
 
 function addUnique(values: string[], value: string | undefined): string[] {

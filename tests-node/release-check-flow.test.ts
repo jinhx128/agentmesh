@@ -76,7 +76,7 @@ test("dispatch all writes release-check summary and records release verdict", ()
 
   const runDir = path.join(workspace, ".agentmesh", "runs", "release-flow");
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["review", "decide"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["review", "decide"]);
   assert.equal(status.release_verdict.value, "ready");
   assert.match(readFileSync(path.join(runDir, "release-summary.md"), "utf-8"), /47 passed/);
   assert.equal(existsSync(path.join(runDir, "reviews", "worker.md")), true);
@@ -91,7 +91,7 @@ test("release verdict is recorded only for the final release-check decide node",
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide", "review", "decide"]',
       'description = "Release check with an intermediate decision checkpoint."',
       'when_to_use = ["A release needs two decision checkpoints."]',
@@ -180,7 +180,7 @@ test("release verdict is recorded only for the final release-check decide node",
 
   const finalStatus = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
   assert.equal(finalStatus.release_verdict.value, "ready");
-  assert.deepEqual(finalStatus.completed_stages, ["review", "decide", "review_2", "decide_2"]);
+  assert.deepEqual(Object.entries(finalStatus.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["review", "decide", "review_2", "decide_2"]);
   assert.match(readFileSync(path.join(runDir, "decision_2.md"), "utf-8"), /Verdict: ready/);
 });
 
@@ -479,9 +479,9 @@ test("release-check decide fanout rejects synthesized decision without verdict",
   assert.match(dispatch.stderr, /release decision must contain exactly one Verdict line; found 0/);
 
   const status = JSON.parse(readFileSync(path.join(workspace, ".agentmesh", "runs", "release-decide-fanout-invalid-flow", "status.json"), "utf-8"));
-  assert.equal(status.status, "decide_failed");
-  assert.equal(status.failed_stage, "decide");
-  assert.deepEqual(status.completed_stages, ["review"]);
+  assert.equal(status.run_status, "failed");
+  assert.equal(status.current_stage, "decide");
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["review"]);
   assert.equal(status.release_verdict.value, undefined);
   const events = readFileSync(
     path.join(workspace, ".agentmesh", "runs", "release-decide-fanout-invalid-flow", "events.jsonl"),

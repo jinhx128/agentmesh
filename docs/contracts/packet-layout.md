@@ -49,7 +49,7 @@ Tools may also inspect these canonical human-readable artifacts when present:
 
 ## Schema Version Policy
 
-- `status.json` uses the current packet schema `"schema_version": 1`.
+- `status.json` uses the current packet schema `"schema_version": 2`.
 - Other machine-readable packet files currently use `schema_version = 1` or
   `"schema_version": 1`.
 - Versions are monotonic integers.

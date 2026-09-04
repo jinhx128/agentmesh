@@ -19,10 +19,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  appendCallAdoptionEvent,
+  markCallResult,
   CALLS_RELATIVE_DIR,
   completeCallRecord,
   createCallRecord,
+  listCallResultEvents,
   type DirectCallRecord,
   readCallRecord,
 } from "../packages/runtime/src/calls/history.js";
@@ -151,10 +152,11 @@ function writeRun(
         run_id: runId,
         created_at: "2026-05-14T00:00:00.000Z",
         updated_at: "2026-05-14T00:00:01.000Z",
-        status: "created",
+        run_status: "awaiting_current",
+        current_stage: "plan",
         workflow: "w-4963ede2",
         stages: ["plan", "decide"],
-        completed_stages: [],
+        stage_status: { plan: "planned", decide: "planned" },
         stage_timing: {
           plan: {
             started_at: "2026-05-14T00:00:00.000Z",
@@ -231,7 +233,7 @@ function writeUserWorkflow(workspace: string): string {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Studio Visible Workflow"',
       'stages = ["plan", "execute", "verify", "review", "decide"]',
       'description = "Plan, execute, verify, review, and decide a documentation artifact."',
@@ -290,7 +292,7 @@ function writeWorkflowSource(workspace: string, workflowId = "studio-created-wor
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Studio Created Workflow"',
       'stages = ["plan", "review", "decide"]',
       'description = "Plan, review, and decide a Studio-created workflow."',
@@ -321,7 +323,7 @@ test("Studio packet browser lists runs and reads packet details", () => {
   writeRun(
     workspace,
     "run-old",
-    { status: "completed", completed_stages: ["plan", "decide"] },
+    { run_status: "completed", current_stage: undefined, stage_status: { plan: "completed", decide: "completed" } },
     [
       {
         schema_version: 1,
@@ -334,8 +336,9 @@ test("Studio packet browser lists runs and reads packet details", () => {
     workspace,
     "run-new",
     {
-      status: "needs_decision",
-      completed_stages: ["plan"],
+      run_status: "awaiting_current",
+      current_stage: "decide",
+      stage_status: { plan: "completed", decide: "planned" },
       resolved_context_policy: {
         max_bytes: 4096,
         max_files: 3,
@@ -369,7 +372,7 @@ test("Studio packet browser lists runs and reads packet details", () => {
 
   const runs = listStudioRuns({ cwd: workspace, scope: "current" });
   assert.deepEqual(runs.map((run) => run.run_id), ["run-new", "run-old"]);
-  assert.equal(runs[0].status, "needs_decision");
+  assert.equal(runs[0].run_status, "awaiting_current");
   assert.equal(runs[0].latest_event, "stage.completed");
 
   const detail = readStudioRun("run-new", { cwd: workspace, eventTail: 1 });
@@ -404,13 +407,134 @@ test("Studio packet browser lists runs and reads packet details", () => {
   assert.equal(preview.truncated, false);
 });
 
+test("Studio packet browser derives state-driven run actions", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  writeRun(workspace, "completed-run", {
+    run_status: "completed",
+    current_stage: undefined,
+    stage_status: { plan: "completed", decide: "completed" },
+  }, []);
+  writeRun(workspace, "running-run", {
+    run_status: "running",
+    current_stage: "plan",
+    stage_status: { plan: "running", decide: "planned" },
+  }, []);
+  writeRun(workspace, "failed-run", {
+    run_status: "failed",
+    current_stage: "plan",
+    stage_status: { plan: "failed", decide: "planned" },
+    stage_assignments: {
+      plan: ["worker"],
+      decide: ["current"],
+    },
+    stage_timing: { plan: { attempt_count: 0 }, decide: { attempt_count: 0 } },
+  }, []);
+  writeRun(workspace, "current-run", {
+    run_status: "awaiting_current",
+    current_stage: "decide",
+    stage_status: { plan: "completed", decide: "planned" },
+    stage_assignments: {
+      plan: ["current"],
+      decide: ["current"],
+    },
+  }, []);
+  writeRun(workspace, "new-run", {
+    run_status: "pending",
+    current_stage: "plan",
+    stage_status: { plan: "planned", decide: "planned" },
+    stage_assignments: {
+      plan: ["worker"],
+      decide: ["current"],
+    },
+    stage_timing: { plan: { attempt_count: 0 }, decide: { attempt_count: 0 } },
+  }, []);
+  writeRun(workspace, "partial-run", {
+    run_status: "pending",
+    current_stage: "decide",
+    stage_status: { plan: "completed", decide: "planned" },
+    stage_assignments: {
+      plan: ["current"],
+      decide: ["worker"],
+    },
+  }, []);
+  writeRun(workspace, "retry-exhausted-run", {
+    run_status: "failed",
+    current_stage: "plan",
+    stage_status: { plan: "failed", decide: "planned" },
+    stage_assignments: {
+      plan: ["worker"],
+      decide: ["current"],
+    },
+    stage_timing: {
+      plan: { attempt_count: 2 },
+      decide: { attempt_count: 0 },
+    },
+    resolved_execution_policy: {
+      max_retry_attempts: 1,
+    },
+  }, []);
+
+  assert.deepEqual(readStudioRun("completed-run", { cwd: workspace }).run_actions, {
+    state: "completed",
+    actions: [],
+  });
+  assert.deepEqual(readStudioRun("running-run", { cwd: workspace }).run_actions, {
+    state: "running",
+    current_stage: "plan",
+    next_stage: "plan",
+    actions: [],
+  });
+  assert.deepEqual(readStudioRun("failed-run", { cwd: workspace }).run_actions, {
+    state: "failed",
+    current_stage: "plan",
+    next_stage: "plan",
+    actions: [
+      { action: "retry", stage: "plan" },
+      { action: "resume", stage: "plan" },
+    ],
+  });
+  assert.deepEqual(readStudioRun("current-run", { cwd: workspace }).run_actions, {
+    state: "awaiting_current",
+    current_stage: "decide",
+    next_stage: "decide",
+    actions: [
+      { action: "attach", stage: "decide" },
+    ],
+  });
+  assert.deepEqual(readStudioRun("new-run", { cwd: workspace }).run_actions, {
+    state: "incomplete",
+    current_stage: "plan",
+    next_stage: "plan",
+    actions: [
+      { action: "dispatch", stage: "all" },
+    ],
+  });
+  assert.deepEqual(readStudioRun("partial-run", { cwd: workspace }).run_actions, {
+    state: "incomplete",
+    current_stage: "decide",
+    next_stage: "decide",
+    actions: [
+      { action: "resume", stage: "decide" },
+    ],
+  });
+  assert.deepEqual(readStudioRun("retry-exhausted-run", { cwd: workspace }).run_actions, {
+    state: "failed",
+    current_stage: "plan",
+    next_stage: "plan",
+    blocked_reason: "retry_limit_reached",
+    actions: [],
+  });
+});
+
 test("Studio packet browser paginates events while preserving latest summary", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeRun(
     workspace,
     "paged-run",
-    { status: "running" },
+    { run_status: "running", current_stage: "plan", stage_status: { plan: "running", decide: "planned" } },
     Array.from({ length: 7 }, (_, index) => ({
       schema_version: 1,
       timestamp: `2026-05-14T00:00:0${index + 1}.000Z`,
@@ -470,7 +594,9 @@ test("Studio packet browser reads release and review evidence", () => {
     workspace,
     "release-run",
     {
-      status: "needs_decision",
+      run_status: "awaiting_current",
+      current_stage: "decide",
+      stage_status: { plan: "completed", decide: "planned" },
       workflow: "w-67ef1b1f",
       release_verdict: {
         value: "needs_decision",
@@ -609,7 +735,9 @@ test("Studio packet browser ignores placeholder review findings", () => {
     workspace,
     "placeholder-findings-run",
     {
-      status: "review_completed",
+      run_status: "awaiting_current",
+      current_stage: "decide",
+      stage_status: { plan: "completed", decide: "planned" },
       workflow: "w-9d94d0db",
     },
     [
@@ -662,7 +790,8 @@ test("Studio packet browser exposes verify stage timing and verification artifac
     workspace,
     "verify-run",
     {
-      status: "verify_completed",
+      run_status: "pending",
+      current_stage: "review",
       workflow: "w-1ab330ed",
       stages: ["plan", "execute", "verify", "review", "decide"],
       stage_nodes: [
@@ -672,7 +801,13 @@ test("Studio packet browser exposes verify stage timing and verification artifac
         { id: "review", type: "review", occurrence: 1 },
         { id: "decide", type: "decide", occurrence: 1 },
       ],
-      completed_stages: ["plan", "execute", "verify"],
+      stage_status: {
+        plan: "completed",
+        execute: "completed",
+        verify: "completed",
+        review: "planned",
+        decide: "planned",
+      },
       stage_timing: {
         plan: {
           started_at: "2026-05-14T00:00:00.000Z",
@@ -866,7 +1001,7 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   writeRun(
     workspace,
     "server-run",
-    { status: "running", title: "浏览运行记录" },
+    { run_status: "awaiting_current", title: "浏览运行记录" },
     [
       {
         schema_version: 1,
@@ -889,13 +1024,13 @@ test("Studio server exposes read-only packet browser endpoints", async () => {
   assert.equal(runs.runs[0].title, "浏览运行记录");
 
   const detail = await fetchJson(`${url}/api/runs/server-run?event_offset=0&event_limit=1`) as {
-    summary: { status: string };
+    summary: { run_status: string };
     events: Array<{ event: string }>;
     events_page: { offset: number; limit: number; total: number };
     artifacts: Array<{ name: string }>;
     review_release: { findings: { present: boolean } };
   };
-  assert.equal(detail.summary.status, "running");
+  assert.equal(detail.summary.run_status, "awaiting_current");
   assert.deepEqual(detail.events.map((event) => event.event), ["run.created"]);
   assert.deepEqual(detail.events_page, { offset: 0, limit: 1, total: 1 });
   assert.deepEqual(detail.artifacts.map((artifact) => artifact.name), ["plan", "request"]);
@@ -919,9 +1054,11 @@ test("Studio exposes and mutates only safe local reviewer session summaries", as
     workspace,
     "session-run",
     {
-      status: "review_completed",
+      run_status: "awaiting_current",
+      current_stage: "decide",
       stages: ["review", "decide"],
-      completed_stages: ["review"],
+      stage_status: { review: "completed", decide: "planned" },
+      stage_timing: { review: { attempt_count: 1 }, decide: { attempt_count: 0 } },
       stage_attempts: {
         review: [{
           lane_id: "review:a-reviewer",
@@ -938,6 +1075,7 @@ test("Studio exposes and mutates only safe local reviewer session summaries", as
           non_hermetic_reason: "session_resume",
           registry_write: true,
         }],
+        decide: [],
       },
     },
     [{
@@ -1022,7 +1160,9 @@ test("Studio server aggregates runs from registered workspaces", async () => {
       currentWorkspace,
       "current-run",
       {
-        status: "running",
+        run_status: "running",
+        current_stage: "plan",
+        stage_status: { plan: "running", decide: "planned" },
         created_at: "2026-06-10T08:00:00.000Z",
         updated_at: "2026-06-10T08:01:00.000Z",
       },
@@ -1038,7 +1178,9 @@ test("Studio server aggregates runs from registered workspaces", async () => {
       remoteWorkspace,
       "remote-run",
       {
-        status: "needs_decision",
+        run_status: "awaiting_current",
+        current_stage: "decide",
+        stage_status: { plan: "completed", decide: "planned" },
         created_at: "2026-06-10T09:00:00.000Z",
         updated_at: "2026-06-10T09:01:00.000Z",
       },
@@ -1386,12 +1528,11 @@ test("Studio server exposes read-only direct call index and details", async () =
     related_run_ids: ["run-linked"],
     related_call_ids: ["call-linked"],
   });
-  appendCallAdoptionEvent({
+  markCallResult({
     callDir: adopted.callDir,
     status: "accepted",
     updatedByEntrypoint: "studio-test",
     reason: "covered by server API test",
-    relatedCommit: "abc1234",
     updatedAt: "2026-05-17T02:10:00.000Z",
   });
 
@@ -1473,7 +1614,7 @@ test("Studio server exposes read-only direct call index and details", async () =
       id: string;
       title?: string;
       status: string;
-      adoption_status: string;
+      result_status: string;
       read_only?: boolean;
       unsupported_schema?: boolean;
       schema_warning?: string;
@@ -1512,7 +1653,7 @@ test("Studio server exposes read-only direct call index and details", async () =
   const detail = await fetchJson(`${url}/api/calls/${encodeURIComponent(adopted.record.id)}`) as {
     call: {
       id: string;
-      adoption_status: string;
+      result_status: string;
       related_files: string[];
       related_run_ids: string[];
       related_call_ids: string[];
@@ -1520,11 +1661,11 @@ test("Studio server exposes read-only direct call index and details", async () =
     prompt: { present: boolean; path: string | null; content: string; truncated: boolean };
     output: { present: boolean; path: string | null; content: string; truncated: boolean };
     stderr: { present: boolean; path: string | null; content: string; truncated: boolean };
-    adoption_events: Array<{ status: string; reason: string | null }>;
+    result_events: Array<{ status: string; reason: string | null }>;
     warnings: Array<{ code: string; message: string; path?: string }>;
   };
   assert.equal(detail.call.id, adopted.record.id);
-  assert.equal(detail.call.adoption_status, "accepted");
+  assert.equal(detail.call.result_status, "accepted");
   assert.deepEqual(detail.call.related_files, ["apps/studio/src/server.ts"]);
   assert.deepEqual(detail.call.related_run_ids, ["run-linked"]);
   assert.deepEqual(detail.call.related_call_ids, ["call-linked"]);
@@ -1536,7 +1677,7 @@ test("Studio server exposes read-only direct call index and details", async () =
   assert.equal(detail.output.path, "output.md");
   assert.match(detail.output.content, /Call output evidence/);
   assert.equal(detail.stderr.present, false);
-  assert.deepEqual(detail.adoption_events.map((event) => event.status), ["accepted"]);
+  assert.deepEqual(detail.result_events.map((event) => event.status), ["accepted"]);
   assert.deepEqual(detail.warnings, []);
   assert.equal(readFileSync(path.join(adopted.callDir, "prompt.md"), "utf-8"), adoptedPromptBefore);
   assert.equal(readFileSync(path.join(adopted.callDir, "output.md"), "utf-8"), adoptedOutputBefore);
@@ -1651,13 +1792,6 @@ test("Studio server aggregates direct calls from registered workspaces", async (
       ) as { call: { workspace: { id: string } }; output: { content: string } };
       assert.equal(remoteDetail.call.workspace.id, remoteEntry.id);
       assert.match(remoteDetail.output.content, /remote output/);
-
-      const adopted = await postJson(
-        `${url}/api/calls/${remote.record.id}/adoption?workspace_id=${remoteEntry.id}`,
-        { status: "accepted", reason: "used from global Studio" },
-      ) as { call: { adoption_status: string; workspace: { id: string } } };
-      assert.equal(adopted.call.adoption_status, "accepted");
-      assert.equal(adopted.call.workspace.id, remoteEntry.id);
     } finally {
       server.close();
     }
@@ -1666,172 +1800,31 @@ test("Studio server aggregates direct calls from registered workspaces", async (
   }
 });
 
-test("Studio server appends direct call adoption actions without touching artifacts", async () => {
+test("Studio exposes call history as read-only and cannot decide call results", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-
-  const accepted = createCallRecord({
+  const created = createCallRecord({
     workspace,
     cwd: workspace,
     agentId: "reviewer",
     adapter: "command",
     purpose: "review",
     promptSource: "inline",
-    promptContent: "accept this call",
+    promptContent: "review this",
   });
-  completeCallRecord(accepted, {
-    status: "success",
-    stdout: "accepted output\n",
-  });
-  const acceptedPromptBefore = readFileSync(path.join(accepted.callDir, "prompt.md"), "utf-8");
-  const acceptedOutputBefore = readFileSync(path.join(accepted.callDir, "output.md"), "utf-8");
-
-  const rejected = createCallRecord({
-    workspace,
-    cwd: workspace,
-    agentId: "reviewer",
-    adapter: "command",
-    purpose: "review",
-    promptSource: "inline",
-    promptContent: "reject this call",
-  });
-  completeCallRecord(rejected, {
-    status: "failed",
-    stdout: "",
-    stderr: "bad output\n",
-    errorKind: "adapter_error",
-    errorSummary: "bad output",
-  });
-
-  const superseded = createCallRecord({
-    workspace,
-    cwd: workspace,
-    agentId: "reviewer",
-    adapter: "command",
-    purpose: "review",
-    promptSource: "inline",
-    promptContent: "supersede this call",
-  });
-  completeCallRecord(superseded, {
-    status: "success",
-    stdout: "old output\n",
-  });
-
-  const invalidMetadata = createCallRecord({
-    workspace,
-    cwd: workspace,
-    agentId: "reviewer",
-    adapter: "command",
-    purpose: "review",
-    promptSource: "inline",
-    promptContent: "invalid metadata",
-  });
-  completeCallRecord(invalidMetadata, {
-    status: "success",
-    stdout: "metadata output\n",
-  });
-
-  const newer = createCallRecord({
-    workspace,
-    cwd: workspace,
-    agentId: "future",
-    adapter: "command",
-    purpose: "review",
-    promptSource: "inline",
-    promptContent: "future schema",
-  });
-  writeCallRecordPatch(newer.callDir, { schema_version: 99 });
-
+  completeCallRecord(created, { status: "success", stdout: "review output\n" });
   const { server, url } = await listen(createStudioServer({ cwd: workspace }));
   test.after(() => server.close());
 
-  const acceptedDetail = await postJson(`${url}/api/calls/${accepted.record.id}/adoption`, {
-    status: "accepted",
-    reason: "used in implementation",
-    related_commit: "abc1234",
-    related_run_id: "run-linked",
-  }) as {
-    call: { adoption_status: string; related_run_ids: string[] };
-    adoption_events: Array<{
-      status: string;
-      reason: string | null;
-      related_commit: string | null;
-      related_run_id: string | null;
-      updated_by_entrypoint: string;
-    }>;
-  };
-  assert.equal(acceptedDetail.call.adoption_status, "accepted");
-  assert.deepEqual(acceptedDetail.call.related_run_ids, ["run-linked"]);
-  assert.deepEqual(acceptedDetail.adoption_events.map((event) => event.status), ["accepted"]);
-  assert.equal(acceptedDetail.adoption_events[0].reason, "used in implementation");
-  assert.equal(acceptedDetail.adoption_events[0].related_commit, "abc1234");
-  assert.equal(acceptedDetail.adoption_events[0].related_run_id, "run-linked");
-  assert.equal(acceptedDetail.adoption_events[0].updated_by_entrypoint, "studio");
-  assert.equal(readFileSync(path.join(accepted.callDir, "prompt.md"), "utf-8"), acceptedPromptBefore);
-  assert.equal(readFileSync(path.join(accepted.callDir, "output.md"), "utf-8"), acceptedOutputBefore);
-
-  const eventLogBefore = readFileSync(path.join(accepted.callDir, "adoption.jsonl"), "utf-8");
-  const invalidTransition = await fetch(`${url}/api/calls/${accepted.record.id}/adoption`, {
+  const response = await fetch(`${url}/api/calls/${created.record.id}/result`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "rejected", reason: "changed my mind" }),
+    body: JSON.stringify({ action: "mark", status: "accepted" }),
   });
-  assert.equal(invalidTransition.status, 409);
-  assert.match(await invalidTransition.text(), /cannot transition call adoption from accepted to rejected/);
-  assert.equal(readFileSync(path.join(accepted.callDir, "adoption.jsonl"), "utf-8"), eventLogBefore);
 
-  const rejectedDetail = await postJson(`${url}/api/calls/${rejected.record.id}/adoption`, {
-    status: "rejected",
-    reason: "not used",
-  }) as { call: { adoption_status: string }; adoption_events: Array<{ status: string }> };
-  assert.equal(rejectedDetail.call.adoption_status, "rejected");
-  assert.deepEqual(rejectedDetail.adoption_events.map((event) => event.status), ["rejected"]);
-
-  const supersededDetail = await postJson(`${url}/api/calls/${superseded.record.id}/adoption`, {
-    status: "superseded",
-    reason: "newer call used",
-    superseded_by_call_id: accepted.record.id,
-  }) as {
-    call: { adoption_status: string; related_call_ids: string[] };
-    adoption_events: Array<{ status: string; superseded_by_call_id: string | null }>;
-  };
-  assert.equal(supersededDetail.call.adoption_status, "superseded");
-  assert.deepEqual(supersededDetail.call.related_call_ids, [accepted.record.id]);
-  assert.equal(supersededDetail.adoption_events[0].superseded_by_call_id, accepted.record.id);
-
-  const invalidStatus = await fetch(`${url}/api/calls/${superseded.record.id}/adoption`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "unreviewed" }),
-  });
-  assert.equal(invalidStatus.status, 400);
-  assert.match(await invalidStatus.text(), /invalid adoption status/);
-
-  const invalidRelatedRun = await fetch(`${url}/api/calls/${invalidMetadata.record.id}/adoption`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "accepted", related_run_id: "../escape" }),
-  });
-  assert.equal(invalidRelatedRun.status, 400);
-  assert.match(await invalidRelatedRun.text(), /invalid related-run-id/);
-
-  const invalidReason = await fetch(`${url}/api/calls/${invalidMetadata.record.id}/adoption`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "accepted", reason: "bad\0reason" }),
-  });
-  assert.equal(invalidReason.status, 400);
-  assert.match(await invalidReason.text(), /text values cannot contain null bytes/);
-  assert.equal(existsSync(path.join(invalidMetadata.callDir, "adoption.jsonl")), false);
-
-  const readOnly = await fetch(`${url}/api/calls/${newer.record.id}/adoption`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "accepted", reason: "future schema" }),
-  });
-  assert.equal(readOnly.status, 409);
-  assert.match(await readOnly.text(), /cannot mutate adoption for newer call record schema/);
-  assert.equal(existsSync(path.join(newer.callDir, "adoption.jsonl")), false);
+  assert.equal(response.status, 404);
+  assert.equal(readCallRecord(created.callDir).result_status, "unprocessed");
+  assert.equal(existsSync(path.join(created.callDir, "result-events.jsonl")), false);
 });
 
 test("Studio server can serve a built Vite frontend without taking over APIs", async () => {
@@ -1840,7 +1833,7 @@ test("Studio server can serve a built Vite frontend without taking over APIs", a
   writeRun(
     workspace,
     "built-asset-run",
-    { status: "running" },
+    { run_status: "running", current_stage: "plan", stage_status: { plan: "running", decide: "planned" } },
     [
       {
         schema_version: 1,
@@ -2138,7 +2131,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
-    packet_schema_version: 1,
+    packet_schema_version: 2,
     min_read_runtime_version: "0.1.8",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
@@ -2159,7 +2152,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 
   assert.equal(compatibility.decision, "read_only");
   assert.equal(compatibility.metadata_state, "ok");
-  assert.equal(compatibility.current_runtime_version, "0.1.15");
+  assert.equal(compatibility.current_runtime_version, "0.2.0");
   assert.equal(compatibility.current_entrypoint, "cli");
   assert.equal(compatibility.metadata.last_writer_entrypoint, "desktop");
   assert.match(compatibility.reasons.join("\n"), /min_write_runtime_version 99\.0\.0/);
@@ -2168,7 +2161,7 @@ test("Studio server exposes workspace compatibility diagnostics", async () => {
 test("Studio server exposes AgentMesh update diagnostics", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  await withReleaseServer(releasePayload("0.1.16"), async (releaseUrl) => {
+  await withReleaseServer(releasePayload("0.2.1"), async (releaseUrl) => {
     const previousReleaseUrl = process.env.AGENTMESH_UPDATE_RELEASE_URL;
     process.env.AGENTMESH_UPDATE_RELEASE_URL = releaseUrl;
     const { server, url } = await listen(createStudioServer({ cwd: workspace }));
@@ -2183,18 +2176,18 @@ test("Studio server exposes AgentMesh update diagnostics", async () => {
       };
 
       assert.equal(update.schema_version, 1);
-      assert.equal(update.current_version, "0.1.15");
-      assert.equal(update.latest_version, "0.1.16");
+      assert.equal(update.current_version, "0.2.0");
+      assert.equal(update.latest_version, "0.2.1");
       assert.equal(update.update_available, true);
       assert.equal(update.cli.status, "update_available");
       assert.deepEqual(update.cli.install_command, [
         "npm",
         "install",
         "-g",
-        "https://example.invalid/agentmesh-0.1.16.tgz",
+        "https://example.invalid/agentmesh-0.2.1.tgz",
       ]);
       assert.equal(update.desktop.status, "manual_update_available");
-      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.1.16_aarch64.dmg");
+      assert.equal(update.desktop.asset_url, "https://example.invalid/AgentMesh_0.2.1_aarch64.dmg");
     } finally {
       if (previousReleaseUrl === undefined) {
         delete process.env.AGENTMESH_UPDATE_RELEASE_URL;
@@ -2212,7 +2205,7 @@ test("Studio mutation endpoint surfaces read-only compatibility as a stable UI e
   writeRun(workspace, "readonly-run", {}, []);
   writeWorkspaceCompatibilityMetadata(workspace, {
     schema_version: 1,
-    packet_schema_version: 1,
+    packet_schema_version: 2,
     min_read_runtime_version: "0.1.8",
     min_write_runtime_version: "99.0.0",
     last_writer_runtime_version: "99.0.0",
@@ -2468,7 +2461,7 @@ test("Studio server exposes runtime-backed mutation endpoint", async () => {
   writeRun(
     workspace,
     "server-run",
-    { status: "running" },
+    { run_status: "awaiting_current" },
     [
       {
         schema_version: 1,
@@ -2519,7 +2512,11 @@ test("Studio server exposes runtime-backed mutation endpoint", async () => {
 test("Studio server preserves failed mutation stdout stderr and exit code", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  writeRun(workspace, "failed-run", { status: "failed" }, []);
+  writeRun(workspace, "failed-run", {
+    run_status: "failed",
+    current_stage: "plan",
+    stage_status: { plan: "failed", decide: "planned" },
+  }, []);
   const { server, url } = await listen(createStudioServer({ cwd: workspace }));
   test.after(() => server.close());
 
@@ -2707,9 +2704,12 @@ test("Studio server exposes runtime-backed agent lifecycle endpoints", async () 
     workspace,
     "active-run",
     {
-      status: "running",
+      run_status: "running",
+      current_stage: "plan",
+      stage_status: { plan: "running", decide: "planned" },
       stage_assignments: {
         plan: ["studio-agent"],
+        decide: ["current"],
       },
     },
     [],

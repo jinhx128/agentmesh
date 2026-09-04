@@ -65,9 +65,10 @@ export function packetStatus(args: string[]): number {
     console.log(JSON.stringify(status, null, 2));
   } else {
     console.log(`Run: ${status.run_id}`);
-    console.log(`Status: ${status.status}`);
+    console.log(`Run Status: ${status.run_status}`);
+    console.log(`Current Stage: ${status.current_stage ?? "(none)"}`);
     console.log(`Stages: ${status.stages.join(", ")}`);
-    console.log(`Completed: ${status.completed_stages.join(", ") || "(none)"}`);
+    console.log(`Completed: ${Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage).join(", ") || "(none)"}`);
   }
   return 0;
 }

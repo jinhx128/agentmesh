@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { appendCallAdoptionEvent } from "@agentmesh/runtime/src/calls/history.js";
 import {
   currentWorkspaceRegistryEntry,
   listRegisteredWorkspaces,
@@ -10,9 +9,9 @@ import {
 } from "@agentmesh/runtime/src/workspaces/registry.js";
 import {
   getCall,
-  listCallAdoptionEvents,
+  listCallResultEvents,
   listCalls,
-  type AgentMeshCallAdoptionEvent,
+  type AgentMeshCallResultEvent,
   type AgentMeshCallReadOptions,
   type AgentMeshCallRecord,
 } from "@agentmesh/sdk";
@@ -84,16 +83,8 @@ export interface StudioCallDetail {
   prompt: StudioCallPreview;
   output: StudioCallPreview;
   stderr: StudioCallPreview;
-  adoption_events: AgentMeshCallAdoptionEvent[];
+  result_events: AgentMeshCallResultEvent[];
   warnings: StudioCallWarning[];
-}
-
-export interface StudioCallAdoptionRequest {
-  status?: unknown;
-  reason?: unknown;
-  related_commit?: unknown;
-  related_run_id?: unknown;
-  superseded_by_call_id?: unknown;
 }
 
 export function listStudioCalls(options: StudioCallOptions = {}): StudioCallIndex {
@@ -146,50 +137,9 @@ export function readStudioCall(
     prompt: readCallRefPreview(callDir, record.prompt_ref, previewBytes),
     output: readOutputPreview(workspace.path, callDir, record, previewBytes),
     stderr: readNamedCallFilePreview(callDir, "stderr.txt", previewBytes),
-    adoption_events: listCallAdoptionEvents(callDir, { cwd: workspace.path }),
+    result_events: listCallResultEvents(callDir, { cwd: workspace.path }),
     warnings: call.warnings,
   };
-}
-
-export function adoptStudioCall(
-  callId: string,
-  request: StudioCallAdoptionRequest,
-  options: StudioCallOptions = {},
-): StudioCallDetail {
-  const cwd = options.cwd ?? process.cwd();
-  const workspace = resolveStudioWorkspace(cwd, options);
-  const callDir = resolveStudioCallDirectory(callId, workspace.path);
-  const reason = optionalString(request.reason);
-  const relatedCommit = optionalString(request.related_commit);
-  const relatedRunId = optionalString(request.related_run_id);
-  const supersededByCallId = optionalString(request.superseded_by_call_id);
-  appendCallAdoptionEvent({
-    callDir,
-    status: finalAdoptionStatus(request.status),
-    updatedByEntrypoint: "studio",
-    reason,
-    relatedCommit,
-    relatedRunId,
-    supersededByCallId,
-  });
-  return readStudioCall(callId, { cwd, registryPath: options.registryPath, workspaceId: workspace.id });
-}
-
-export function isInvalidStudioCallAdoptionError(error: unknown): boolean {
-  const message = errorMessage(error);
-  return message.startsWith("invalid adoption status:")
-    || message === "superseded adoption requires superseded_by_call_id"
-    || message.startsWith("invalid related-run-id:")
-    || message.startsWith("invalid superseded-by-call-id:")
-    || message === "text values cannot contain null bytes"
-    || message === "invalid JSON body"
-    || message === "request body too large";
-}
-
-export function isConflictStudioCallAdoptionError(error: unknown): boolean {
-  const message = errorMessage(error);
-  return message.startsWith("cannot transition call adoption")
-    || message === "cannot mutate adoption for newer call record schema";
 }
 
 export function isInvalidStudioCallIdError(error: unknown): boolean {
@@ -210,24 +160,6 @@ function studioCallSummary(record: AgentMeshCallRecord, workspace: StudioWorkspa
     unsupported_schema: Boolean(record.read_only || record.schema_warning),
     warnings,
   };
-}
-
-function finalAdoptionStatus(value: unknown): "accepted" | "rejected" | "superseded" {
-  if (value === "accepted" || value === "rejected" || value === "superseded") {
-    return value;
-  }
-  throw new Error(`invalid adoption status: ${String(value)}`);
-}
-
-function optionalString(value: unknown): string | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function callWarnings(record: AgentMeshCallRecord, cwd: string): StudioCallWarning[] {

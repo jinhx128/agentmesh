@@ -74,10 +74,10 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         ],
       },
       {
-        title: "CLI 检测与底层工具",
+        title: "外部 CLI 与底层工具",
         body: "AgentMesh 支持的外部 AI CLI 需要各自安装和登录；AgentMesh 负责用统一 resolver 检测它们是否可用。",
         details: [
-          "命令行检测：agentmesh cli detect --json；桌面端在设置 / 环境 / CLI 检测展示同一份结果。",
+          "命令行检测：agentmesh cli detect --json；桌面端在设置 / 环境 / 外部 CLI 展示同一份结果。",
           "检测会查 PATH、app preference 和常见安装路径，不把某个人机器上的绝对路径写死到逻辑里。",
           "检测到 CLI 不等于已授权成功；模型列表、help/version、auth 状态仍以对应工具实际返回为准。",
         ],
@@ -93,11 +93,11 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       },
       {
         title: "版本检查与更新",
-        body: "CLI 和桌面端都会显示当前版本、远程最新版本和可用更新方式；桌面端当前仍需要手动替换 DMG。",
+        body: "设置 / 关于 / 版本与更新统一展示 AgentMesh CLI 和桌面应用的当前版本、最新版本与可用操作。",
         details: [
           "检查版本：agentmesh update check --json；CLI dry-run：agentmesh update install --target cli --dry-run --json。",
-          "桌面端更新会返回 DMG 下载地址，下载后退出 AgentMesh.app，再用新 app 完整替换旧 app。",
-          "GitHub API 限流时会退到 release 页面解析 latest tag；控制台也提供重新检查按钮。",
+          "桌面应用检测到可安装更新时，可以直接安装并重启；浏览器 Studio 只展示发布状态。",
+          "GitHub API 限流时会退到 release 页面解析 latest tag；关于页提供统一的重新检查按钮。",
         ],
       },
     ],
@@ -112,7 +112,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         body: "先确认 AgentMesh 自己可用，再确认外部 AI CLI、Agent Skill 和工作区兼容性。",
         details: [
           "agentmesh --version 确认当前 runtime 版本；agentmesh update check --json 确认是否有新版本。",
-          "agentmesh cli detect --json 或设置 / 环境 / CLI 检测确认 Codex、Claude、Cursor、Antigravity、OpenCode 的可见状态。",
+          "agentmesh cli detect --json 或设置 / 环境 / 外部 CLI 确认 Codex、Claude、Cursor、Antigravity、OpenCode 的可见状态。",
           "关于页确认当前工作区是可读写，旧工作区会在下一次成功写入后补齐兼容性元数据。",
         ],
       },
@@ -260,9 +260,9 @@ export const MANUAL_SECTIONS: ManualSection[] = [
       },
       {
         title: "常见问题",
-        body: "大多数问题先看三个地方：环境页 CLI 检测、Run 详情里的失败阶段、Call 里的 stdout/stderr/exit code。",
+        body: "大多数问题先看三个地方：环境页外部 CLI、Run 详情里的失败阶段、Call 里的 stdout/stderr/exit code。",
         details: [
-          "CLI 不可选：先看 CLI 检测来源、路径和版本，再确认底层工具是否登录或能列出模型。",
+          "CLI 不可选：先看外部 CLI 的来源、路径和版本，再确认底层工具是否登录或能列出模型。",
           "Run locked：等待当前 mutation 完成；确认 stale lock 后再按诊断清理。",
           "只读工作区：关于页会显示 compatibility decision 和 last writer，升级 AgentMesh 后再写入。",
           "TOML 注册失败：优先检查 schema/version、重复 id、未知字段和重复 stage 的 node id。",
@@ -463,7 +463,7 @@ function ArchitectureDiagram(): ReactElement {
             tone="green"
             items={[
               "按 schema 兼容读取 Packet",
-              "读取 direct call history/adoption",
+              "读取 direct call history/result status",
             ]}
           />
           <ArchitectureNode

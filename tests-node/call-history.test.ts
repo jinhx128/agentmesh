@@ -15,12 +15,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  appendCallAdoptionEvent,
+  markCallResult,
   completeCallRecord,
   createCallRecord,
   formatCallIdTimestamp,
   listCallRecords,
-  readCallAdoptionEvents,
+  listCallResultEvents,
   readCallRecord,
 } from "../packages/runtime/src/calls/history.js";
 import { listRegisteredWorkspaces } from "../packages/runtime/src/workspaces/registry.js";
@@ -155,7 +155,7 @@ test("agentmesh call records successful direct call evidence in the workspace", 
   assert.equal(call.tokens_in, null);
   assert.equal(call.tokens_out, null);
   assert.equal(call.cost_estimate_usd, null);
-  assert.equal(call.adoption_status, "unreviewed");
+  assert.equal(call.result_status, "unprocessed");
   assert.match(readFileSync(path.join(callDir, "prompt.md"), "utf-8"), /hello call history/);
   assert.match(readFileSync(path.join(callDir, "output.md"), "utf-8"), /# Call Output/);
   assert.deepEqual(listCallRecords(workspace).map((item) => item.id), [call.id]);
@@ -169,6 +169,50 @@ test("agentmesh call records successful direct call evidence in the workspace", 
     })),
     [{ path: realpathSync(workspace), enabled: true, recorded: true }],
   );
+});
+
+test("agentmesh call json returns the recorded call id for caller-owned result decisions", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const agent = path.join(workspace, "json-agent.sh");
+  writeExecutable(
+    agent,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "cat >/dev/null",
+      "printf 'candidate output\\n'",
+      "printf 'provider note\\n' >&2",
+      "",
+    ].join("\n"),
+  );
+  writeCommandAgentConfig(workspace, "caller", agent, ["stdin = true"]);
+
+  const result = runCli(workspace, [
+    "call",
+    "--agent",
+    "caller",
+    "--prompt",
+    "produce a candidate",
+    "--json",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout) as {
+    schema_version: number;
+    call_id: string;
+    status: string;
+    result_status: string;
+    output: string;
+    stderr: string;
+  };
+  assert.equal(payload.schema_version, 1);
+  assert.match(payload.call_id, /^call-\d{14}$/);
+  assert.equal(payload.status, "success");
+  assert.equal(payload.result_status, "unprocessed");
+  assert.equal(payload.output, "candidate output\n");
+  assert.equal(payload.stderr, "provider note\n");
+  assert.equal(readCallRecord(onlyCallDir(workspace)).id, payload.call_id);
 });
 
 test("agentmesh call default id uses call timestamp prefix", () => {
@@ -342,11 +386,20 @@ test("agentmesh call records adapter failures and timeouts", () => {
     "please timeout",
     "--timeout-secs",
     "0.05",
+    "--json",
   ]);
   assert.equal(timedOut.status, 1);
+  const timeoutPayload = JSON.parse(timedOut.stdout) as {
+    call_id: string;
+    status: string;
+    result_status: string;
+  };
   const calls = listCallRecords(workspace).sort((left, right) => left.created_at.localeCompare(right.created_at));
   assert.equal(calls.length, 2);
   const timeoutCall = calls[1];
+  assert.equal(timeoutPayload.call_id, timeoutCall.id);
+  assert.equal(timeoutPayload.status, "timeout");
+  assert.equal(timeoutPayload.result_status, "unprocessed");
   assert.equal(timeoutCall.status, "timeout");
   assert.equal(timeoutCall.exit_code, null);
   assert.equal(timeoutCall.error_kind, "timeout");
@@ -470,53 +523,44 @@ test("call adoption records a single append-only transition without changing art
 
   const promptBefore = readFileSync(path.join(created.callDir, "prompt.md"), "utf-8");
   const outputBefore = readFileSync(path.join(created.callDir, "output.md"), "utf-8");
-  const updated = appendCallAdoptionEvent({
+  const updated = markCallResult({
     callDir: created.callDir,
     status: "accepted",
     updatedByEntrypoint: "cli",
     reason: "used in changelog",
-    relatedCommit: "abc1234",
-    relatedRunId: "run-2026-05-17",
     updatedAt: "2026-05-17T10:00:00.000Z",
   });
 
-  assert.equal(updated.adoption_status, "accepted");
+  assert.equal(updated.result_status, "accepted");
   assert.equal(updated.title, created.record.title);
-  assert.deepEqual(updated.related_run_ids, ["run-2026-05-17"]);
-  assert.deepEqual(readCallRecord(created.callDir).related_run_ids, ["run-2026-05-17"]);
+  assert.deepEqual(updated.related_run_ids, []);
+  assert.deepEqual(readCallRecord(created.callDir).related_run_ids, []);
   assert.equal(readFileSync(path.join(created.callDir, "prompt.md"), "utf-8"), promptBefore);
   assert.equal(readFileSync(path.join(created.callDir, "output.md"), "utf-8"), outputBefore);
 
-  const events = readCallAdoptionEvents(created.callDir);
+  const events = listCallResultEvents(created.callDir);
   assert.equal(events.length, 1);
   assert.deepEqual(events[0], {
-    schema_version: 1,
+    schema_version: 2,
     call_id: created.record.id,
-    previous_status: "unreviewed",
+    previous_status: "unprocessed",
     status: "accepted",
     updated_at: "2026-05-17T10:00:00.000Z",
     updated_by_entrypoint: "cli",
     reason: "used in changelog",
-    related_commit: "abc1234",
-    related_run_id: "run-2026-05-17",
-    superseded_by_call_id: null,
+    replaced_by_call_id: null,
   });
 
-  const eventLogBefore = readFileSync(path.join(created.callDir, "adoption.jsonl"), "utf-8");
-  assert.throws(
-    () =>
-      appendCallAdoptionEvent({
-        callDir: created.callDir,
-        status: "rejected",
-        updatedByEntrypoint: "cli",
-        reason: "changed my mind",
-      }),
-    /cannot transition call adoption from accepted to rejected/,
-  );
-  assert.equal(readFileSync(path.join(created.callDir, "adoption.jsonl"), "utf-8"), eventLogBefore);
+  markCallResult({
+    callDir: created.callDir,
+    status: "rejected",
+    updatedByEntrypoint: "cli",
+    reason: "changed my mind",
+  });
+  assert.equal(listCallResultEvents(created.callDir).length, 2);
 });
 
-test("calls adopt CLI records adoption through the runtime boundary", () => {
+test("calls mark CLI records result status through the runtime boundary", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   writeCommandAgentConfig(workspace, "caller", process.execPath);
@@ -531,41 +575,32 @@ test("calls adopt CLI records adoption through the runtime boundary", () => {
 
   const adopted = runCli(workspace, [
     "calls",
-    "adopt",
+    "mark",
     created.record.id,
     "--status",
     "accepted",
-    "--entrypoint",
-    "studio",
     "--reason",
     "used in implementation",
-    "--related-commit",
-    "abc1234",
-    "--related-run-id",
-    "run-linked",
     "--json",
   ]);
   assert.equal(adopted.status, 0, adopted.stderr);
   const payload = JSON.parse(adopted.stdout);
-  assert.equal(payload.call.adoption_status, "accepted");
-  assert.equal(payload.adoption_events[0].updated_by_entrypoint, "studio");
-  assert.equal(payload.adoption_events[0].reason, "used in implementation");
-  assert.equal(payload.adoption_events[0].related_commit, "abc1234");
-  assert.equal(payload.adoption_events[0].related_run_id, "run-linked");
-  assert.equal(readCallRecord(created.callDir).adoption_status, "accepted");
+  assert.equal(payload.result_status, "accepted");
+  assert.equal(payload.result_events[0].updated_by_entrypoint, "cli");
+  assert.equal(payload.result_events[0].reason, "used in implementation");
+  assert.equal(readCallRecord(created.callDir).result_status, "accepted");
 
-  const invalidTransition = runCli(workspace, [
+  const changed = runCli(workspace, [
     "calls",
-    "adopt",
+    "mark",
     created.record.id,
     "--status",
     "rejected",
   ]);
-  assert.equal(invalidTransition.status, 1);
-  assert.match(invalidTransition.stderr, /cannot transition call adoption from accepted to rejected/);
+  assert.equal(changed.status, 0, changed.stderr);
 });
 
-test("call adoption supports superseded links without requiring referenced calls or runs to exist", () => {
+test("call result supports an explicit rejected state", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const created = createCallRecord({
@@ -577,23 +612,21 @@ test("call adoption supports superseded links without requiring referenced calls
     promptContent: "research",
   });
 
-  const updated = appendCallAdoptionEvent({
+  const updated = markCallResult({
     callDir: created.callDir,
-    status: "superseded",
+    status: "rejected",
     updatedByEntrypoint: "desktop",
     reason: "newer answer used",
-    relatedRunId: "missing-run",
-    supersededByCallId: "missing-call",
     updatedAt: "2026-05-17T10:01:00.000Z",
   });
 
-  assert.equal(updated.adoption_status, "superseded");
-  assert.deepEqual(updated.related_run_ids, ["missing-run"]);
-  assert.deepEqual(updated.related_call_ids, ["missing-call"]);
-  assert.equal(readCallAdoptionEvents(created.callDir)[0].superseded_by_call_id, "missing-call");
+  assert.equal(updated.result_status, "rejected");
+  assert.deepEqual(updated.related_run_ids, []);
+  assert.deepEqual(updated.related_call_ids, []);
+  assert.equal(listCallResultEvents(created.callDir)[0].replaced_by_call_id, null);
 });
 
-test("call adoption validates direct runtime metadata before appending events", () => {
+test("call result validates direct runtime metadata before appending events", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const created = createCallRecord({
@@ -607,19 +640,7 @@ test("call adoption validates direct runtime metadata before appending events", 
 
   assert.throws(
     () =>
-      appendCallAdoptionEvent({
-        callDir: created.callDir,
-        status: "accepted",
-        updatedByEntrypoint: "studio",
-        relatedRunId: "../escape",
-      }),
-    /invalid related-run-id: \.\.\/escape/,
-  );
-  assert.equal(existsSync(path.join(created.callDir, "adoption.jsonl")), false);
-
-  assert.throws(
-    () =>
-      appendCallAdoptionEvent({
+      markCallResult({
         callDir: created.callDir,
         status: "accepted",
         updatedByEntrypoint: "studio",
@@ -627,11 +648,11 @@ test("call adoption validates direct runtime metadata before appending events", 
       }),
     /text values cannot contain null bytes/,
   );
-  assert.equal(existsSync(path.join(created.callDir, "adoption.jsonl")), false);
-  assert.equal(readCallRecord(created.callDir).adoption_status, "unreviewed");
+  assert.equal(existsSync(path.join(created.callDir, "result-events.jsonl")), false);
+  assert.equal(readCallRecord(created.callDir).result_status, "unprocessed");
 });
 
-test("call adoption rejects invalid transitions and newer schema records", () => {
+test("call result rejects newer schema records", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const created = createCallRecord({
@@ -643,17 +664,6 @@ test("call adoption rejects invalid transitions and newer schema records", () =>
     promptContent: "reader prompt",
   });
 
-  assert.throws(
-    () =>
-      appendCallAdoptionEvent({
-        callDir: created.callDir,
-        status: "superseded",
-        updatedByEntrypoint: "cli",
-      }),
-    /superseded adoption requires superseded_by_call_id/,
-  );
-  assert.equal(existsSync(path.join(created.callDir, "adoption.jsonl")), false);
-
   const newerRecord = {
     ...created.record,
     schema_version: 99,
@@ -664,13 +674,13 @@ test("call adoption rejects invalid transitions and newer schema records", () =>
   );
   assert.throws(
     () =>
-      appendCallAdoptionEvent({
+      markCallResult({
         callDir: created.callDir,
         status: "accepted",
         updatedByEntrypoint: "cli",
         reason: "newer schema should be read-only",
       }),
-    /cannot mutate adoption for newer call record schema/,
+    /cannot mutate result status for newer call record schema/,
   );
-  assert.equal(existsSync(path.join(created.callDir, "adoption.jsonl")), false);
+  assert.equal(existsSync(path.join(created.callDir, "result-events.jsonl")), false);
 });

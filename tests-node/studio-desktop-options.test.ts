@@ -44,10 +44,8 @@ function writeRun(workspace: string, runId: string): void {
     path.join(runDir, "status.json"),
     `${JSON.stringify(currentPacketStatus({
       run_id: runId,
-      status: "created",
       workflow: "desktop-test",
       stages: ["plan"],
-      completed_stages: [],
     }), null, 2)}\n`,
   );
   writeFileSync(path.join(runDir, "events.jsonl"), "");
@@ -915,7 +913,7 @@ test("desktop skill install writes only selected targets and reports each result
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);
     assert.match(installedSkill, /# AgentMesh Skill/);
-    assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.15/);
+    assert.match(installedSkill, /AgentMesh CLI version: 0\.2\.0/);
     assert.equal(
       payload.skills.targets.find((target) => target.target === "codex")?.status,
       "ok",

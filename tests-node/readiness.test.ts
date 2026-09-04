@@ -1286,7 +1286,7 @@ test("doctor CLI reports duplicate workflow registry diagnostics", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan"]',
       'description = "Duplicate built-in workflow."',
       'when_to_use = ["Never."]',
@@ -1448,8 +1448,8 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   const markdown = agentmeshSkillMarkdown();
   for (const expected of [
     "## Version Metadata",
-    "AgentMesh CLI version: 0.1.15",
-    "Packet schema version: 1",
+    "AgentMesh CLI version: 0.2.0",
+    "Packet schema version: 2",
     "Workflow recipe schema version: 1",
     "agentmesh version --json",
     "agentmesh update check --json",
@@ -1466,6 +1466,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   }
   assert.doesNotMatch(markdown, /agents add executor/);
   assert.doesNotMatch(markdown, /agents add reviewer/);
+  assert.doesNotMatch(markdown, /failed_stage/);
   assert.doesNotMatch(markdown, /CODEX_HOME\/skills/);
   assert.doesNotMatch(markdown, /\.cursor\/rules\/agentmesh\.mdc.*Current install targets/s);
 
@@ -1474,8 +1475,8 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     encoding: "utf-8",
   });
   assert.equal(showResult.status, 0, showResult.stderr);
-  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.1\.15/);
-  assert.match(showResult.stdout, /Packet schema version: 1/);
+  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(showResult.stdout, /Packet schema version: 2/);
   assert.match(showResult.stdout, /Workflow recipe schema version: 1/);
 
   const exportResult = spawnSync(
@@ -1484,8 +1485,8 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     { cwd: workspace, encoding: "utf-8" },
   );
   assert.equal(exportResult.status, 0, exportResult.stderr);
-  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.1\.15/);
-  assert.match(exportResult.stdout, /Packet schema version: 1/);
+  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(exportResult.stdout, /Packet schema version: 2/);
   assert.match(exportResult.stdout, /Workflow recipe schema version: 1/);
 
   const installResult = spawnSync(
@@ -1498,8 +1499,8 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     claudeProjectSkillPath(workspace),
     "utf-8",
   );
-  assert.match(installedSkill, /AgentMesh CLI version: 0\.1\.15/);
-  assert.match(installedSkill, /Packet schema version: 1/);
+  assert.match(installedSkill, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(installedSkill, /Packet schema version: 2/);
   assert.match(installedSkill, /Workflow recipe schema version: 1/);
 });
 

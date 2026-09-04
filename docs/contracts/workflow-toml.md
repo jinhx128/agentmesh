@@ -9,7 +9,7 @@ Workflow TOML defines the team protocol for a run.
 ```toml
 schema_version = 1
 workflow_recipe_version = 1
-compatible_packet_schema_versions = [1]
+compatible_packet_schema_versions = [2]
 name = "Bug Fix"
 stages = ["plan", "execute", "review", "decide"]
 description = "Fix a bug through plan, execute, review, and decide."
@@ -28,7 +28,7 @@ quality_gates = ["The final decision records accepted and rejected findings."]
   for one run only.
 - `schema_version` is the TOML file shape version.
 - `workflow_recipe_version` is the workflow recipe semantics version.
-- `compatible_packet_schema_versions` must be exactly `[1]`, matching the
+- `compatible_packet_schema_versions` must be exactly `[2]`, matching the
   current packet schema constant. Mixed legacy/current compatibility lists are
   rejected because legacy packet formats have no supported migration path.
 - `stages` is required and must contain 1 to 15 stage nodes.
@@ -139,7 +139,7 @@ Rules:
 ## Version Policy
 
 Workflow readers accept `schema_version = 1` and `workflow_recipe_version = 1`.
-`compatible_packet_schema_versions` must be exactly `[1]`. Newer unknown
+`compatible_packet_schema_versions` must be exactly `[2]`. Newer unknown
 versions or recipes that do not target current packet schema fail with a clear
 diagnostic before a workflow can be used.
 

@@ -67,7 +67,7 @@ function writeWorkflow(
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Docs Delivery"',
       `stages = [${stages.map((stage) => JSON.stringify(stage)).join(", ")}]`,
       'description = "Plan, review, and decide a documentation artifact."',
@@ -123,7 +123,7 @@ test("lists built-in workflows with stable registry metadata", () => {
   assert.equal(reviewGate.source, "builtin");
   assert.equal(reviewGate.schemaVersion, 1);
   assert.equal(reviewGate.workflowRecipeVersion, 1);
-  assert.deepEqual(reviewGate.compatiblePacketSchemaVersions, [1]);
+  assert.deepEqual(reviewGate.compatiblePacketSchemaVersions, [2]);
   assert.equal(reviewGate.reviewSessionMode, "auto");
   const verifiedDelivery = getWorkflow(BUILTIN_WORKFLOW_IDS.VERIFIED_DELIVERY, []);
   assert.equal(verifiedDelivery.source, "builtin");
@@ -173,7 +173,7 @@ test("loads workflow TOML from the user registry", () => {
     assert.equal(workflow.path, workflowPath);
     assert.equal(workflow.schemaVersion, 1);
     assert.equal(workflow.workflowRecipeVersion, 1);
-    assert.deepEqual(workflow.compatiblePacketSchemaVersions, [1]);
+    assert.deepEqual(workflow.compatiblePacketSchemaVersions, [2]);
     assert.equal(workflow.reviewSessionMode, "auto");
     assert.deepEqual(workflow.stages, ["plan", "review", "decide"]);
     assert.equal(workflow.name, "Docs Delivery");
@@ -225,7 +225,7 @@ test("loads user workflow TOML with inline comments", () => {
     [
       "schema_version = 1 # root schema",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Docs # Delivery" # inline comment',
       'stages = ["plan", "review", "decide"] # stage list',
       'description = "Plan, review, and decide a documentation artifact."',
@@ -255,7 +255,7 @@ test("loads user workflow TOML with bracket characters inside multi-line arrays"
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Bracketed Workflow"',
       "stages = [",
       '  "plan",',
@@ -320,7 +320,7 @@ test("rejects workflow TOML with unsupported recipe or packet compatibility vers
     [
       "schema_version = 1",
       "workflow_recipe_version = 2",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Future recipe."',
       'when_to_use = ["A future recipe is tested."]',
@@ -356,7 +356,7 @@ test("rejects workflow TOML with unsupported recipe or packet compatibility vers
   withHome(sandbox.home, () => {
     assert.throws(
       () => listWorkflows(workflowSearchDirs(sandbox.workspace)),
-      /compatible_packet_schema_versions must equal \[1\]/,
+      /compatible_packet_schema_versions must equal \[2\]/,
     );
   });
 
@@ -379,7 +379,7 @@ test("rejects workflow TOML with unsupported recipe or packet compatibility vers
   withHome(sandbox.home, () => {
     assert.throws(
       () => listWorkflows(workflowSearchDirs(sandbox.workspace)),
-      /compatible_packet_schema_versions must equal \[1\]/,
+      /compatible_packet_schema_versions must equal \[2\]/,
     );
   });
 });
@@ -394,7 +394,7 @@ test("derives workflow ids from registry filenames and rejects unknown top-level
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Derived id."',
       'when_to_use = ["A workflow id is derived from the registry filename."]',
@@ -416,7 +416,7 @@ test("derives workflow ids from registry filenames and rejects unknown top-level
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Unknown field."',
       'when_to_use = ["A workflow has an unknown field."]',
@@ -440,7 +440,7 @@ test("derives workflow ids from registry filenames and rejects unknown top-level
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'status = "mvp"',
       'stages = ["review", "decide"]',
       'description = "Legacy maturity field."',
@@ -469,7 +469,7 @@ test("rejects empty workflow required arrays and missing canonical artifacts", (
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Empty when_to_use."',
       "when_to_use = []",
@@ -492,7 +492,7 @@ test("rejects empty workflow required arrays and missing canonical artifacts", (
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "review", "decide"]',
       'description = "Missing canonical artifact."',
       'when_to_use = ["A canonical artifact is missing."]',
@@ -520,7 +520,7 @@ test("validates workflow failure policy stage types nodes and bounds", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "decide", "review", "decide"]',
       'description = "Valid policy."',
       'when_to_use = ["A policy is needed."]',
@@ -553,7 +553,7 @@ test("validates workflow failure policy stage types nodes and bounds", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Invalid policy mode."',
       'when_to_use = ["A bad mode is tested."]',
@@ -579,7 +579,7 @@ test("validates workflow failure policy stage types nodes and bounds", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Unknown policy key."',
       'when_to_use = ["An unknown policy key is tested."]',
@@ -606,7 +606,7 @@ test("validates workflow failure policy stage types nodes and bounds", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Unknown policy node."',
       'when_to_use = ["An unknown policy node is tested."]',
@@ -632,7 +632,7 @@ test("validates workflow failure policy stage types nodes and bounds", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["review", "decide"]',
       'description = "Terminal policy with max fallback."',
       'when_to_use = ["A terminal max fallback policy is tested."]',
@@ -743,7 +743,7 @@ test("rejects workflow stage counts outside the supported node range", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'description = "Missing stages."',
       'when_to_use = ["Never."]',
       'packet_artifacts = ["request.md"]',

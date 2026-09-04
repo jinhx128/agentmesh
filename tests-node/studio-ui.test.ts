@@ -67,6 +67,7 @@ import {
   studioRunKey,
   type StudioArtifactPreview,
   type StudioRunDetail,
+  type StudioRunDetailSummary,
   type StudioRunSummary,
 } from "../apps/studio-web/src/api/runs.js";
 import {
@@ -75,7 +76,6 @@ import {
   loadStudioCalls,
   nextSelectedCallKey,
   studioCallKey,
-  submitStudioCallAdoption,
   type StudioCallDetail,
   type StudioCallSummary,
 } from "../apps/studio-web/src/api/calls.js";
@@ -97,7 +97,7 @@ import {
   workflowStageLabel,
 } from "../apps/studio-web/src/app/stages.js";
 import {
-  callAdoptionStatusLabel,
+  callResultStatusLabel,
   callErrorKindLabel,
   callStatusLabel,
   releaseVerdictLabel,
@@ -151,6 +151,7 @@ import {
   workflowStageExitLabel,
   workflowStageIds,
   workflowStageStatus,
+  workflowStageToolLabel,
   workflowStageNodeTimeLabel,
   type RunOverviewState,
 } from "../apps/studio-web/src/features/runs/RunOverview.js";
@@ -270,7 +271,7 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(app, />产物</);
   assert.match(app, />日志</);
   assert.doesNotMatch(app, />日志事件</);
-  assert.match(app, />诊断</);
+  assert.doesNotMatch(app, />诊断</);
 
   const appSource = readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8");
   const copySource = readFileSync(path.resolve("apps/studio-web/src/app/copy.ts"), "utf-8");
@@ -298,7 +299,7 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(copySource, /查看详情、操作、审查发布、产物、日志事件和诊断。/);
   assert.doesNotMatch(copySource, /查看详情、操作、审查发布、日志事件和诊断。/);
   assert.doesNotMatch(copySource, /查看详情、操作、审查发布、日志和诊断。/);
-  assert.match(copySource, /查看详情、操作、日志和诊断。/);
+  assert.match(copySource, /查看详情、操作和日志。/);
   assert.doesNotMatch(copySource, /createContext|StudioI18nProvider|locale:/);
   assert.doesNotMatch(copySource, /StudioI18n|StudioMessage|i18n/i);
   assert.doesNotMatch(copySource, /chineseMessages|\bzh\s*:/);
@@ -325,7 +326,7 @@ test("App uses one activity navigator without losing run and call detail routing
   assert.match(appSource, /onClick=\{\(\) => setWorkspaceView\("definitions"\)\}/);
   assert.doesNotMatch(appSource, /setSelectedRunKey\(undefined\)|setSelectedCallKey\(undefined\)/);
   assert.match(appSource, /function refreshAfterMutation[\s\S]*loadRunsWithClient\(apiClient, \{ showLoading: false \}\)/);
-  assert.match(appSource, /async function submitCallAdoption[\s\S]*loadCallsWithClient\(apiClient, \{ showLoading: false \}\)/);
+  assert.doesNotMatch(appSource, /submitCallResult|onSubmitResult/);
   assert.match(appSource, /loadDesktopPreferences\(\)/);
   assert.match(appSource, /desktopStartupCheckStartedRef/);
   assert.match(appSource, /preferences\.auto_check_updates[\s\S]*checkDesktopUpdater\(\)/);
@@ -363,8 +364,9 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.studio-activity-item-shell\s*\+\s*\.studio-activity-item-shell\s*\{[^}]*margin-top:\s*2px;/s);
   assert.match(frontendCss, /\.studio-activity-item-shell\s+\.studio-nav-item:hover\s*\{[^}]*border-color:\s*var\(--studio-border-strong\);[^}]*background:\s*#f3f6f8;[^}]*box-shadow:\s*none;/s);
   assert.match(frontendCss, /\.studio-activity-item-shell\s+\.studio-nav-item\[aria-current="true"\]\s*\{[^}]*border-color:\s*rgb\(62 184 200 \/ 38%\)\s*!important;[^}]*background:\s*var\(--studio-primary-soft\)\s*!important;/s);
-  assert.match(frontendCss, /\.studio-auto-refresh-select\s*\{[^}]*flex:\s*0 0 56px/s);
+  assert.match(frontendCss, /\.studio-auto-refresh-select\s*\{[^}]*flex:\s*0 0 44px/s);
   assert.match(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-Select-input\s*\{/);
+  assert.match(frontendCss, /\.studio-auto-refresh-option\[data-combobox-selected\]\s*\{[^}]*background:\s*var\(--studio-primary-soft\);[^}]*color:\s*var\(--studio-primary-ink\);/s);
   assert.doesNotMatch(frontendCss, /\.studio-auto-refresh-select\s+\.mantine-NativeSelect-input\s*\{/);
   assert.doesNotMatch(frontendCss, /\.studio-data-switch\s*\{/);
   assert.match(frontendCss, /\.studio-resource-card-layout\s*\{[^}]*flex-wrap:\s*nowrap;/s);
@@ -375,6 +377,7 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.event-field-badge\s+\.mantine-Badge-label\s*\{[^}]*text-transform:\s*none;/s);
   assert.match(frontendCss, /\.run-summary-row\s*\{[^}]*display:\s*grid;/s);
   assert.match(frontendCss, /\.run-summary-row\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(frontendCss, /\.run-summary-column\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s);
   assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*display:\s*grid;/s);
   assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*grid-template-columns:\s*72px\s+minmax\(0,\s*1fr\);/s);
   assert.match(frontendCss, /\.run-summary-item\s*\{[^}]*justify-items:\s*start;/s);
@@ -419,6 +422,8 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*overflow-y:\s*auto;/s);
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*padding:\s*3px 4px 4px;/s);
   assert.match(frontendCss, /\.artifact-sidebar-list\s*\{[^}]*box-sizing:\s*border-box;/s);
+  assert.match(frontendCss, /\.artifact-sidebar-panel\.call-artifact-sidebar-panel\s*>\s*\.mantine-Stack-root\s*\{[^}]*height:\s*auto;/s);
+  assert.match(frontendCss, /\.call-artifact-sidebar-panel\s+\.artifact-sidebar-list\s*\{[^}]*min-height:\s*auto;[^}]*flex:\s*0 1 auto;/s);
   assert.doesNotMatch(frontendCss, /\.studio-nav-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
   assert.match(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px var\(--mantine-color-agentmesh-6\);/s);
   assert.doesNotMatch(frontendCss, /\.artifact-sidebar-item\[aria-current="true"\]\s*\{[^}]*outline:/s);
@@ -512,6 +517,9 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
     { encoding: "utf-8" },
   );
   assert.match(autoRefreshSource, /Select,/);
+  assert.match(autoRefreshSource, /withCheckIcon=\{false\}/);
+  assert.match(autoRefreshSource, /rightSection=\{null\}/);
+  assert.match(autoRefreshSource, /option:\s*"studio-auto-refresh-option"/);
   assert.doesNotMatch(autoRefreshSource, /NativeSelect/);
 });
 
@@ -595,7 +603,7 @@ test("Studio silver shell renders the approved brand hierarchy", () => {
   assert.match(viteConfigSource, /allow:\s*\[studioRoot\]/);
   assert.match(frontendCss, /@supports \(backdrop-filter:\s*blur\(1px\)\)/);
   assert.match(frontendCss, /\.studio-activity-delete\s*\{[^}]*opacity:\s*1;/s);
-  assert.match(frontendCss, /@media \(hover:\s*hover\)[\s\S]*\.studio-activity-delete\s*\{[^}]*opacity:\s*0;/s);
+  assert.doesNotMatch(frontendCss, /@media \(hover:\s*hover\)[\s\S]*\.studio-activity-delete\s*\{[^}]*opacity:\s*0;/s);
 });
 
 test("Studio silver components map update and status semantics", () => {
@@ -615,6 +623,9 @@ test("Studio silver components map update and status semantics", () => {
   }, {
     state: { status: "ready", enabled: true },
     onChange: async () => {},
+  }, {
+    state: { status: "ready", report: integrationsFixture().command_line_tool },
+    onInstall: async () => {},
   });
   const frontendCss = readFileSync(
     path.resolve("apps/studio-web/src/styles.css"),
@@ -645,6 +656,9 @@ test("Studio silver components map update and status semantics", () => {
     assert.ok(frontendCss.includes(selector), `missing component selector: ${selector}`);
   }
   assert.match(frontendCss, /\.status\.ready,[\s\S]*var\(--studio-success\)/);
+  assert.match(frontendCss, /\.status\.aborted[\s\S]*var\(--studio-danger\)/);
+  assert.match(frontendCss, /\.status\.timed_out,[\s\S]*\.status\.timeout,[\s\S]*\.status\.awaiting_current,[\s\S]*\.status\.stale[\s\S]*var\(--studio-warning\)/);
+  assert.match(frontendCss, /\.status\.current,[\s\S]*\.status\.running[\s\S]*var\(--studio-primary-ink\)/);
   assert.match(frontendCss, /\.status\.failed,[\s\S]*var\(--studio-danger\)/);
   assert.match(frontendCss, /--mantine-color-dimmed:\s*var\(--studio-muted\)/);
   assert.match(frontendCss, /\.mantine-Tabs-tab\[data-active\][^{]*\{[^}]*color:\s*var\(--studio-primary-ink\)/s);
@@ -652,10 +666,12 @@ test("Studio silver components map update and status semantics", () => {
   assert.match(frontendCss, /\.status\.current,[\s\S]*\.status\.running\s*\{[^}]*color:\s*var\(--studio-primary-ink\)/s);
   assert.doesNotMatch(frontendCss, /#7b8492|#5d6674/i);
   assert.match(integrationsSource, /<Tabs\.List grow aria-label=\{t\("environment"\)\}>/);
-  assert.match(integrationsSource, /commandStatusLabel\(commandLine\.status\)/);
-  assert.doesNotMatch(integrationsSource, /\{commandLine\.status\}/);
-  assert.match(settingsAboutSource, /state\.status === "error" \? "red"/);
+  assert.match(integrationsSource, /defaultValue="skills"/);
+  assert.doesNotMatch(integrationsSource, /commandStatusLabel|commandLine\.status/);
+  assert.match(settingsAboutSource, /function commandLineStatusColor[\s\S]*state\.status === "error"\) return "red"/);
+  assert.match(settingsAboutSource, /function desktopStatusColor[\s\S]*state\.status === "error"\) return "red"/);
   assert.match(settingsAboutSource, /state\.status === "error" \? <Alert color="red"/);
+  assert.doesNotMatch(settingsAboutSource, /combinedUpdateStatus|overallStatus/);
   assert.match(settingsAboutSource, /role="status"/);
   assert.match(settingsAboutSource, /aria-live="polite"/);
   assert.doesNotMatch(
@@ -690,6 +706,10 @@ test("Studio silver responsive rules preserve accessibility", () => {
   assert.match(frontendCss, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.match(frontendCss, /@media \(max-width:\s*36em\)[\s\S]*grid-template-columns:\s*1fr/);
   assert.match(frontendCss, /:focus-visible/);
+  assert.match(
+    frontendCss,
+    /\.artifact-preview-drawer-layout\s*\{[\s\S]*padding-top:\s*12px;/,
+  );
   assert.match(
     frontendCss,
     /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*transition-duration:\s*0\.01ms !important/,
@@ -1007,8 +1027,8 @@ test("Unified activities sort runs and calls, group missing timestamps, and sear
 
 test("Studio status labels localize known domain values and hide unknown enums", () => {
   assert.equal(callStatusLabel("success"), "成功");
-  assert.equal(callAdoptionStatusLabel("superseded"), "已取代");
-  assert.equal(runStatusLabel("review_running"), "审查中");
+  assert.equal(callResultStatusLabel("superseded"), "已被替换");
+  assert.equal(runStatusLabel("awaiting_current"), "等待决策");
   assert.equal(reviewerSessionModeLabel("interactive_continuous"), "连续会话");
   assert.equal(releaseVerdictLabel("not_ready"), "暂不可发布");
   assert.equal(skillTargetStatusLabel("content_mismatch"), "内容不一致");
@@ -1151,10 +1171,8 @@ test("Unified activity groups preview five items and keep partial data visible o
   assert.deepEqual(activityStatusPresentation("timeout"), { label: "超时", tone: "orange" });
   assert.deepEqual(activityStatusPresentation("stale"), { label: "已失联", tone: "yellow" });
   assert.deepEqual(activityStatusPresentation("future_state"), { label: "未知状态", tone: "gray" });
-  assert.deepEqual(activityStatusPresentation("review_running"), { label: "运行中", tone: "cyan" });
-  assert.deepEqual(activityStatusPresentation("decide_completed"), { label: "成功", tone: "green" });
-  assert.deepEqual(activityStatusPresentation("execute_2_failed"), { label: "失败", tone: "red" });
-  assert.deepEqual(activityStatusPresentation("verify_timed_out"), { label: "超时", tone: "orange" });
+  assert.deepEqual(activityStatusPresentation("awaiting_current"), { label: "待决策", tone: "violet" });
+  assert.deepEqual(activityStatusPresentation("review_running"), { label: "未知状态", tone: "gray" });
 
   const packetStatusMarkup = renderActivityNavigator(
     {
@@ -1162,7 +1180,7 @@ test("Unified activity groups preview five items and keep partial data visible o
       runs: [{
         ...studioRunSummariesFixture()[0],
         title: "真实阶段状态运行",
-        status: "execute_2_failed",
+        run_status: "failed",
       }],
     },
     { status: "ready", calls: [] },
@@ -1195,7 +1213,7 @@ test("Unified activity groups preview five items and keep partial data visible o
 
 test("Run overview, artifacts, events and review release render Mantine panels", () => {
   const detail = studioRunDetailFixture();
-  detail.summary.status = "review_running";
+  detail.summary.run_status = "awaiting_current";
   const overview = renderRunOverview({ status: "ready", detail });
   assert.match(overview, /Workflow Flow/);
   assert.doesNotMatch(overview, /工作流流程/);
@@ -1218,17 +1236,36 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.ok(overviewIndex < workflowIndex);
   const summaryHtml = details.slice(overviewIndex, workflowIndex);
   assert.match(summaryHtml, /data-studio-section="run-summary-row"/);
-  assert.match(summaryHtml, /data-summary-field="status"[\s\S]*审查中/);
+  assert.match(summaryHtml, /data-summary-column="left"/);
+  assert.match(summaryHtml, /data-summary-column="right"/);
+  const leftSummaryHtml = summaryHtml.match(/data-summary-column="left"[\s\S]*?<\/div>\s*<div[^>]*data-summary-column="right"/)?.[0] ?? "";
+  const rightSummaryHtml = summaryHtml.match(/data-summary-column="right"[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? "";
+  assert.ok(leftSummaryHtml.indexOf('data-summary-field="title"') < leftSummaryHtml.indexOf('data-summary-field="run"'));
+  assert.ok(leftSummaryHtml.indexOf('data-summary-field="run"') < leftSummaryHtml.indexOf('data-summary-field="workflow"'));
+  assert.ok(leftSummaryHtml.indexOf('data-summary-field="workflow"') < leftSummaryHtml.indexOf('data-summary-field="startedAt"'));
+  assert.ok(leftSummaryHtml.indexOf('data-summary-field="startedAt"') < leftSummaryHtml.indexOf('data-summary-field="completedAt"'));
+  assert.ok(leftSummaryHtml.indexOf('data-summary-field="completedAt"') < leftSummaryHtml.indexOf('data-summary-field="duration"'));
+  assert.ok(rightSummaryHtml.indexOf('data-summary-field="workspace"') < rightSummaryHtml.indexOf('data-summary-field="status"'));
+  assert.ok(rightSummaryHtml.indexOf('data-summary-field="status"') < rightSummaryHtml.indexOf('data-summary-field="currentNode"'));
+  assert.ok(rightSummaryHtml.indexOf('data-summary-field="currentNode"') < rightSummaryHtml.indexOf('data-summary-field="stage"'));
+  assert.ok(rightSummaryHtml.indexOf('data-summary-field="stage"') < rightSummaryHtml.indexOf('data-summary-field="runDirectory"'));
+  assert.match(summaryHtml, /data-summary-field="status"[\s\S]*class="[^"]*status awaiting_current[^"]*"[\s\S]*等待决策/);
   assert.doesNotMatch(summaryHtml, />review_running</);
   assert.match(summaryHtml, /data-summary-field="workspace"[\s\S]*工作区[\s\S]*project/);
   assert.match(summaryHtml, /data-summary-field="run"[\s\S]*运行[\s\S]*run-1/);
   assert.match(summaryHtml, /data-summary-field="workflow"[\s\S]*Workflow[\s\S]*w-7db15660/);
-  assert.match(summaryHtml, /data-summary-field="workspace"[\s\S]*data-summary-field="status"[\s\S]*data-summary-field="run"[\s\S]*data-summary-field="workflow"/);
+  assert.match(summaryHtml, /data-summary-field="title"[\s\S]*标题[\s\S]*编排发布流程/);
+  assert.match(summaryHtml, /data-summary-field="currentNode"[\s\S]*当前节点[\s\S]*审查/);
+  assert.match(summaryHtml, /data-summary-field="runDirectory"[\s\S]*运行目录[\s\S]*\/workspace\/\.agentmesh\/runs\/run-1/);
+  assert.match(summaryHtml, /data-summary-field="startedAt"[\s\S]*开始时间[\s\S]*2026-05-18 14:50:00/);
+  assert.match(summaryHtml, /data-summary-field="completedAt"[\s\S]*结束时间[\s\S]*暂无时间/);
+  assert.match(summaryHtml, /data-summary-field="duration"[\s\S]*已历时[\s\S]*10分00秒/);
+  assert.match(summaryHtml, /data-summary-column="left"[\s\S]*data-summary-column="right"/);
   assert.doesNotMatch(summaryHtml, /class="[^"]*studio-metric/);
   assert.match(details, /data-studio-section="workflow-flow"/);
   assert.match(details, /data-studio-section="workflow-flow-node-metrics"/);
   assert.match(details, /title="审查"/);
-  assert.match(details, /审查 · 当前/);
+  assert.match(details, /审查 · 待提交/);
   assert.match(details, /data-workflow-stage="review"/);
   assert.match(details, /data-workflow-stage="execute"/);
   assert.doesNotMatch(details, /workflow-step-stack/);
@@ -1236,14 +1273,26 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   const stageEvidenceIndex = details.indexOf('data-studio-section="review-stage-evidence"', stageDetailIndex);
   assert.ok(stageDetailIndex >= 0);
   assert.ok(stageEvidenceIndex > stageDetailIndex);
+  const workflowNodesIndex = details.indexOf('class="workflow-nodes"', workflowIndex);
+  const workflowNodesHtml = details.slice(workflowNodesIndex, stageDetailIndex);
+  assert.ok(workflowNodesIndex >= 0);
+  assert.doesNotMatch(workflowNodesHtml, /已完成|当前|待开始|失败/);
   const stageDetailHtml = details.slice(stageDetailIndex, stageEvidenceIndex);
   assert.match(stageDetailHtml, /data-studio-section="workflow-stage-summary-row"/);
   assert.match(stageDetailHtml, /data-stage-field="stage"[\s\S]*阶段[\s\S]*审查/);
-  assert.match(stageDetailHtml, /data-stage-field="status"[\s\S]*状态[\s\S]*当前/);
-  assert.match(stageDetailHtml, /data-stage-field="agent"[\s\S]*Agent[\s\S]*current/);
   assert.match(stageDetailHtml, /data-stage-field="type"[\s\S]*类型[\s\S]*审查/);
+  assert.match(stageDetailHtml, /data-stage-field="startedAt"[\s\S]*开始时间[\s\S]*暂无时间/);
+  assert.match(stageDetailHtml, /data-stage-field="completedAt"[\s\S]*结束时间[\s\S]*暂无时间/);
+  assert.match(stageDetailHtml, /data-stage-field="duration"[\s\S]*耗时[\s\S]*未知/);
+  assert.match(stageDetailHtml, /data-stage-field="exit"[\s\S]*退出码[\s\S]*无外部进程/);
+  assert.match(stageDetailHtml, /data-stage-field="status"[\s\S]*状态[\s\S]*待提交/);
+  assert.match(stageDetailHtml, /data-stage-field="agent"[\s\S]*Agent[\s\S]*current/);
+  assert.match(stageDetailHtml, /data-stage-field="tool"[\s\S]*工具[\s\S]*未知/);
+  assert.match(stageDetailHtml, /data-stage-field="attemptCount"[\s\S]*尝试次数[\s\S]*未知/);
+  assert.doesNotMatch(stageDetailHtml, /mantine-Badge-root/);
   assert.doesNotMatch(stageDetailHtml, /title="review"[^>]*>review/);
-  assert.match(stageDetailHtml, /data-stage-field="stage"[\s\S]*data-stage-field="status"[\s\S]*data-stage-field="type"[\s\S]*data-stage-field="agent"/);
+  assert.match(stageDetailHtml, /data-stage-field="stage"[\s\S]*data-stage-field="type"[\s\S]*data-stage-field="startedAt"[\s\S]*data-stage-field="completedAt"[\s\S]*data-stage-field="duration"[\s\S]*data-stage-field="exit"/);
+  assert.match(stageDetailHtml, /data-stage-field="status"[\s\S]*class="[^"]*status current[^"]*"/);
   assert.doesNotMatch(stageDetailHtml, /class="[^"]*studio-metric/);
   assert.doesNotMatch(stageDetailHtml, /问题/);
   assert.doesNotMatch(stageDetailHtml, /原始审查/);
@@ -1264,11 +1313,27 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.doesNotMatch(details, /data-studio-section="workflow-flow-node-agents"/);
   assert.match(details, /Agent[\s\S]*current/);
   assert.match(details, /退出码[\s\S]*无外部进程/);
-  assert.doesNotMatch(details, /退出码[\s\S]*未知/);
   assert.doesNotMatch(details, /耗时 · 300\.0s/);
   assert.doesNotMatch(details, /尝试次数 · 2 次尝试/);
   assert.match(details, /data-studio-section="current-run-overview"/);
   assert.doesNotMatch(details, /data-studio-section="run-diagnostics"/);
+  assert.match(details, /data-studio-section="run-advanced-details"/);
+  const advancedDetailsHtml = details.slice(details.indexOf('data-studio-section="run-advanced-details"'));
+  assert.match(advancedDetailsHtml, /高级信息/);
+  assert.doesNotMatch(advancedDetailsHtml, /<details[^>]*class="studio-panel run-advanced-details"/);
+  assert.doesNotMatch(advancedDetailsHtml, /运行目录/);
+  assert.match(advancedDetailsHtml, /data-policy-field="maxFiles"[\s\S]*最多文件[\s\S]*12 个/);
+  assert.match(advancedDetailsHtml, /data-policy-field="maxBytes"[\s\S]*上下文上限[\s\S]*256 KB/);
+  assert.match(advancedDetailsHtml, /data-policy-field="requiredSources"[\s\S]*必须包含[\s\S]*project\.toml/);
+  assert.match(advancedDetailsHtml, /data-policy-field="deniedPaths"[\s\S]*排除路径[\s\S]*node_modules/);
+  assert.match(advancedDetailsHtml, /data-policy-field="redactPatterns"[\s\S]*脱敏规则[\s\S]*1 条/);
+  assert.match(advancedDetailsHtml, /data-policy-field="sourceLayers"[\s\S]*配置来源[\s\S]*用户配置/);
+  assert.match(advancedDetailsHtml, /data-policy-field="requireUserGate"[\s\S]*需要用户确认[\s\S]*否/);
+  assert.match(advancedDetailsHtml, /data-policy-field="allowAutoDispatch"[\s\S]*允许自动分发[\s\S]*是/);
+  assert.match(advancedDetailsHtml, /data-policy-field="maxRetryAttempts"[\s\S]*最多重试[\s\S]*2 次/);
+  assert.equal((advancedDetailsHtml.match(/<summary>查看原始数据<\/summary>/g) ?? []).length, 2);
+  assert.match(details, /跳过的检查[\s\S]*full npm test sidecar/);
+  assert.match(details, /剩余风险[\s\S]*manual Safari check/);
   const namedWorkflowDetails = renderRunOverview(
     { status: "ready", detail },
     "details",
@@ -1297,7 +1362,10 @@ test("Run overview, artifacts, events and review release render Mantine panels",
     planner: "Planner Agent",
     worker: "Worker Agent",
   };
-  const namedDetails = renderRunOverview({ status: "ready", detail }, "details", agentLabels);
+  const agentTools = {
+    worker: "Claude Code CLI",
+  };
+  const namedDetails = renderRunOverview({ status: "ready", detail }, "details", agentLabels, undefined, agentTools);
   assert.match(namedDetails, /data-studio-section="workflow-flow-node-time"/);
   assert.doesNotMatch(namedDetails, /data-studio-section="workflow-flow-node-agents"/);
   assert.match(namedDetails, /title="当前入口"[^>]*>当前入口/);
@@ -1307,7 +1375,7 @@ test("Run overview, artifacts, events and review release render Mantine panels",
     current: "Claude Code Opus 4.8 High, Cursor Composer 2.5, Antigravity Current",
   });
   const longAgentFieldStart = longAgentDetails.indexOf('data-stage-field="agent"');
-  const longAgentFieldEnd = longAgentDetails.indexOf('data-stage-field="startedAt"', longAgentFieldStart);
+  const longAgentFieldEnd = longAgentDetails.indexOf('data-stage-field="tool"', longAgentFieldStart);
   assert.ok(longAgentFieldStart >= 0);
   assert.ok(longAgentFieldEnd > longAgentFieldStart);
   const longAgentFieldHtml = longAgentDetails.slice(longAgentFieldStart, longAgentFieldEnd);
@@ -1323,17 +1391,18 @@ test("Run overview, artifacts, events and review release render Mantine panels",
         current_stage: "execute",
       },
     },
-  }, "details", agentLabels);
+  }, "details", agentLabels, undefined, agentTools);
+  assert.match(namedExecuteDetails, /data-stage-field="tool"[\s\S]*工具[\s\S]*Claude Code CLI/);
   assert.match(namedExecuteDetails, /data-studio-section="workflow-flow-node-time"[\s\S]*14:55:00/);
   assert.doesNotMatch(namedExecuteDetails, /data-studio-section="workflow-flow-node-agents"/);
   assert.match(namedExecuteDetails, /title="Worker Agent"[^>]*>Worker Agent/);
   assert.doesNotMatch(namedExecuteDetails, /title="worker"[^>]*>worker/);
 
-  const attemptsOnlySummary = {
+  const attemptsOnlySummary: StudioRunDetailSummary = {
     ...detail.summary,
     stages: ["build"],
     stage_nodes: [],
-    completed_stages: ["build"],
+    stage_status: { build: "completed" },
     current_stage: undefined,
     stage_assignments: {},
     stage_invocations: {},
@@ -1387,6 +1456,8 @@ test("Run overview, artifacts, events and review release render Mantine panels",
       review: [{ actual_agent: "reviewer", status: "completed" }],
     },
   }, "review", testStudioCopy), "未记录");
+  assert.equal(workflowStageToolLabel(detail.summary, "execute", { worker: "Claude Code" }, testStudioCopy), "Claude Code");
+  assert.equal(workflowStageToolLabel(detail.summary, "review", undefined, testStudioCopy), "未知");
   assert.equal(workflowStageExitLabel({
     ...detail.summary,
     stage_assignments: {
@@ -1517,11 +1588,11 @@ test("Run overview, artifacts, events and review release render Mantine panels",
       kind: "status",
       stage: "run",
       content: JSON.stringify({
-        schema_version: 1,
+        schema_version: 2,
         run_id: "workflow-20260617140101",
         created_at: "2026-06-17T06:01:01.057Z",
         updated_at: "2026-06-17T06:01:04.460Z",
-        status: "review_running",
+        run_status: "running",
         stage_assignments: {
           review: ["a-a9d455aa", "a-32c98ad9"],
           decide: ["a-a9d455aa"],
@@ -1554,7 +1625,7 @@ test("Run overview, artifacts, events and review release render Mantine panels",
   assert.match(statusHtml, /类型[\s\S]*运行状态/);
   assert.match(statusHtml, /Agent[\s\S]*运行级产物/);
   assert.match(statusHtml, /运行 ID[\s\S]*workflow-20260617140101/);
-  assert.match(statusHtml, /当前状态[\s\S]*审查中/);
+  assert.match(statusHtml, /当前状态[\s\S]*运行中/);
   assert.match(statusHtml, /创建时间[\s\S]*2026-06-17/);
   assert.match(statusHtml, /更新时间[\s\S]*2026-06-17/);
   assert.match(statusHtml, /阶段分配[\s\S]*审查：Claude Code Opus 4\.8 High、Cursor Composer 2\.5/);
@@ -1893,23 +1964,114 @@ test("Artifact preview renders markdown artifacts as formatted content", () => {
   assert.doesNotMatch(markdownHtml, />## Review</);
 });
 
-test("Call detail renders previews, warnings, adoption controls and history", () => {
+test("Call detail renders a vertical artifact sidebar and one selected artifact preview", () => {
   const detail = studioCallDetailFixture();
-  const html = renderCallDetailView({ status: "ready", detail });
+  detail.call.started_at = "2026-05-18T07:01:00.000Z";
+  detail.output.content = "## 总体结论\n\n**Review output**\n\n- 第一项";
+  const html = renderCallDetailView({ status: "ready", detail }, undefined, { reviewer: "Claude Reviewer" });
 
-  assert.match(html, /直接调用/);
+  assert.doesNotMatch(html, /直接调用/);
+  assert.match(html, /data-studio-section="call-detail-tabs"/);
+  assert.match(html, /role="tab"[^>]*aria-selected="true"[^>]*>[\s\S]*?详情/);
+  assert.match(html, /role="tab"[^>]*>[\s\S]*?关联/);
+  assert.doesNotMatch(html, /studio-metric/);
+  assert.match(html, /call-detail-summary/);
+  assert.match(html, /data-studio-section="call-detail-summary-panel"[\s\S]*>总览<\/h2>/);
+  const callDetailCss = readFileSync(path.resolve("apps/studio-web/src/styles.css"), "utf-8");
+  assert.match(callDetailCss, /\.call-detail-summary\s*\{[\s\S]*?margin-top:\s*0;/);
+  assert.doesNotMatch(callDetailCss, /\.call-detail-field\s*>\s*\.mantine-Text-root:last-child/);
+  const callSummaryHtml = html.match(/data-studio-section="call-detail-summary"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)?.[0] ?? "";
+  const callLeftSummaryHtml = callSummaryHtml.match(/data-summary-column="left"[\s\S]*?<\/div>\s*<div[^>]*data-summary-column="right"/)?.[0] ?? "";
+  const callRightSummaryHtml = callSummaryHtml.match(/data-summary-column="right"[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? "";
+  assert.ok(callLeftSummaryHtml.indexOf('data-call-field="title"') < callLeftSummaryHtml.indexOf('data-call-field="call"'));
+  assert.ok(callLeftSummaryHtml.indexOf('data-call-field="call"') < callLeftSummaryHtml.indexOf('data-call-field="purpose"'));
+  assert.ok(callLeftSummaryHtml.indexOf('data-call-field="purpose"') < callLeftSummaryHtml.indexOf('data-call-field="startedAt"'));
+  assert.ok(callLeftSummaryHtml.indexOf('data-call-field="startedAt"') < callLeftSummaryHtml.indexOf('data-call-field="completedAt"'));
+  assert.ok(callLeftSummaryHtml.indexOf('data-call-field="completedAt"') < callLeftSummaryHtml.indexOf('data-call-field="duration"'));
+  assert.ok(callRightSummaryHtml.indexOf('data-call-field="workspace"') < callRightSummaryHtml.indexOf('data-call-field="status"'));
+  assert.ok(callRightSummaryHtml.indexOf('data-call-field="status"') < callRightSummaryHtml.indexOf('data-call-field="agent"'));
+  assert.ok(callRightSummaryHtml.indexOf('data-call-field="agent"') < callRightSummaryHtml.indexOf('data-call-field="adapter"'));
+  assert.ok(callRightSummaryHtml.indexOf('data-call-field="adapter"') < callRightSummaryHtml.indexOf('data-call-field="cwd"'));
+  assert.match(callSummaryHtml, /data-call-field="title"[\s\S]*标题[\s\S]*审查发布结果/);
+  assert.match(callSummaryHtml, /data-call-field="startedAt"[\s\S]*开始时间[\s\S]*15:01:00/);
+  assert.match(callSummaryHtml, /data-call-field="duration"[\s\S]*耗时[\s\S]*2分00秒/);
+  assert.match(callSummaryHtml, /data-call-field="workspace"[\s\S]*工作区[\s\S]*project/);
+  assert.match(callSummaryHtml, /data-call-field="agent"[\s\S]*Claude Reviewer/);
+  assert.match(callSummaryHtml, /data-call-field="cwd"[\s\S]*执行目录[\s\S]*\/workspace\/project/);
+  assert.doesNotMatch(callSummaryHtml, /data-call-field="createdAt"/);
+  assert.match(html, /call-detail-tabs[\s\S]*call-detail-evidence-panel/);
+  assert.match(html, /data-studio-section="call-workspace-layout"/);
+  assert.match(html, /data-studio-section="call-artifact-sidebar"/);
+  assert.match(html, /3 个产物/);
+  assert.match(html, /data-call-artifact-sidebar-item="prompt"[\s\S]*prompt\.md/);
+  assert.match(html, /data-call-artifact-sidebar-item="output"[\s\S]*output\.md/);
+  assert.match(html, /data-call-artifact-sidebar-item="stderr"[\s\S]*错误输出/);
+  assert.match(html, /data-call-artifact-sidebar-item="prompt"[\s\S]*已生成[\s\S]*15:00:00/);
+  assert.match(html, /data-call-artifact-sidebar-item="output"[\s\S]*已生成[\s\S]*15:02:00/);
+  assert.match(html, /data-call-artifact-sidebar-item="stderr"[\s\S]*无内容[\s\S]*15:02:00/);
+  assert.equal((html.match(/class="[^"]*call-artifact-sidebar-status/g) ?? []).length, 3);
+  assert.equal((html.match(/class="[^"]*artifact-sidebar-item-time/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /已找到|未找到/);
+  assert.match(html, /data-call-artifact-sidebar-item="output"[^>]*aria-current="true"/);
+  assert.match(html, /call-detail-evidence-panel/);
+  assert.match(html, /data-studio-section="call-detail-evidence"/);
+  assert.match(html, /data-selected-call-artifact="output"/);
+  assert.doesNotMatch(html, /data-studio-section="call-artifacts"/);
+  assert.match(html, />内容</);
+  assert.doesNotMatch(html, /call-detail-evidence-grid/);
+  assert.match(html, />结束时间</);
+  assert.doesNotMatch(html, />结束</);
+  assert.doesNotMatch(html, /关联文件/);
   assert.match(html, /输出路径悬空/);
-  assert.match(html, /Prompt/);
-  assert.match(html, /Please review this change/);
-  assert.match(html, /本地证据标记/);
-  assert.match(html, /接受/);
-  assert.match(html, /采纳历史/);
+  assert.match(html, />提示词</);
+  assert.doesNotMatch(html, />失败信息</);
+  assert.match(html, />错误输出</);
+  assert.doesNotMatch(html, /正式记录/);
+  assert.doesNotMatch(html, /权威/);
+  assert.doesNotMatch(html, />Prompt</);
+  assert.doesNotMatch(html, />stderr</);
+  assert.match(html, /class="[^"]*artifact-markdown/);
+  assert.match(html, /<h2>总体结论<\/h2>/);
+  assert.match(html, /<strong>Review output<\/strong>/);
+  assert.match(html, /<li>第一项<\/li>/);
+  assert.doesNotMatch(html, />## 总体结论/);
+  assert.doesNotMatch(html, /Please review this change/);
+  assert.doesNotMatch(html, /结果处理/);
+  assert.doesNotMatch(html, /采用结果/);
+  assert.doesNotMatch(html, /不采用/);
+  assert.doesNotMatch(html, /处理记录/);
+  assert.doesNotMatch(html, /结果状态/);
+  assert.doesNotMatch(html, /\u001b|\[0m/);
+
+  const promptOnlyDetail = studioCallDetailFixture();
+  promptOnlyDetail.output = {
+    present: false,
+    path: null,
+    content: "",
+    truncated: false,
+    sha256: null,
+    redaction_state: null,
+    authoritative: null,
+  };
+  const promptOnlyHtml = renderCallDetailView({ status: "ready", detail: promptOnlyDetail });
+  assert.match(promptOnlyHtml, /data-call-artifact-sidebar-item="prompt"[^>]*aria-current="true"/);
+  assert.match(promptOnlyHtml, /data-selected-call-artifact="prompt"/);
+  assert.match(promptOnlyHtml, /Please review this change/);
+
+  const plainTextDetail = studioCallDetailFixture();
+  plainTextDetail.output.path = "output.txt";
+  plainTextDetail.output.content = "## 保持纯文本";
+  const plainTextHtml = renderCallDetailView({ status: "ready", detail: plainTextDetail });
+  assert.match(plainTextHtml, /class="[^"]*studio-code-block/);
+  assert.match(plainTextHtml, /## 保持纯文本/);
+  assert.doesNotMatch(plainTextHtml, /<h2>保持纯文本<\/h2>/);
+
   detail.call.status = "success";
-  detail.call.adoption_status = "superseded";
-  detail.adoption_events[0]!.status = "superseded";
+  detail.call.result_status = "superseded";
+  detail.result_events[0]!.status = "superseded";
   const localizedHtml = renderCallDetailView({ status: "ready", detail });
-  assert.match(localizedHtml, /成功 · 采纳 · 已取代/);
-  assert.match(localizedHtml, />已取代</);
+  assert.match(localizedHtml, />成功</);
+  assert.doesNotMatch(localizedHtml, />已被替换</);
   assert.doesNotMatch(localizedHtml, />success</);
   assert.doesNotMatch(localizedHtml, />superseded</);
   assert.match(renderCallDetailView({ status: "empty" }), /请选择调用。/);
@@ -1921,26 +2083,74 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     status: "result",
     response: mutationResponseFixture(),
   };
-  const actions = renderSafeActionsPanel("run-1", mutationState);
-  assert.match(actions, /操作阶段/);
-  assert.match(actions, /附加阶段/);
+  const currentDetail = studioRunDetailFixture();
+  const actions = renderSafeActionsPanel(currentDetail, mutationState);
+  assert.match(actions, /等待提交审查阶段结果/);
+  assert.match(actions, /提交阶段结果/);
+  assert.doesNotMatch(actions, /操作阶段|附加阶段/);
+  assert.match(actions, /执行详情/);
   assert.match(actions, /node agentmesh flow dispatch/);
-  assert.match(actions, /No mutation output yet.|exit_code/);
+  assert.match(actions, /exit_code/);
 
   assert.deepEqual(buildSafeActionRequest({
-    action: "dispatch",
+    action: "attach",
     selectedRunId: "run-1",
-    actionStage: "review",
-    attachStage: "decide",
+    stage: "review",
     attachText: "ok",
-  }), { action: "dispatch", run_id: "run-1", stage: "review" });
+  }), { action: "attach", run_id: "run-1", stage: "review", text: "ok" });
   assert.throws(() => buildSafeActionRequest({
     action: "resume",
     selectedRunId: undefined,
-    actionStage: "all",
-    attachStage: "decide",
+    stage: "review",
     attachText: "",
   }), /Select a run first/);
+
+  const completed = renderSafeActionsPanel({
+    ...currentDetail,
+    run_actions: { state: "completed", actions: [] },
+  });
+  assert.match(completed, /该运行已完成/);
+  assert.doesNotMatch(completed, /data-mutation-action=/);
+
+  const running = renderSafeActionsPanel({
+    ...currentDetail,
+    run_actions: {
+      state: "running",
+      current_stage: "review",
+      next_stage: "review",
+      actions: [],
+    },
+  });
+  assert.match(running, /审查阶段正在执行/);
+  assert.doesNotMatch(running, /data-mutation-action=/);
+
+  const failed = renderSafeActionsPanel({
+    ...currentDetail,
+    run_actions: {
+      state: "failed",
+      current_stage: "review",
+      next_stage: "review",
+      actions: [
+        { action: "retry", stage: "review" },
+        { action: "resume", stage: "review" },
+      ],
+    },
+  });
+  assert.match(failed, /重试失败阶段/);
+  assert.match(failed, /继续运行/);
+  assert.doesNotMatch(failed, /提交阶段结果|开始运行/);
+
+  const created = renderSafeActionsPanel({
+    ...currentDetail,
+    run_actions: {
+      state: "incomplete",
+      current_stage: "plan",
+      next_stage: "plan",
+      actions: [{ action: "dispatch", stage: "all" }],
+    },
+  });
+  assert.match(created, /开始运行/);
+  assert.doesNotMatch(created, /继续运行|提交阶段结果/);
 
   const settings = renderSettingsAboutPanel({
     status: "ready",
@@ -1959,29 +2169,27 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     state: { status: "ready", enabled: true },
     onChange: async () => {},
   });
-  assert.match(settings, /可读写/);
-  assert.match(settings, /运行时版本/);
-  assert.match(settings, /当前入口/);
-  assert.match(settings, /Web 端（studio）/);
+  assert.match(settings, /data-studio-section="settings-version-update"/);
+  assert.match(settings, /版本与更新/);
+  assert.match(settings, /data-studio-section="settings-command-line-tool"/);
+  assert.match(settings, /data-studio-section="settings-desktop-app"/);
+  assert.match(settings, /AgentMesh CLI/);
+  assert.match(settings, /桌面应用/);
+  assert.equal((settings.match(/重新检查/g) ?? []).length, 1);
+  assert.equal((settings.match(/aria-live="polite"/g) ?? []).length, 0);
+  assert.doesNotMatch(settings, /运行时版本|当前入口|最低写入版本|最后更新时间/);
+  assert.doesNotMatch(settings, /studio-compatibility-card|data-studio-section="settings-update"|data-studio-section="desktop-app-updater"/);
   assert.doesNotMatch(settings, /兼容性文件|\.agentmesh\/compatibility\.json/);
   assert.doesNotMatch(settings, /元数据状态/);
   assert.doesNotMatch(settings, /Packet Schema 版本/);
   assert.doesNotMatch(settings, /最低读取版本/);
-  assert.match(settings, /最低写入版本/);
   assert.doesNotMatch(settings, /最后写入方|Codex（codex） · 运行时 0\.1\.8/);
-  assert.match(settings, /最后更新时间/);
-  assert.match(settings, /2026-05-18/);
-  assert.match(settings, /版本更新/);
-  assert.match(settings, /重新检查/);
-  assert.match(settings, /当前版本/);
-  assert.match(settings, /0\.1\.8/);
-  assert.match(settings, /最新版本/);
-  assert.match(settings, /0\.1\.9/);
-  assert.match(settings, /CLI 更新/);
-  assert.match(settings, /npm install -g https:\/\/example\.invalid\/agentmesh-0\.1\.9\.tgz/);
-  assert.match(settings, /桌面端更新/);
-  assert.match(settings, /AgentMesh_0\.1\.9_aarch64\.dmg/);
-  assert.match(settings, /应用更新/);
+  assert.match(settings, /已安装版本/);
+  assert.match(settings, /npm 最新版本/);
+  assert.match(settings, /安装路径/);
+  assert.match(settings, /\/usr\/local\/bin\/agentmesh/);
+  assert.match(settings, /更新命令行工具/);
+  assert.doesNotMatch(settings, /npm install -g|agentmesh-0\.1\.9\.tgz|AgentMesh_0\.1\.9_aarch64\.dmg|桌面端下载/);
   assert.match(settings, /自动检测桌面端更新/);
   assert.match(settings, /启动桌面应用时自动检查一次/);
   assert.match(settings, /type="checkbox"[^>]*checked/);
@@ -2018,35 +2226,46 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     compatibility: legacyCompatibilityFixture(),
     update: { status: "loading" },
   });
-  assert.match(legacySettings, /命令行/);
   assert.match(legacySettings, /兼容性元数据/);
   assert.doesNotMatch(legacySettings, /元数据状态|Packet Schema 版本|最低读取版本/);
-  assert.match(legacySettings, /最低写入版本/);
+  assert.doesNotMatch(legacySettings, /运行时版本|当前入口|最低写入版本|最后更新时间/);
   assert.doesNotMatch(legacySettings, /最后写入方/);
-  assert.match(legacySettings, /最后更新时间/);
-  assert.match(legacySettings, /尚未生成（旧工作区首次成功写入后补齐）/);
   assert.match(legacySettings, /诊断说明/);
   assert.match(legacySettings, /当前按旧工作区可读写处理，下次成功写入后会自动补齐/);
   assert.doesNotMatch(legacySettings, /compatibility metadata is missing|legacy workspace|packet schema unknown|未知|未记录/);
 
+  const readOnlySettings = renderSettingsAboutPanel({
+    status: "ready",
+    compatibility: {
+      ...compatibilityFixture(),
+      decision: "read_only",
+      reasons: ["min_write_runtime_version 0.2.0 is newer than current runtime 0.1.8"],
+    },
+    update: { status: "ready", report: updateFixture() },
+  });
+  assert.match(readOnlySettings, /升级 AgentMesh|写入前需要升级/);
+  assert.match(readOnlySettings, /最低写入版本 0\.2\.0 高于当前运行时 0\.1\.8/);
+  assert.doesNotMatch(readOnlySettings, /运行时版本|当前入口/);
+
   const integrations = renderAgentIntegrationsPanel({ status: "ready", report: integrationsFixture() });
   assert.match(integrations, /data-studio-section="agent-integrations-tabs"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-command-tab"/);
   assert.match(integrations, /data-studio-section="agent-integrations-skill-tab"/);
   assert.match(integrations, /data-studio-section="agent-integrations-cli-tab"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-command-panel"/);
   assert.match(integrations, /data-studio-section="agent-integrations-skill-panel"/);
   assert.match(integrations, /data-studio-section="agent-integrations-cli-panel"/);
-  assert.match(integrations, /命令行工具/);
+  assert.doesNotMatch(integrations, /data-studio-section="agent-integrations-command-(?:tab|panel)"/);
+  assert.doesNotMatch(integrations, /命令行工具/);
   assert.match(integrations, /Agent Skill/);
-  assert.match(integrations, /CLI 检测/);
+  assert.match(integrations, /外部 CLI/);
+  assert.doesNotMatch(integrations, /CLI 检测/);
+  assert.doesNotMatch(integrations, /data-studio-action="refresh-command-line-tool"/);
+  assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"/);
+  assert.match(integrations, />刷新</);
+  assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"[\s\S]*>1\/2</);
   assert.match(integrations, /OpenCode CLI/);
   assert.match(integrations, /\.opencode\/bin\/opencode/);
-  assert.match(integrations, /可更新/);
   assert.doesNotMatch(integrations, /update_available/);
-  assert.match(integrations, /更新命令行工具/);
-  assert.match(integrations, /0\.1\.9/);
-  assert.match(integrations, /0\.1\.10/);
+  assert.doesNotMatch(integrations, /更新命令行工具|0\.1\.9|0\.1\.10/);
   assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
   assert.match(integrations, /安装选中的 Skill/);
   assert.match(integrations, />正常</);
@@ -2202,14 +2421,19 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   const settingsEnvironment = renderSettingsView("environment");
   assert.match(settingsEnvironment, /data-studio-section="settings-environment-workspace"/);
   assert.match(settingsEnvironment, /data-studio-section="agent-integrations"/);
-  assert.match(settingsEnvironment, /命令行工具/);
+  assert.match(settingsEnvironment, /Agent Skill/);
+  assert.match(settingsEnvironment, /外部 CLI/);
+  assert.doesNotMatch(settingsEnvironment, /命令行工具|CLI 检测/);
   assert.doesNotMatch(settingsEnvironment, />studio-desktop</);
 
   const settingsAbout = renderSettingsView("about");
   assert.match(settingsAbout, /data-studio-section="settings-about-workspace"/);
   assert.match(settingsAbout, /data-studio-section="settings-about"/);
-  assert.match(settingsAbout, /版本信息/);
-  assert.match(settingsAbout, /运行时版本/);
+  assert.match(settingsAbout, /版本与更新/);
+  assert.match(settingsAbout, /data-studio-section="settings-version-update"/);
+  assert.match(settingsAbout, /AgentMesh CLI/);
+  assert.match(settingsAbout, /桌面应用/);
+  assert.doesNotMatch(settingsAbout, /运行时版本/);
 
   const lifecycle = renderAgentLifecyclePanel({
     status: "ready",
@@ -2266,7 +2490,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Manual Flow"',
       'stages = ["plan", "review", "decide"]',
       'description = "Manual workflow from fields."',
@@ -2341,12 +2565,15 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.ok(setup);
   assert.deepEqual(
     setup.items.map((item) => item.title),
-    ["安装渠道", "CLI 检测与底层工具", "Agent Skill", "版本检查与更新"],
+    ["安装渠道", "外部 CLI 与底层工具", "Agent Skill", "版本检查与更新"],
   );
+  const setupCopy = setup.items.flatMap((item) => [item.body, ...item.details]).join("\n");
   assert.match(
-    setup.items.flatMap((item) => [item.body, ...item.details]).join("\n"),
+    setupCopy,
     /npm install -g agentmesh|agentmesh cli detect --json|agentmesh update check --json/,
   );
+  assert.match(setupCopy, /设置 \/ 环境 \/ 外部 CLI|设置 \/ 关于 \/ 版本与更新/);
+  assert.doesNotMatch(setupCopy, /设置 \/ 环境 \/ CLI 检测|只能手动替换 DMG/);
   const quickstart = MANUAL_SECTIONS.find((section) => section.id === "quickstart");
   assert.ok(quickstart);
   assert.deepEqual(
@@ -2440,7 +2667,6 @@ test("Studio write operations use shared toast feedback while preserving diagnos
     sources.advanced,
     sources.integrations,
     sources.activity,
-    sources.call,
     sources.run,
     sources.actions,
   ]) {
@@ -2450,12 +2676,34 @@ test("Studio write operations use shared toast feedback while preserving diagnos
   assert.match(sources.app, /requireStudioMutationSuccess/);
   assert.match(sources.app, /showStudioSuccess\("桌面更新设置已保存"/);
   assert.match(sources.app, /showStudioError\("桌面更新设置保存失败"/);
+  assert.match(sources.integrations, /refreshBusyRef\.current/);
+  assert.match(sources.integrations, /async function refreshIntegrations\(\s*successTitle: string,\s*failureTitle: string/);
+  assert.match(sources.integrations, /showStudioSuccess\(successTitle\)/);
+  assert.match(sources.integrations, /showStudioError\(failureTitle/);
+  assert.match(sources.integrations, /"外部 CLI 状态已刷新"/);
+  assert.match(sources.integrations, /"外部 CLI 状态刷新失败"/);
+  assert.doesNotMatch(sources.integrations, /命令行工具状态已刷新|命令行工具状态刷新失败/);
+  const refreshAgentIntegrationsSource = sources.app.slice(
+    sources.app.indexOf("async function refreshAgentIntegrations"),
+    sources.app.indexOf("async function refreshVersionAndUpdates"),
+  );
+  assert.match(refreshAgentIntegrationsSource, /loadStudioIntegrations\(apiClient\)/);
+  assert.match(refreshAgentIntegrationsSource, /setAgentIntegrationsState\(\{ status: "ready", report \}\)/);
+  assert.doesNotMatch(refreshAgentIntegrationsSource, /status: "loading"|status: "error"/);
   assert.doesNotMatch(sources.advanced, /const \[saved, setSaved\]/);
   assert.doesNotMatch(sources.integrations, /commandResultText|skillResultText/);
   assert.match(sources.actions, /id="mutation-output"/);
-  assert.match(sources.about, /state\.status === "downloading"/);
+  assert.match(sources.about, /nativeState\.status === "downloading"/);
+  assert.match(sources.app, /versionRefreshBusyRef\.current/);
+  assert.match(sources.app, /Promise\.allSettled/);
+  assert.match(sources.app, /showStudioSuccess\("更新状态已刷新"/);
+  assert.match(sources.app, /showStudioError\(\s*"部分更新状态检查失败"/);
   assert.match(sources.activity, /setDeleteError/);
-  assert.match(sources.call, /submission\.status === "error"/);
+  assert.doesNotMatch(sources.call, /showStudioSuccess|showStudioError|onSubmitResult|submission\.status/);
+  assert.match(sources.call, /<Tabs[\s\S]*data-studio-section="call-detail-tabs"/);
+  assert.match(sources.call, /<Tabs\.Tab value="details">\{t\("details"\)\}<\/Tabs\.Tab>/);
+  assert.match(sources.call, /<Tabs\.Tab value="related">\{t\("related"\)\}<\/Tabs\.Tab>/);
+  assert.match(sources.call, /<Tabs\.Panel value="related"[\s\S]*CallRelated/);
   assert.match(sources.run, /setActionError/);
 });
 
@@ -2502,7 +2750,6 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   await loadStudioCalls(client);
   await loadStudioCallDetail(client, "call-1");
   await deleteStudioCall(client, "call-1", "workspace one");
-  await submitStudioCallAdoption(client, "call-1", { status: "accepted", reason: "looks good" });
   await submitStudioMutation(client, { action: "retry", run_id: "run-1" });
   await loadStudioAdvancedSettings(client);
   await updateStudioAdvancedSettings(client, {
@@ -2545,7 +2792,6 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
     "GET /api/calls",
     "GET /api/calls/call-1",
     "DELETE /api/calls/call-1",
-    "POST /api/calls/call-1/adoption",
     "POST /api/mutations",
     "GET /api/v1/settings/advanced",
     "PUT /api/v1/settings/advanced",
@@ -2567,7 +2813,7 @@ test("Studio API clients keep App Server endpoint contracts", async () => {
   ]);
   assert.equal(new URL(calls[2].url).searchParams.get("workspace_id"), "workspace one");
   assert.equal(new URL(calls[9].url).searchParams.get("workspace_id"), "workspace one");
-  assert.equal(new URL(calls[15].url).search, "?adapter=claude-code-cli");
+  assert.equal(new URL(calls[14].url).search, "?adapter=claude-code-cli");
   assert.equal((calls[0].init?.headers as Headers).get("authorization"), "Bearer secret-token");
 });
 
@@ -2578,9 +2824,6 @@ test("Studio API clients encode ids and preserve non-2xx mutation payloads", asy
     fetch: async (url, init) => {
       calls.push({ url, init });
       const pathname = new URL(url).pathname;
-      if (pathname.endsWith("/adoption")) {
-        return jsonResponse({ error: "cannot adopt" }, 409);
-      }
       if (pathname === "/api/mutations") {
         return jsonResponse({
           error: "run locked",
@@ -2595,10 +2838,6 @@ test("Studio API clients encode ids and preserve non-2xx mutation payloads", asy
   await loadStudioRunDetail(client, "run/with space");
   await loadStudioArtifactPreview(client, "run/with space", "logs/output file.md");
   await loadStudioCallDetail(client, "call/with space");
-  const adoption = await submitStudioCallAdoption(client, "call/with space", {
-    status: "rejected",
-    reason: "not useful",
-  });
   const mutation = await submitStudioMutation(client, {
     action: "dispatch",
     run_id: "run/with space",
@@ -2609,12 +2848,8 @@ test("Studio API clients encode ids and preserve non-2xx mutation payloads", asy
     "GET /api/runs/run%2Fwith%20space",
     "GET /api/runs/run%2Fwith%20space/artifacts/logs%2Foutput%20file.md",
     "GET /api/calls/call%2Fwith%20space",
-    "POST /api/calls/call%2Fwith%20space/adoption",
     "POST /api/mutations",
   ]);
-  assert.equal(adoption.ok, false);
-  assert.equal(adoption.status, 409);
-  assert.deepEqual(adoption.payload, { error: "cannot adopt" });
   assert.equal(mutation.ok, false);
   assert.equal(mutation.status, 423);
   assert.equal(mutation.payload.error_code, "run_locked");
@@ -2918,11 +3153,12 @@ function deferredValue<T>(): {
 
 function renderRunOverview(
   state: RunOverviewState,
-  view?: "all" | "details" | "summary" | "stages" | "diagnostics",
+  view?: "all" | "details" | "summary" | "stages",
   agentLabels?: Record<string, string>,
   workflowLabels?: Record<string, string>,
+  agentTools?: Record<string, string>,
 ): string {
-  return renderStudioElement(React.createElement(RunOverview, { state, view, agentLabels, workflowLabels }));
+  return renderStudioElement(React.createElement(RunOverview, { state, view, agentLabels, agentTools, workflowLabels }));
 }
 
 function renderArtifactPreviewPanel(
@@ -2953,23 +3189,27 @@ function renderReviewReleaseView(detail: StudioRunDetail): string {
   }));
 }
 
-function renderCallDetailView(state: CallDetailState): string {
+function renderCallDetailView(
+  state: CallDetailState,
+  runLabels: Record<string, string> | undefined = {
+    "ws-project:run-1": "审查发布 Workflow",
+    "run-1": "审查发布 Workflow",
+  },
+  agentLabels?: Record<string, string>,
+): string {
   return renderStudioElement(React.createElement(CallDetailView, {
     state,
-    onSubmitAdoption: async () => ({
-      ok: true,
-      status: 200,
-      payload: studioCallDetailFixture(),
-    }),
+    runLabels,
+    agentLabels,
   }));
 }
 
 function renderSafeActionsPanel(
-  selectedRunId: string | undefined,
+  detail: StudioRunDetail | undefined,
   state?: SafeActionMutationState,
 ): string {
   return renderStudioElement(React.createElement(SafeActionsPanel, {
-    selectedRunId,
+    detail,
     state,
     onSubmit: async () => mutationResponseFixture(),
   }));
@@ -2979,19 +3219,24 @@ function renderSettingsAboutPanel(
   state: SettingsAboutState,
   desktopUpdater?: unknown,
   desktopAutoUpdate?: unknown,
+  commandLineTool: unknown = {
+    state: { status: "ready", report: integrationsFixture().command_line_tool },
+    onInstall: async () => {},
+  },
 ): string {
   return renderStudioElement(React.createElement(SettingsAboutPanel, {
     state,
-    onRefreshUpdate: () => {},
+    onRefreshUpdate: async () => {},
     desktopUpdater,
     desktopAutoUpdate,
+    commandLineTool,
   } as Parameters<typeof SettingsAboutPanel>[0]));
 }
 
 function renderAgentIntegrationsPanel(state: AgentIntegrationsState): string {
   return renderStudioElement(React.createElement(AgentIntegrationsPanel, {
     state,
-    onInstallCommandLineTool: async () => {},
+    onRefreshIntegrations: async () => {},
     onInstallAgentSkills: async () => {},
   }));
 }
@@ -3012,7 +3257,7 @@ function renderSettingsView(initialTab: SettingsTabId): string {
     },
     environment: {
       state: { status: "ready", report: integrationsFixture() },
-      onInstallCommandLineTool: async () => {},
+      onRefreshIntegrations: async () => {},
       onInstallAgentSkills: async () => {},
     },
     advanced: {
@@ -3022,6 +3267,10 @@ function renderSettingsView(initialTab: SettingsTabId): string {
     },
     about: {
       state: { status: "ready", compatibility: compatibilityFixture(), update: { status: "ready", report: updateFixture() } },
+      commandLineTool: {
+        state: { status: "ready", report: integrationsFixture().command_line_tool },
+        onInstall: async () => {},
+      },
     },
   }));
 }
@@ -3088,7 +3337,7 @@ function studioRunSummariesFixture(): StudioRunSummary[] {
         path: "/workspace/project",
         current: true,
       },
-      status: "running",
+      run_status: "running",
       workflow: "w-7db15660",
       latest_event: "stage.started",
       latest_event_timestamp: "2026-05-18T07:00:00.000Z",
@@ -3103,7 +3352,7 @@ function studioRunSummariesFixture(): StudioRunSummary[] {
         path: "/workspace/project",
         current: true,
       },
-      status: "needs_decision",
+      run_status: "awaiting_current",
       workflow: "w-9d94d0db",
       latest_event: "review.completed",
       latest_event_timestamp: "2026-05-17T07:00:00.000Z",
@@ -3124,7 +3373,7 @@ function studioRunDetailFixture(): StudioRunDetail {
         { id: "execute", type: "execute", occurrence: 1 },
         { id: "review", type: "review", occurrence: 1 },
       ],
-      completed_stages: ["plan", "execute"],
+      stage_status: { plan: "completed", execute: "completed", review: "planned" },
       current_stage: "review",
       stage_assignments: {
         plan: ["planner"],
@@ -3138,6 +3387,20 @@ function studioRunDetailFixture(): StudioRunDetail {
       },
       stage_attempts: {
         execute: [{ actual_agent: "worker", exit_code: 0, status: "completed" }],
+      },
+      resolved_context_policy: {
+        required_sources: ["project.toml"],
+        denied_paths: [".agentmesh/runs", "docs/archive", "dist-node", "node_modules"],
+        redact_patterns: ["API_KEY=[A-Za-z0-9]+"],
+        max_bytes: 262144,
+        max_files: 12,
+      },
+      resolved_execution_policy: {
+        source_layers: [{ source: "user", path: "/Users/zz/.config/agentmesh/config.toml" }],
+        require_user_gate: false,
+        allow_auto_dispatch: true,
+        max_retry_attempts: 2,
+        policy_hash: "sha256:fixture",
       },
       stage_timing: [
         {
@@ -3156,6 +3419,12 @@ function studioRunDetailFixture(): StudioRunDetail {
           duration_ms: 300000,
         },
       ],
+    },
+    run_actions: {
+      state: "awaiting_current",
+      current_stage: "review",
+      next_stage: "review",
+      actions: [{ action: "attach", stage: "review" }],
     },
     events: [
       {
@@ -3365,7 +3634,9 @@ function studioCallSummaryFixture(): StudioCallSummary {
     tokens_in: 100,
     tokens_out: 200,
     cost_estimate_usd: 0.02,
-    adoption_status: "unreviewed",
+    result_status: "unprocessed",
+    comparison_group_id: null,
+    replaced_by_call_id: null,
     unsupported_schema: false,
     warnings: [{ code: "dangling_output_path", message: "Output path missing", path: "output.md" }],
   };
@@ -3402,18 +3673,16 @@ function studioCallDetailFixture(): StudioCallDetail {
       redaction_state: null,
       authoritative: null,
     },
-    adoption_events: [
+    result_events: [
       {
         schema_version: 1,
         call_id: "call-1",
-        previous_status: "unreviewed",
+        previous_status: "unprocessed",
         status: "accepted",
         updated_at: "2026-05-18T07:03:00.000Z",
         updated_by_entrypoint: "studio",
         reason: "useful",
-        related_commit: "abc123",
-        related_run_id: "run-1",
-        superseded_by_call_id: null,
+        replaced_by_call_id: null,
       },
     ],
     warnings: [{ code: "dangling_output_path", message: "Output path missing", path: "output.md" }],
@@ -3429,7 +3698,7 @@ function compatibilityFixture(): Extract<SettingsAboutState, { status: "ready" }
     compatibility_path: ".agentmesh/compatibility.json",
     metadata: {
       schema_version: 1,
-      packet_schema_version: 1,
+      packet_schema_version: 2,
       min_read_runtime_version: "0.1.8",
       min_write_runtime_version: "0.1.8",
       last_writer_runtime_version: "0.1.8",
@@ -3735,7 +4004,7 @@ function apiPayloadFor(pathname: string): unknown {
       diagnostics: [],
     };
   }
-  if (pathname === "/api/calls/call-1" || pathname === "/api/calls/call-1/adoption") {
+  if (pathname === "/api/calls/call-1") {
     return studioCallDetailFixture();
   }
   if (pathname === "/api/mutations") {

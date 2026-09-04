@@ -700,9 +700,10 @@ export function flowStatusCommand(args: string[]): number {
       : status.stages;
     console.log(`Run: ${status.run_id}`);
     console.log(`Title: ${status.title ?? "-"}`);
-    console.log(`Status: ${status.status}`);
+    console.log(`Run Status: ${status.run_status}`);
+    console.log(`Current Stage: ${status.current_stage ?? "(none)"}`);
     console.log(`Stages: ${stageTargets.join(", ")}`);
-    console.log(`Completed: ${status.completed_stages.join(", ") || "(none)"}`);
+    console.log(`Completed: ${Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage).join(", ") || "(none)"}`);
   }
   return 0;
 }

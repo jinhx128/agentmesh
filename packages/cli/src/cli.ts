@@ -10,7 +10,7 @@ import {
   agentsUpdate,
 } from "./commands/agents.js";
 import { call } from "./commands/call.js";
-import { callsAdopt } from "./commands/calls.js";
+import { callsMark, callsSelect } from "./commands/calls.js";
 import { cliDetect } from "./commands/cli-detect.js";
 import { correctionAdd, correctionList, correctionSupersede } from "./commands/correction.js";
 import { doctor } from "./commands/doctor.js";
@@ -70,9 +70,10 @@ const COMMAND_USAGE_LINES = [
   "agents enable <agent-id>",
   "agents disable <agent-id>",
   "adapters list",
-  "call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--title <title>] [--no-record]",
+  "call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--title <title>] [--comparison-group <id>] [--json] [--no-record]",
   "cli detect [--json]",
-  "calls adopt <call-id> --status accepted|rejected|superseded [--entrypoint <name>] [--reason <text>] [--related-commit <commit>] [--related-run-id <run-id>] [--superseded-by-call-id <call-id>] [--json]",
+  "calls mark <call-id> --status accepted|rejected [--reason <text>] [--json]",
+  "calls select <call-id> [--reason <text>] [--json]",
   "workspaces list [--json]",
   "workspaces add <path> [--label <label>] [--json]",
   "workspaces enable <workspace-id> [--json]",
@@ -181,8 +182,11 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
     if (command === "cli" && subcommand === "detect") {
       return cliDetect(rest);
     }
-    if (command === "calls" && subcommand === "adopt") {
-      return callsAdopt(rest);
+    if (command === "calls" && subcommand === "mark") {
+      return callsMark(rest);
+    }
+    if (command === "calls" && subcommand === "select") {
+      return callsSelect(rest);
     }
     if (command === "workspaces") {
       return workspacesCommand([subcommand, ...rest].filter((arg): arg is string => Boolean(arg)));

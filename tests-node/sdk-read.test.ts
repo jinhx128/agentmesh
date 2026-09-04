@@ -64,7 +64,7 @@ function writeWorkflow(workspace: string): void {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "SDK Workflow"',
       'stages = ["plan", "execute", "decide"]',
       'description = "Exercise the public read SDK."',
@@ -92,10 +92,11 @@ function writeRun(
         run_id: runId,
         created_at: "2026-05-16T00:00:00.000Z",
         updated_at: updatedAt,
-        status: "running",
+        run_status: "running",
+        current_stage: "execute",
         workflow: "sdk-workflow",
         stages: ["plan", "execute", "decide"],
-        completed_stages: ["plan"],
+        stage_status: { plan: "completed", execute: "running", decide: "planned" },
         stage_timing: {
           plan: {
             started_at: "2026-05-16T00:00:00.000Z",
@@ -183,7 +184,7 @@ test("read SDK rejects the removed workflow maturity field", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'status = "mvp"',
       'stages = ["review", "decide"]',
       'description = "Legacy maturity field."',
@@ -216,7 +217,7 @@ test("read SDK list views skip unsupported future packet runs", () => {
     [
       { schema_version: 1, timestamp: "2026-05-16T00:00:05.000Z", event: "run.created" },
     ],
-    { schema_version: 2 },
+    { schema_version: 99 },
   );
   writeRun(workspace, "current-run", "2026-05-16T00:00:04.000Z", [
     { schema_version: 1, timestamp: "2026-05-16T00:00:04.000Z", event: "run.created" },
@@ -239,7 +240,7 @@ test("read SDK list views skip unsupported future packet runs", () => {
   assert.equal(workflow?.latest_run?.run_id, "current-run");
   assert.throws(
     () => getRun("future-run", { cwd: workspace }),
-    /unsupported packet schema version: 2/,
+    /unsupported packet schema version: 99/,
   );
 });
 
@@ -261,7 +262,16 @@ test("read SDK exposes current packet schema stage node assignments and executio
     {
       workflow: "checkpoint-flow",
       stages: ["plan", "decide", "execute", "verify", "review", "decide"],
-      completed_stages: ["plan", "decide", "execute", "verify", "review"],
+      run_status: "pending",
+      current_stage: "decide_2",
+      stage_status: {
+        plan: "completed",
+        decide: "completed",
+        execute: "completed",
+        verify: "completed",
+        review: "completed",
+        decide_2: "planned",
+      },
       stage_assignments: {
         plan: ["planner"],
         decide: ["architect"],
@@ -406,7 +416,10 @@ test("read SDK projects only safe reviewer session summaries for a run", () => {
     [{ schema_version: 1, timestamp: "2026-05-16T00:00:06.000Z", event: "reviewer_session.resumed" }],
     {
       stages: ["review", "decide"],
-      completed_stages: ["review"],
+      run_status: "awaiting_current",
+      current_stage: "decide",
+      stage_status: { review: "completed", decide: "planned" },
+      stage_timing: { review: { attempt_count: 1 }, decide: { attempt_count: 0 } },
       stage_attempts: {
         review: [{
           lane_id: "review:a-reviewer",
@@ -423,6 +436,7 @@ test("read SDK projects only safe reviewer session summaries for a run", () => {
           non_hermetic_reason: "session_resume",
           registry_write: true,
         }],
+        decide: [],
       },
     },
   );

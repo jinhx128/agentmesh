@@ -5,7 +5,7 @@ import {
   saveStatus,
   type PacketStatus,
 } from "../packet/io.js";
-import { setStageState, stageNodeForId, stageNodes } from "../flow/state.js";
+import { setStageStatus, stageNodeForId, stageNodes } from "../flow/state.js";
 
 type ReleaseVerdictValue = "ready" | "not_ready" | "needs_decision";
 
@@ -42,10 +42,9 @@ export function updateReleaseVerdict(
   const verdict = parseReleaseVerdict(decisionContent);
   status.release_verdict = verdict;
   if (!verdict.value) {
-    status.status = `${stageId}_failed`;
-    status.failed_stage = stageId;
-    status.completed_stages = status.completed_stages.filter((stage) => stage !== stageId);
-    setStageState(status, stageId, "failed");
+    status.run_status = "failed";
+    status.current_stage = stageId;
+    setStageStatus(status, stageId, "failed");
     saveStatus(runDir, status);
     appendEvent(runDir, "release.verdict_invalid", {
       diagnostic: verdict.diagnostic,

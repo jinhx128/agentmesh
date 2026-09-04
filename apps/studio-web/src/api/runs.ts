@@ -25,7 +25,7 @@ export interface StudioRunSummary {
   run_id: string;
   title?: string;
   workspace: StudioWorkspaceRef;
-  status: string;
+  run_status: StudioRunStatus;
   workflow?: string;
   latest_event?: string;
   latest_event_timestamp?: string;
@@ -35,6 +35,7 @@ export interface StudioRunSummary {
 
 export interface StudioRunDetail {
   summary: StudioRunDetailSummary;
+  run_actions: StudioRunActions;
   status?: Record<string, unknown>;
   events: StudioRunEvent[];
   events_page?: StudioEventPage;
@@ -42,11 +43,29 @@ export interface StudioRunDetail {
   review_release: StudioReviewReleaseView;
 }
 
+export type StudioRunStatus = "pending" | "running" | "awaiting_current" | "completed" | "failed" | "timed_out" | "aborted";
+export type StudioStageStatus = "planned" | "running" | "completed" | "failed" | "timed_out" | "skipped" | "needs_decision" | "handoff_ready";
+export type StudioRunActionState = "completed" | "running" | "failed" | "timed_out" | "aborted" | "awaiting_current" | "incomplete";
+export type StudioRunActionBlockReason = "auto_dispatch_disabled" | "retry_limit_reached" | "unassigned_stage";
+
+export interface StudioRunAction {
+  action: "dispatch" | "retry" | "resume" | "attach";
+  stage: string;
+}
+
+export interface StudioRunActions {
+  state: StudioRunActionState;
+  current_stage?: string;
+  next_stage?: string;
+  blocked_reason?: StudioRunActionBlockReason;
+  actions: StudioRunAction[];
+}
+
 export interface StudioRunDetailSummary extends StudioRunSummary {
   run_dir?: string;
   stages: string[];
   stage_nodes?: StudioStageNodeSummary[];
-  completed_stages: string[];
+  stage_status: Record<string, StudioStageStatus>;
   stage_timing: StudioStageTimingSummary[];
   stage_assignments?: Record<string, string[]>;
   stage_invocations?: Record<string, StudioStageInvocationSummary[]>;

@@ -252,7 +252,7 @@ test("packages and apps are explicit workspace build units", () => {
       assert.equal(unitPackageJson.dependencies["react-dom"], "^19.2.6");
     } else if (unitPath === "apps/studio-desktop") {
       assert.equal(unitPackageJson.exports, undefined);
-      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.1.15");
+      assert.equal(unitPackageJson.dependencies["@agentmesh/app-server"], "0.2.0");
     } else {
       assert.equal(typeof unitPackageJson.exports, "object");
       assert.ok(unitPackageJson.exports["."].startsWith("./src/"));
@@ -430,6 +430,7 @@ test("root CLI pack installs and runs in a clean project", () => {
   assertSpawnOk(skillResult, "agentmesh skill show");
   assert.match(skillResult.stdout, /# AgentMesh Skill/);
   assert.match(skillResult.stdout, /agentmesh-skill-version-metadata:start/);
+  assert.match(skillResult.stdout, /Only the entry agent or workflow that consumes a direct call result may classify it/);
 
   const installSkillResult = spawnSync(bin, ["skill", "install", "--target", "codex", "--force"], {
     cwd: installDir,
@@ -504,7 +505,7 @@ test("skills package owns skill templates and install verification", () => {
   });
 
   assert.equal(skillsPackage.name, "@agentmesh/skills");
-  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.1.15");
+  assert.equal(skillsPackage.dependencies["@agentmesh/core"], "0.2.0");
   assert.equal(existsSync(path.join(root, "packages", "skills", "agentmesh-skill", "SKILL.md")), true);
   assert.equal(existsSync(path.join(root, "agentmesh-skill", "SKILL.md")), false);
   assert.match(cliSkillCommand, /@agentmesh\/skills/);
@@ -546,7 +547,7 @@ test("public read SDK is promoted with read-only boundaries and real consumers",
   assert.equal(sdkPackageJson.type, "module");
   assert.equal(sdkPackageJson.exports["."], "./src/index.ts");
   assert.equal(sdkPackageJson.dependencies["@agentmesh/runtime"], undefined);
-  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.1.15");
+  assert.equal(sdkPackageJson.dependencies["@agentmesh/core"], "0.2.0");
   assert.equal(typeof sdkPackageJson.dependencies["smol-toml"], "string");
 
   for (const apiName of [

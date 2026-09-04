@@ -2,82 +2,74 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import {
-  appendCallAdoptionEvent,
   CALLS_RELATIVE_DIR,
-  readCallAdoptionEvents,
-  type FinalCallAdoptionStatus,
+  listCallResultEvents,
+  markCallResult,
+  selectCallResult,
 } from "@agentmesh/runtime/src/calls/history.js";
 import { optionValue, positionalArgs } from "../flags.js";
 
-export function callsAdopt(args: string[]): number {
-  const json = args.includes("--json");
+export function callsMark(args: string[]): number {
   const positional = positionalArgs(args);
   const callId = positional[0];
-  const status = finalAdoptionStatus(optionValue(args, "--status"));
-  if (!callId || positional.length !== 1 || !status) {
-    console.error(
-      "usage: agentmesh calls adopt <call-id> --status accepted|rejected|superseded [--entrypoint <name>] [--reason <text>] [--related-commit <commit>] [--related-run-id <run-id>] [--superseded-by-call-id <call-id>] [--json]",
-    );
+  const status = optionValue(args, "--status");
+  if (!callId || positional.length !== 1 || (status !== "accepted" && status !== "rejected")) {
+    console.error("usage: agentmesh calls mark <call-id> --status accepted|rejected [--reason <text>] [--json]");
     return 2;
   }
   const callDir = resolveCallDirectory(callId, process.cwd());
-  const updated = appendCallAdoptionEvent({
+  const updated = markCallResult({
     callDir,
     status,
-    updatedByEntrypoint: safeEntrypoint(optionValue(args, "--entrypoint") ?? "cli"),
-    ...(optionValue(args, "--reason") !== undefined ? { reason: safeText(optionValue(args, "--reason") ?? "") } : {}),
-    ...(optionValue(args, "--related-commit") !== undefined
-      ? { relatedCommit: safeText(optionValue(args, "--related-commit") ?? "") }
-      : {}),
-    ...(optionValue(args, "--related-run-id") !== undefined
-      ? { relatedRunId: safeToken(optionValue(args, "--related-run-id") ?? "", "related-run-id") }
-      : {}),
-    ...(optionValue(args, "--superseded-by-call-id") !== undefined
-      ? { supersededByCallId: safeToken(optionValue(args, "--superseded-by-call-id") ?? "", "superseded-by-call-id") }
+    updatedByEntrypoint: "cli",
+    ...(optionValue(args, "--reason") !== undefined
+      ? { reason: safeText(optionValue(args, "--reason") ?? "") }
       : {}),
   });
-  const adoptionEvents = readCallAdoptionEvents(callDir);
+  return printResult(updated.id, updated.result_status, callDir, args.includes("--json"));
+}
+
+export function callsSelect(args: string[]): number {
+  const positional = positionalArgs(args);
+  const callId = positional[0];
+  if (!callId || positional.length !== 1) {
+    console.error("usage: agentmesh calls select <call-id> [--reason <text>] [--json]");
+    return 2;
+  }
+  const callDir = resolveCallDirectory(callId, process.cwd());
+  const updated = selectCallResult({
+    callDir,
+    updatedByEntrypoint: "cli",
+    ...(optionValue(args, "--reason") !== undefined
+      ? { reason: safeText(optionValue(args, "--reason") ?? "") }
+      : {}),
+  });
+  return printResult(updated.id, updated.result_status, callDir, args.includes("--json"));
+}
+
+function printResult(callId: string, status: string, callDir: string, json: boolean): number {
   if (json) {
-    console.log(JSON.stringify({ call: updated, adoption_events: adoptionEvents }, null, 2));
+    console.log(JSON.stringify({ call_id: callId, result_status: status, result_events: listCallResultEvents(callDir) }, null, 2));
   } else {
-    console.log(`Updated call adoption: ${updated.id}`);
-    console.log(`Status: ${updated.adoption_status}`);
+    console.log(`Updated call result: ${callId}`);
+    console.log(`Status: ${status}`);
   }
   return 0;
 }
 
 function resolveCallDirectory(callId: string, cwd: string): string {
-  const value = safeToken(callId, "call-id");
+  if (!/^[A-Za-z0-9._-]+$/.test(callId)) throw new Error(`invalid call-id: ${callId}`);
   const callsDir = path.resolve(cwd, CALLS_RELATIVE_DIR);
-  const callDir = path.resolve(callsDir, value);
+  const callDir = path.resolve(callsDir, callId);
   const relative = path.relative(callsDir, callDir);
   if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`invalid call id: ${callId}`);
+    throw new Error(`invalid call-id: ${callId}`);
   }
-  if (!existsSync(path.join(callDir, "call.json"))) {
-    throw new Error(`call not found: ${callId}`);
-  }
+  if (!existsSync(path.join(callDir, "call.json"))) throw new Error(`call not found: ${callId}`);
   return callDir;
 }
 
-function finalAdoptionStatus(value: string | undefined): FinalCallAdoptionStatus | undefined {
-  return value === "accepted" || value === "rejected" || value === "superseded" ? value : undefined;
-}
-
-function safeEntrypoint(value: string): string {
-  return safeToken(value, "entrypoint");
-}
-
-function safeToken(value: string, label: string): string {
-  if (!/^[A-Za-z0-9._-]+$/.test(value)) {
-    throw new Error(`invalid ${label}: ${value}`);
-  }
-  return value;
-}
-
 function safeText(value: string): string {
-  if (value.includes("\0")) {
-    throw new Error("text values cannot contain null bytes");
-  }
+  if (value.includes("\0")) throw new Error("text values cannot contain null bytes");
   return value;
 }

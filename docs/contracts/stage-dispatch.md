@@ -9,8 +9,8 @@ prompt snapshots, stage outputs, artifacts, events, and status updates.
 Commands that take `--stage` target a runtime node id, not a stage type. For a
 workflow with repeated stages, `--stage execute` targets the first execute node
 and `--stage execute_2` targets the second execute node. `--stage all` iterates
-`status.stage_nodes` in order and skips node ids already listed in
-`completed_stages`.
+`status.stage_nodes` in order and skips node ids whose `stage_status` is
+`completed`.
 
 Explicit dispatch, retry, resume, and attach from a node id require all
 predecessor nodes to be completed. A later node cannot run or be attached while

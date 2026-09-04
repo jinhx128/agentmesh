@@ -15,17 +15,20 @@ export function currentPacketStatus(overrides: Record<string, unknown> = {}): Re
     ?? deriveStageNodes(stages);
   const stageAssignments = (overrides.stage_assignments as Record<string, string[]> | undefined)
     ?? Object.fromEntries(stageNodes.map((node) => [node.id, ["current"]]));
+  const firstStage = stageNodes[0]?.id;
 
   return {
     schema_version: CURRENT_PACKET_SCHEMA_VERSION,
     run_id: "current-packet",
     created_at: "2026-05-13T00:00:00.000Z",
     updated_at: "2026-05-13T00:00:00.000Z",
-    status: "created",
+    run_status: firstStage && stageAssignments[firstStage]?.includes("current")
+      ? "awaiting_current"
+      : "pending",
+    ...(firstStage ? { current_stage: firstStage } : {}),
     stages,
     stage_nodes: stageNodes,
-    completed_stages: [],
-    stage_state: Object.fromEntries(stageNodes.map((node) => [node.id, "planned"])),
+    stage_status: Object.fromEntries(stageNodes.map((node) => [node.id, "planned"])),
     stage_assignments: stageAssignments,
     stage_invocations: Object.fromEntries(stageNodes.map((node) => [
       node.id,

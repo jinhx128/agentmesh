@@ -810,7 +810,7 @@ function dateTimeValue(value: unknown): string | null {
   return timestampMillis(value) !== null ? formatLocalDateTime(value as string) : null;
 }
 
-function renderMarkdownBlocks(content: string): ReactElement[] {
+export function renderMarkdownBlocks(content: string): ReactElement[] {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: ReactElement[] = [];
   let index = 0;

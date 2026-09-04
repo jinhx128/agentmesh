@@ -200,7 +200,8 @@ test("Tauri shell loads a bundled bootstrap page and owns only sidecar lifecycle
   assert.match(libRs, /tauri_plugin_shell::init/);
   assert.match(libRs, /\.sidecar\("agentmesh-studio-sidecar"\)/);
   assert.match(libRs, /sidecar_launch_config_from_args\(std::env::args\(\)\)/);
-  assert.match(libRs, /command\.current_dir\(current_dir\)/);
+  assert.doesNotMatch(libRs, /command\.current_dir\(/);
+  assert.match(libRs, /command\.args\(sidecar_config\.args\)/);
   assert.match(libRs, /"--workspace"/);
   assert.match(libRs, /strip_prefix\("--workspace="\)/);
   assert.doesNotMatch(libRs, /\.args\(\["--launch-json"\]\)/);
@@ -252,10 +253,8 @@ test("sidecar bundle launches with app-bundled Node and no PATH dependency", asy
     path.join(runDir, "status.json"),
     `${JSON.stringify(currentPacketStatus({
       run_id: "sidecar-bundle-run",
-      status: "created",
       workflow: "sidecar-bundle-test",
       stages: ["plan"],
-      completed_stages: [],
       stage_assignments: {
         plan: ["current"],
       },
@@ -407,7 +406,7 @@ test("update metadata targets app-managed runtime without changing the npm CLI c
   assert.equal(summary.runtime.appManaged, true);
   assert.equal(summary.runtime.npmCliSharedInstall, false);
   assert.deepEqual(Object.keys(summary.updates.channels), ["stable", "beta"]);
-  assert.equal(summary.updates.metadata.version, "0.1.15");
+  assert.equal(summary.updates.metadata.version, "0.2.0");
   assert.ok(summary.updates.metadata.platforms["darwin-aarch64"].url.endsWith(".app.tar.gz"));
   assert.match(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/jinhx128\/agentmesh/);
   assert.doesNotMatch(summary.updates.metadata.platforms["darwin-aarch64"].url, /github\.com\/agentmesh\/agentmesh/);

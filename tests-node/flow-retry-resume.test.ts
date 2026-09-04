@@ -81,7 +81,7 @@ test("retry records retry events and protects completed artifacts", () => {
   let status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "retry-flow", "status.json"), "utf-8"),
   );
-  assert.equal(status.failed_stage, "execute");
+  assert.equal(status.current_stage, "execute");
 
   const retried = runCli(workspace, ["--config", config, "flow", "retry", "retry-flow"]);
   assert.equal(retried.status, 0, retried.stderr);
@@ -106,7 +106,7 @@ test("retry records retry events and protects completed artifacts", () => {
   status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "retry-flow", "status.json"), "utf-8"),
   );
-  assert.deepEqual(status.completed_stages, ["plan", "execute", "review", "decide"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute", "review", "decide"]);
   assert.deepEqual(status.stage_attempts.execute.map((attempt: { lane_id: string }) => attempt.lane_id), [
     "execute:flaky",
     "execute:flaky",
@@ -187,7 +187,7 @@ test("retry and resume target repeated stage node ids exactly", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "review", "execute", "review", "decide"]',
       'description = "Exercise repeated retry and resume."',
       'when_to_use = ["A second execute may need retry."]',
@@ -233,8 +233,8 @@ test("retry and resume target repeated stage node ids exactly", () => {
 
   const runDir = path.join(workspace, ".agentmesh", "runs", "repeated-retry-flow");
   let status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.equal(status.failed_stage, "execute_2");
-  assert.deepEqual(status.completed_stages, ["plan", "execute", "review"]);
+  assert.equal(status.current_stage, "execute_2");
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute", "review"]);
   assert.match(readFileSync(path.join(runDir, "handoff.md"), "utf-8"), /First execute stable/);
 
   const wrongRetry = runCli(workspace, [
@@ -273,7 +273,7 @@ test("retry and resume target repeated stage node ids exactly", () => {
   assert.match(resumed.stdout, /Dispatched: review_2, decide/);
 
   status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, [
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), [
     "plan",
     "execute",
     "review",

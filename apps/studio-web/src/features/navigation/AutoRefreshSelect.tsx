@@ -28,6 +28,9 @@ export function AutoRefreshSelect({
       title={ariaLabel}
       size="xs"
       value={String(value)}
+      withCheckIcon={false}
+      rightSection={null}
+      classNames={{ option: "studio-auto-refresh-option" }}
       data={AUTO_REFRESH_SECONDS.map((seconds) => ({
         value: String(seconds),
         label: autoRefreshLabel(seconds),

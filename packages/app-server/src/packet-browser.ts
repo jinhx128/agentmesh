@@ -49,8 +49,22 @@ export interface StudioRunSummary extends AgentMeshRunSummary {
 
 export type StudioStageTimingSummary = AgentMeshStageTimingSummary;
 export type StudioArtifactSummary = AgentMeshArtifactSummary;
+export type StudioRunActionState = "completed" | "running" | "failed" | "timed_out" | "aborted" | "awaiting_current" | "incomplete";
+export type StudioRunActionBlockReason = "auto_dispatch_disabled" | "retry_limit_reached" | "unassigned_stage";
+export interface StudioRunAction {
+  action: "dispatch" | "retry" | "resume" | "attach";
+  stage: string;
+}
+export interface StudioRunActions {
+  state: StudioRunActionState;
+  current_stage?: string;
+  next_stage?: string;
+  blocked_reason?: StudioRunActionBlockReason;
+  actions: StudioRunAction[];
+}
 export interface StudioRunDetail extends Omit<AgentMeshRunDetail, "summary"> {
   summary: StudioRunSummary;
+  run_actions: StudioRunActions;
 }
 export type StudioEventPage = AgentMeshEventPage;
 export type StudioArtifactPreview = AgentMeshArtifactPreview;
@@ -132,9 +146,96 @@ export function readStudioRun(
   const workspace = resolveStudioWorkspace(cwd, options);
   const runDir = resolveStudioRunDirectory(runIdOrDir, workspace.path);
   const detail = getRun(runDir, { ...options, cwd: workspace.path });
+  const summary = studioRunSummary(detail.summary, workspace);
   return {
     ...detail,
-    summary: studioRunSummary(detail.summary, workspace),
+    summary,
+    run_actions: studioRunActions(summary, detail.status),
+  };
+}
+
+export function studioRunActions(
+  summary: StudioRunSummary,
+  status: Record<string, unknown> = {},
+): StudioRunActions {
+  if (summary.run_status === "completed") {
+    return { state: "completed", actions: [] };
+  }
+  if (summary.run_status === "aborted") {
+    return { state: "aborted", actions: [] };
+  }
+  const nextStage = summary.current_stage;
+  if (!nextStage) {
+    return { state: "incomplete", blocked_reason: "unassigned_stage", actions: [] };
+  }
+  const stageContext = {
+    current_stage: nextStage,
+    next_stage: nextStage,
+  };
+  if (summary.run_status === "running") {
+    return { state: "running", ...stageContext, actions: [] };
+  }
+
+  const autoDispatchAllowed = resolvedBoolean(status.resolved_execution_policy, "allow_auto_dispatch") !== false;
+  if (summary.run_status === "failed" || summary.run_status === "timed_out") {
+    const retryAllowed = studioRetryAllowed(summary, status, nextStage);
+    const failedAgents = summary.stage_assignments?.[nextStage] ?? [];
+    if (failedAgents.length === 0) {
+      return {
+        state: summary.run_status,
+        ...stageContext,
+        blocked_reason: "unassigned_stage",
+        actions: [],
+      };
+    }
+    const blockedReason = !autoDispatchAllowed
+      ? "auto_dispatch_disabled" as const
+      : !retryAllowed
+        ? "retry_limit_reached" as const
+        : undefined;
+    return {
+      state: summary.run_status,
+      ...stageContext,
+      ...(blockedReason ? { blocked_reason: blockedReason } : {}),
+      actions: blockedReason
+        ? []
+        : [
+            { action: "retry", stage: nextStage },
+            { action: "resume", stage: nextStage },
+          ],
+    };
+  }
+
+  const agents = summary.stage_assignments?.[nextStage] ?? [];
+  if (summary.run_status === "awaiting_current") {
+    return {
+      state: "awaiting_current",
+      ...stageContext,
+      actions: [{ action: "attach", stage: nextStage }],
+    };
+  }
+  if (agents.length === 0) {
+    return {
+      state: "incomplete",
+      ...stageContext,
+      blocked_reason: "unassigned_stage",
+      actions: [],
+    };
+  }
+  if (!autoDispatchAllowed) {
+    return {
+      state: "incomplete",
+      ...stageContext,
+      blocked_reason: "auto_dispatch_disabled",
+      actions: [],
+    };
+  }
+  return {
+    state: "incomplete",
+    ...stageContext,
+    actions: studioRunHasStarted(summary)
+      ? [{ action: "resume", stage: nextStage }]
+      : [{ action: "dispatch", stage: "all" }],
   };
 }
 
@@ -184,6 +285,46 @@ function studioRunSummary(run: AgentMeshRunSummary, workspace: StudioWorkspaceRe
     ...run,
     workspace,
   };
+}
+
+function studioRetryAllowed(
+  summary: StudioRunSummary,
+  status: Record<string, unknown>,
+  stage: string,
+): boolean {
+  const maxRetryAttempts = resolvedNumber(status.resolved_execution_policy, "max_retry_attempts");
+  if (maxRetryAttempts === undefined) {
+    return true;
+  }
+  const attemptCount = summary.stage_timing.find((item) => item.stage === stage)?.attempt_count ?? 0;
+  return Math.max(0, attemptCount - 1) < maxRetryAttempts;
+}
+
+function studioRunHasStarted(summary: StudioRunSummary): boolean {
+  return Object.values(summary.stage_status).some((status) => status !== "planned")
+    || summary.stage_timing.some((timing) => timing.attempt_count > 0);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolvedBoolean(value: unknown, key: string): boolean | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return typeof value[key] === "boolean" ? value[key] : undefined;
+}
+
+function resolvedNumber(value: unknown, key: string): number | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return typeof value[key] === "number" && Number.isFinite(value[key]) ? value[key] : undefined;
 }
 
 function visibleStudioWorkspaces(

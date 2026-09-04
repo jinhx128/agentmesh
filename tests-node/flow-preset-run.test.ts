@@ -202,7 +202,7 @@ function writeRoutingPreset(workspace: string): void {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["execute", "review", "decide"]',
       'description = "Execute with fallback."',
       'when_to_use = ["A preset fallback route is tested."]',
@@ -591,7 +591,7 @@ test("preset run writes complete current packet schema routing materialization",
     review: [],
     decide: [],
   });
-  assert.deepEqual(status.stage_state, {
+  assert.deepEqual(status.stage_status, {
     execute: "planned",
     review: "planned",
     decide: "planned",

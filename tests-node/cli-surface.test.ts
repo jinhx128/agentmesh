@@ -1190,7 +1190,7 @@ test("flow run, prompt, attach, status, and events use TS packet files", () => {
   const payload = JSON.parse(status.stdout);
   assert.equal(payload.run_id, "typed-flow");
   assert.equal(payload.title, "发布类型化数据包");
-  assert.deepEqual(payload.completed_stages, ["plan"]);
+  assert.deepEqual(Object.entries(payload.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan"]);
 
   const humanStatus = runCli(workspace, ["flow", "status", "typed-flow"]);
   assert.equal(humanStatus.status, 0, humanStatus.stderr);

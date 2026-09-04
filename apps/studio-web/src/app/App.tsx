@@ -97,9 +97,6 @@ import {
   loadStudioCalls,
   nextSelectedCallKey,
   studioCallKey,
-  submitStudioCallAdoption,
-  type StudioCallAdoptionRequest,
-  type StudioCallAdoptionResponse,
 } from "../api/calls.js";
 import {
   ArtifactPreviewDrawer,
@@ -118,6 +115,7 @@ import {
 } from "../features/agents/AgentLifecyclePanel.js";
 import {
   type DesktopAutoUpdatePreferenceState,
+  type SettingsCommandLineToolState,
   type SettingsAboutState,
 } from "../features/settings/SettingsAboutPanel.js";
 import {
@@ -152,6 +150,7 @@ import {
 import {
   RunOverview,
   type AgentDisplayNames,
+  type AgentDisplayTools,
   type RunOverviewState,
   type WorkflowDisplayNames,
 } from "../features/runs/RunOverview.js";
@@ -178,7 +177,7 @@ type BootstrapViewState =
   | { status: "error"; error: StudioApiError };
 
 type WorkspaceView = "runs" | "calls" | "settings" | "definitions";
-export type RunDetailTab = "details" | "actions" | "events" | "diagnostics";
+export type RunDetailTab = "details" | "actions" | "events";
 
 const RUN_DETAIL_TABS: Array<{
   id: RunDetailTab;
@@ -187,7 +186,6 @@ const RUN_DETAIL_TABS: Array<{
   { id: "details", labelKey: "details" },
   { id: "actions", labelKey: "action" },
   { id: "events", labelKey: "logEvents" },
-  { id: "diagnostics", labelKey: "diagnostics" },
 ];
 
 const STUDIO_RUN_EVENT_LIMIT = 200;
@@ -204,6 +202,7 @@ export function App(): ReactElement {
   const [desktopUpdaterState, setDesktopUpdaterState] = useState<DesktopAppUpdaterState>(
     isDesktopUpdaterAvailable() ? { status: "idle" } : { status: "unavailable" },
   );
+  const [desktopUpdaterRefreshError, setDesktopUpdaterRefreshError] = useState<string | undefined>(undefined);
   const [desktopAutoUpdateState, setDesktopAutoUpdateState] = useState<DesktopAutoUpdatePreferenceState>({
     status: "loading",
   });
@@ -227,6 +226,8 @@ export function App(): ReactElement {
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
   const previousSelectedRunKeyRef = useRef<string | undefined>(undefined);
   const desktopStartupCheckStartedRef = useRef(false);
+  const versionRefreshBusyRef = useRef(false);
+  const [versionRefreshBusy, setVersionRefreshBusy] = useState(false);
   const activityLoadGenerationRef = useRef(createActivityLoadGeneration());
 
   function loadRunsWithClient(
@@ -341,6 +342,7 @@ export function App(): ReactElement {
 
   async function checkDesktopUpdater(): Promise<void> {
     setDesktopUpdaterState({ status: "checking" });
+    setDesktopUpdaterRefreshError(undefined);
     try {
       setDesktopUpdaterState(await checkDesktopAppUpdate());
     } catch (error) {
@@ -677,6 +679,15 @@ export function App(): ReactElement {
   const overviewState: RunOverviewState = bootstrapState.status === "loading"
     ? { status: "loading" }
     : runDetailState;
+  const settingsCommandLineToolState: SettingsCommandLineToolState = agentIntegrationsState.status === "ready"
+    ? {
+        status: "ready",
+        report: agentIntegrationsState.report.command_line_tool,
+        ...(agentIntegrationsState.refreshError ? { refreshError: agentIntegrationsState.refreshError } : {}),
+      }
+    : agentIntegrationsState.status === "error"
+      ? { status: "error", message: agentIntegrationsState.message }
+      : { status: "loading" };
 
   async function submitSafeAction(request: StudioMutationRequest): Promise<StudioMutationResponse> {
     if (!apiClient) {
@@ -689,6 +700,87 @@ export function App(): ReactElement {
     if (apiClient) {
       loadRunsWithClient(apiClient, { showLoading: false });
       setRunDetailReloadKey((current) => current + 1);
+    }
+  }
+
+  async function refreshAgentIntegrations(): Promise<void> {
+    if (!apiClient) {
+      throw new Error("AgentMesh API is not ready.");
+    }
+    try {
+      const report = await loadStudioIntegrations(apiClient);
+      setAgentIntegrationsState({ status: "ready", report });
+    } catch (error) {
+      throw new Error(normalizeStudioApiError(error).message);
+    }
+  }
+
+  async function refreshVersionAndUpdates(): Promise<void> {
+    if (!apiClient || versionRefreshBusyRef.current) {
+      return;
+    }
+    versionRefreshBusyRef.current = true;
+    setVersionRefreshBusy(true);
+
+    const checks: Array<Promise<void>> = [
+      loadStudioUpdate(apiClient)
+        .then((report) => {
+          setSettingsAboutState((current) => current.status === "ready"
+            ? { ...current, update: { status: "ready", report } }
+            : current);
+        })
+        .catch((error: unknown) => {
+          const message = normalizeStudioApiError(error).message;
+          setSettingsAboutState((current) => {
+            if (current.status !== "ready") return current;
+            return current.update?.status === "ready"
+              ? { ...current, update: { ...current.update, refreshError: message } }
+              : { ...current, update: { status: "error", message } };
+          });
+          throw new Error(`发布版本：${message}`);
+        }),
+      loadStudioIntegrations(apiClient)
+        .then((report) => {
+          setAgentIntegrationsState({ status: "ready", report });
+        })
+        .catch((error: unknown) => {
+          const message = normalizeStudioApiError(error).message;
+          setAgentIntegrationsState((current) => current.status === "ready"
+            ? { ...current, refreshError: message }
+            : { status: "error", message });
+          throw new Error(`命令行工具：${message}`);
+        }),
+    ];
+
+    if (isDesktopUpdaterAvailable()) {
+      checks.push(
+        checkDesktopAppUpdate()
+          .then((result) => {
+            setDesktopUpdaterRefreshError(undefined);
+            setDesktopUpdaterState(result);
+          })
+          .catch((error: unknown) => {
+            const message = normalizeDesktopUpdaterError(error);
+            setDesktopUpdaterRefreshError(message);
+            throw new Error(`桌面应用：${message}`);
+          }),
+      );
+    }
+
+    try {
+      const results = await Promise.allSettled(checks);
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failures.length > 0) {
+        showStudioError(
+          "部分更新状态检查失败",
+          failures.map((failure) => readablePromiseRejection(failure.reason)).join("；"),
+        );
+      } else {
+        showStudioSuccess("更新状态已刷新");
+      }
+    } finally {
+      versionRefreshBusyRef.current = false;
+      setVersionRefreshBusy(false);
     }
   }
 
@@ -804,25 +896,6 @@ export function App(): ReactElement {
     return response;
   }
 
-  async function submitCallAdoption(
-    request: StudioCallAdoptionRequest,
-  ): Promise<StudioCallAdoptionResponse> {
-    if (!apiClient || !selectedCall) {
-      throw new Error("AgentMesh API is not ready.");
-    }
-    const response = await submitStudioCallAdoption(
-      apiClient,
-      selectedCall.id,
-      request,
-      selectedCall.workspace.id,
-    );
-    if (response.ok && "call" in response.payload) {
-      setCallDetailState({ status: "ready", detail: response.payload });
-      loadCallsWithClient(apiClient, { showLoading: false });
-    }
-    return response;
-  }
-
   async function submitCommandLineToolInstall(): Promise<void> {
     if (!apiClient) {
       throw new Error("AgentMesh API is not ready.");
@@ -833,13 +906,9 @@ export function App(): ReactElement {
       setAgentIntegrationsState({
         status: "ready",
         report: response.payload,
-        commandResult: response.payload,
       });
       return;
     }
-    setAgentIntegrationsState((current) => current.status === "ready"
-      ? { ...current, commandResult: response.payload }
-      : current);
   }
 
   async function submitAgentSkillInstall(request: {
@@ -897,6 +966,23 @@ export function App(): ReactElement {
     }
     return Object.fromEntries(entries);
   }, [catalogState, agentLifecycleState]);
+  const agentDisplayTools = useMemo<AgentDisplayTools>(() => {
+    const entries = new Map<string, string>();
+    const addAgent = (agent: { id: string; adapter: string }): void => {
+      entries.set(agent.id, displayAgentTool(agent.adapter));
+    };
+    if (catalogState.status === "ready") {
+      for (const agent of catalogState.catalog.agents ?? []) {
+        addAgent(agent);
+      }
+    }
+    if (agentLifecycleState.status === "ready") {
+      for (const agent of agentLifecycleState.agents) {
+        addAgent(agent);
+      }
+    }
+    return Object.fromEntries(entries);
+  }, [catalogState, agentLifecycleState]);
   const workflowDisplayNames = useMemo<WorkflowDisplayNames>(() => {
     const entries = new Map<string, string>();
     if (catalogState.status === "ready") {
@@ -906,6 +992,16 @@ export function App(): ReactElement {
     }
     return Object.fromEntries(entries);
   }, [catalogState]);
+  const runDisplayNames = useMemo<Record<string, string>>(() => {
+    const entries = new Map<string, string>();
+    for (const run of activityRuns(runsState)) {
+      const workflowName = run.workflow ? workflowDisplayNames[run.workflow]?.trim() : undefined;
+      const label = workflowName || run.title?.trim() || run.run_id;
+      entries.set(studioRunKey(run), label);
+      entries.set(run.run_id, label);
+    }
+    return Object.fromEntries(entries);
+  }, [runsState, workflowDisplayNames]);
 
   function openArtifactDrawer(artifactName: string): void {
     setSelectedArtifactName(artifactName);
@@ -1034,6 +1130,7 @@ export function App(): ReactElement {
                         state={overviewState}
                         view="details"
                         agentLabels={agentDisplayNames}
+                        agentTools={agentDisplayTools}
                         workflowLabels={workflowDisplayNames}
                         onCloseReviewerSession={closeReviewerSession}
                         onPurgeExpiredReviewerSessions={purgeExpiredReviewerSessions}
@@ -1041,7 +1138,16 @@ export function App(): ReactElement {
                     </Tabs.Panel>
                     <Tabs.Panel value="actions" pt="md">
                       <SafeActionsPanel
-                        selectedRunId={selectedRun?.workspace.current ? selectedRun.run_id : undefined}
+                        detail={selectedRun?.workspace.current && runDetailState.status === "ready"
+                          ? runDetailState.detail
+                          : undefined}
+                        unavailableMessage={selectedRun && !selectedRun.workspace.current
+                          ? "只能操作当前工作区的运行。"
+                          : runDetailState.status === "loading"
+                            ? "正在加载运行详情..."
+                            : runDetailState.status === "error"
+                              ? `运行详情加载失败：${runDetailState.message}`
+                              : undefined}
                         onSubmit={submitSafeAction}
                         onSettled={refreshAfterMutation}
                       />
@@ -1053,14 +1159,6 @@ export function App(): ReactElement {
                           agentLabels={agentDisplayNames}
                         />
                       ) : <RunDetailPlaceholder state={runDetailState} />}
-                    </Tabs.Panel>
-                    <Tabs.Panel value="diagnostics" pt="md">
-                      <RunOverview
-                        state={overviewState}
-                        view="diagnostics"
-                        agentLabels={agentDisplayNames}
-                        workflowLabels={workflowDisplayNames}
-                      />
                     </Tabs.Panel>
                   </Tabs>
                 </Box>
@@ -1085,7 +1183,11 @@ export function App(): ReactElement {
             </Stack>
 
             <Stack data-studio-section="calls-workspace" hidden={workspaceView !== "calls"} gap="md">
-              <CallDetailView state={callDetailState} onSubmitAdoption={submitCallAdoption} />
+              <CallDetailView
+                state={callDetailState}
+                runLabels={runDisplayNames}
+                agentLabels={agentDisplayNames}
+              />
             </Stack>
 
             <Stack data-studio-section="settings-workspace" hidden={workspaceView !== "settings"} gap="md">
@@ -1107,7 +1209,7 @@ export function App(): ReactElement {
                 }}
                 environment={{
                   state: agentIntegrationsState,
-                  onInstallCommandLineTool: submitCommandLineToolInstall,
+                  onRefreshIntegrations: refreshAgentIntegrations,
                   onInstallAgentSkills: submitAgentSkillInstall,
                 }}
                 advanced={{
@@ -1117,20 +1219,21 @@ export function App(): ReactElement {
                 }}
                 about={{
                   state: settingsAboutState,
+                  refreshBusy: versionRefreshBusy,
+                  commandLineTool: {
+                    state: settingsCommandLineToolState,
+                    onInstall: submitCommandLineToolInstall,
+                  },
                   desktopUpdater: {
                     state: desktopUpdaterState,
-                    onCheck: checkDesktopUpdater,
+                    ...(desktopUpdaterRefreshError ? { refreshError: desktopUpdaterRefreshError } : {}),
                     onInstall: installDesktopUpdater,
                   },
                   desktopAutoUpdate: isDesktopPreferencesAvailable() ? {
                     state: desktopAutoUpdateState,
                     onChange: saveDesktopAutoUpdate,
                   } : undefined,
-                  onRefreshUpdate: () => {
-                    if (apiClient) {
-                      loadUpdateWithClient(apiClient);
-                    }
-                  },
+                  onRefreshUpdate: refreshVersionAndUpdates,
                 }}
               />
             </Stack>
@@ -1165,6 +1268,12 @@ export function activitySelectionAfterDelete(
   const nextIndex = deletedIndex < 0 ? 0 : Math.min(deletedIndex, remaining.length - 1);
   const next = remaining[nextIndex];
   return next ? { kind: next.kind, key: next.key } : undefined;
+}
+
+function readablePromiseRejection(reason: unknown): string {
+  return reason instanceof Error && reason.message.trim().length > 0
+    ? reason.message
+    : "检查失败";
 }
 
 function RunDetailPlaceholder({ state }: { state: RunOverviewState }): ReactElement {
@@ -1215,6 +1324,22 @@ function runDetailPlaceholderMessage(
 
 function isRunDetailTab(value: string | null): value is RunDetailTab {
   return RUN_DETAIL_TABS.some((tab) => tab.id === value);
+}
+
+function displayAgentTool(adapter: string): string {
+  return {
+    command: "Command Agent",
+    "codex-cli": "Codex CLI",
+    codex: "Codex CLI",
+    "claude-code-cli": "Claude Code CLI",
+    claude: "Claude Code CLI",
+    "cursor-agent": "Cursor Agent",
+    cursor: "Cursor Agent",
+    "antigravity-cli": "Antigravity CLI",
+    antigravity: "Antigravity CLI",
+    "opencode-cli": "OpenCode CLI",
+    opencode: "OpenCode CLI",
+  }[adapter] ?? adapter;
 }
 
 export function runDetailTabAfterRunSelection(

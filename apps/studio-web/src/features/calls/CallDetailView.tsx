@@ -3,37 +3,29 @@ import {
   Anchor,
   Badge,
   Button,
-  Card,
   Code,
   Group,
-  List,
   Paper,
-  SimpleGrid,
   Stack,
+  Tabs,
   Text,
-  Textarea,
-  TextInput,
   Title,
 } from "@mantine/core";
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
-import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import {
-  callAdoptionStatusLabel,
   callErrorKindLabel,
   callStatusLabel,
   viewStateLabel,
 } from "../../app/status-labels.js";
-import { formatLocalDateTime } from "../../app/time.js";
+import { formatLocalDateTime, formatLocalTime } from "../../app/time.js";
 import type {
-  StudioCallAdoptionEvent,
-  StudioCallAdoptionRequest,
-  StudioCallAdoptionResponse,
   StudioCallDetail,
   StudioCallPreview,
   StudioCallSummary,
   StudioCallWarning,
 } from "../../api/calls.js";
+import { renderMarkdownBlocks } from "../artifacts/ArtifactPreviewPanel.js";
 
 export type CallDetailState =
   | { status: "empty" }
@@ -43,13 +35,14 @@ export type CallDetailState =
 
 export interface CallDetailViewProps {
   state: CallDetailState;
-  onSubmitAdoption?: (request: StudioCallAdoptionRequest) => Promise<StudioCallAdoptionResponse>;
+  runLabels?: Record<string, string>;
+  agentLabels?: Record<string, string>;
 }
 
-export function CallDetailView({ state, onSubmitAdoption }: CallDetailViewProps): ReactElement {
+export function CallDetailView({ state, runLabels, agentLabels }: CallDetailViewProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "ready") {
-    return <ReadyCallDetail detail={state.detail} onSubmitAdoption={onSubmitAdoption} />;
+    return <ReadyCallDetail detail={state.detail} runLabels={runLabels} agentLabels={agentLabels} />;
   }
   return (
     <Paper component="section" className="studio-panel" data-studio-section="react-call-detail" withBorder radius="md" p="lg">
@@ -63,45 +56,86 @@ export function CallDetailView({ state, onSubmitAdoption }: CallDetailViewProps)
 
 function ReadyCallDetail({
   detail,
-  onSubmitAdoption,
+  runLabels,
+  agentLabels,
 }: {
   detail: StudioCallDetail;
-  onSubmitAdoption?: (request: StudioCallAdoptionRequest) => Promise<StudioCallAdoptionResponse>;
+  runLabels?: Record<string, string>;
+  agentLabels?: Record<string, string>;
 }): ReactElement {
   const { t } = useStudioCopy();
   const call = detail.call;
   const statusLabel = callStatusLabel(call.status);
-  const adoptionLabel = callAdoptionStatusLabel(call.adoption_status);
+  const artifacts = callArtifactItems(detail, t);
+  const artifactKey = artifacts.map((artifact) => artifact.id).join(":");
+  const [selectedArtifactId, setSelectedArtifactId] = useState<CallArtifactId | null>(
+    () => preferredCallArtifactId(artifacts),
+  );
+
+  useEffect(() => {
+    setSelectedArtifactId((current) =>
+      current && artifacts.some((artifact) => artifact.id === current)
+        ? current
+        : preferredCallArtifactId(artifacts));
+  }, [call.id, artifactKey]);
+
+  const selectedArtifact = artifacts.find((artifact) => artifact.id === selectedArtifactId)
+    ?? artifacts.find((artifact) => artifact.id === preferredCallArtifactId(artifacts));
   return (
-    <Paper component="section" className="studio-panel" data-studio-section="react-call-detail" withBorder radius="md" p="lg">
-      <PanelHeader title={t("directCall")} meta={`${statusLabel} · ${t("adoption")} · ${adoptionLabel}`} />
-      <SimpleGrid mt="md" cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-        <CallMetric label={t("call")} value={call.id} />
-        <CallMetric label={t("status")} value={statusLabel} className={`status ${call.status}`} />
-        <CallMetric label={t("agent")} value={call.agent_id ?? t("unknown")} />
-        <CallMetric label={t("adapter")} value={call.adapter} />
-        <CallMetric label={t("purpose")} value={call.purpose} />
-        <CallMetric label={t("adoption")} value={adoptionLabel} />
-        <CallMetric label={t("createdAt")} value={formatTimestamp(call.created_at)} />
-        <CallMetric label={t("completedAt")} value={formatTimestamp(call.completed_at)} />
-      </SimpleGrid>
-      {call.output_path ? (
-        <Alert mt="md" variant="light">
-          <Text size="sm" fw={800}>{t("output")}</Text>
-          <Anchor href={`#${call.output_path}`} data-output-path={call.output_path}>{call.output_path}</Anchor>
-        </Alert>
-      ) : null}
-      <CallWarnings warnings={detail.warnings} />
-      <CallRelated call={call} />
-      <SimpleGrid mt="md" cols={{ base: 1, lg: 3 }} spacing="md">
-        <CallPreviewPanel title={t("prompt")} preview={detail.prompt} emptyMessage={t("noPromptRecorded")} />
-        <CallPreviewPanel title={t("output")} preview={detail.output} emptyMessage={t("noOutputFile")} />
-        <CallPreviewPanel title={t("stderr")} preview={detail.stderr} emptyMessage={t("noStderrRecorded")} />
-      </SimpleGrid>
-      <CallFailureSummary call={call} />
-      <CallAdoptionControls call={call} onSubmitAdoption={onSubmitAdoption} />
-      <CallAdoptionHistory events={detail.adoption_events} />
-    </Paper>
+    <section className="call-detail-layout" data-studio-section="react-call-detail">
+      <div className="call-workspace-layout" data-studio-section="call-workspace-layout">
+        <Stack className="call-workspace-main" gap="md">
+          <Tabs
+            key={call.id}
+            defaultValue="details"
+            className="call-detail-tabs"
+            data-studio-section="call-detail-tabs"
+          >
+            <Tabs.List aria-label={t("callsSubtitle")} grow>
+              <Tabs.Tab value="details">{t("details")}</Tabs.Tab>
+              <Tabs.Tab value="related">{t("related")}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="details" pt="md" keepMounted>
+              <Paper className="studio-panel" data-studio-section="call-detail-summary-panel" withBorder radius="md" p="lg">
+                <PanelHeader title={t("overview")} meta="" />
+                <div className="call-detail-summary" data-studio-section="call-detail-summary">
+                  <div className="run-summary-row">
+                    <div className="run-summary-column" data-summary-column="left">
+                      <CallMetric label={t("title")} value={call.title ?? t("unknown")} field="title" />
+                      <CallMetric label={t("call")} value={call.id} field="call" />
+                      <CallMetric label={t("purpose")} value={call.purpose} field="purpose" />
+                      <CallMetric label={t("startedAt")} value={formatTimestamp(call.started_at)} field="startedAt" />
+                      <CallMetric label={t("completedAt")} value={formatTimestamp(call.completed_at)} field="completedAt" />
+                      <CallMetric label={t("duration")} value={formatDuration(call.duration_ms, t)} field="duration" />
+                    </div>
+                    <div className="run-summary-column" data-summary-column="right">
+                      <CallMetric label={t("workspace")} value={call.workspace.label} field="workspace" />
+                      <CallMetric label={t("status")} value={statusLabel} className={`status ${call.status}`} field="status" />
+                      <CallMetric label={t("agent")} value={callAgentDisplayName(call.agent_id, agentLabels, t)} field="agent" />
+                      <CallMetric label={t("adapter")} value={call.adapter} field="adapter" />
+                      <CallMetric label={t("executionDirectory")} value={call.cwd} field="cwd" />
+                    </div>
+                  </div>
+                </div>
+              </Paper>
+            </Tabs.Panel>
+            <Tabs.Panel value="related" pt="md" keepMounted>
+              <Paper className="studio-panel call-detail-related-panel" data-studio-section="call-detail-related" withBorder radius="md" p="lg">
+                <PanelHeader title={t("related")} meta="" />
+                <CallRelated call={call} runLabels={runLabels} />
+              </Paper>
+            </Tabs.Panel>
+          </Tabs>
+          <CallWarnings warnings={detail.warnings} />
+          <CallEvidencePanel detail={detail} artifact={selectedArtifact} />
+        </Stack>
+        <CallArtifactSidebar
+          artifacts={artifacts}
+          selectedArtifactId={selectedArtifact?.id ?? null}
+          onSelectArtifact={setSelectedArtifactId}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -109,16 +143,18 @@ function CallMetric({
   label,
   value,
   className,
+  field,
 }: {
   label: string;
   value: string;
   className?: string;
+  field: string;
 }): ReactElement {
   return (
-    <Card className="studio-metric" withBorder radius="md" p="sm">
-      <Text size="xs" c="dimmed" fw={700}>{label}</Text>
-      <Text fw={800} className={className}>{value}</Text>
-    </Card>
+    <div className="run-summary-item call-detail-field" data-call-field={field}>
+      <Text className="run-summary-label" component="span" size="xs" c="dimmed" fw={700}>{label}</Text>
+      <Text className={`run-summary-value wrap${className ? ` ${className}` : ""}`} component="span" size="xs" fw={800} title={value}>{value}</Text>
+    </div>
   );
 }
 
@@ -140,17 +176,21 @@ function CallWarnings({ warnings }: { warnings: StudioCallWarning[] }): ReactEle
   );
 }
 
-function CallRelated({ call }: { call: StudioCallSummary }): ReactElement {
+function CallRelated({
+  call,
+  runLabels,
+}: {
+  call: StudioCallSummary;
+  runLabels?: Record<string, string>;
+}): ReactElement {
   const { t } = useStudioCopy();
   return (
-    <Card mt="md" withBorder radius="md" p="md">
-      <Title order={3} size="h4" mb="sm">{t("related")}</Title>
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-        <RelatedList title={t("relatedFiles")} values={call.related_files} kind="file" />
-        <RelatedList title={t("runs")} values={call.related_run_ids} kind="run" />
+    <div className="call-detail-related">
+      <div className="run-summary-row call-related-row">
+        <RelatedList title={t("runs")} values={call.related_run_ids} kind="run" labels={runLabels} />
         <RelatedList title={t("calls")} values={call.related_call_ids} kind="call" />
-      </SimpleGrid>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -158,267 +198,261 @@ function RelatedList({
   title,
   values,
   kind,
+  labels,
 }: {
   title: string;
   values: string[];
-  kind: "file" | "run" | "call";
+  kind: "run" | "call";
+  labels?: Record<string, string>;
 }): ReactElement {
   const { t } = useStudioCopy();
   return (
-    <Stack gap="xs">
-      <Text fw={800}>{title}</Text>
+    <div className="run-summary-item call-related-item">
+      <Text className="run-summary-label" component="span" size="xs" c="dimmed" fw={700}>{title}</Text>
       {values.length > 0 ? (
-        <List size="sm">
+        <Stack className="call-related-values" gap={4}>
           {values.map((value) => (
-            <List.Item key={value}>
-              {kind === "file" ? (
-                <span>{value}</span>
-              ) : (
-                <Anchor href={`#${kind}-${value}`}>{value}</Anchor>
-              )}
-            </List.Item>
+            <div key={value}>
+              <Anchor href={`#${kind}-${value}`}>{labels?.[value] ?? value}</Anchor>
+            </div>
           ))}
-        </List>
+        </Stack>
       ) : (
-        <Text size="sm" c="dimmed">{t("noRelatedItems")}</Text>
+        <Text className="run-summary-value" component="span" size="xs" c="dimmed">{t("noRelatedItems")}</Text>
       )}
-    </Stack>
+    </div>
   );
 }
 
 function CallPreviewPanel({
+  anchorId,
   title,
   preview,
   emptyMessage,
 }: {
+  anchorId: string;
   title: string;
   preview: StudioCallPreview;
   emptyMessage: string;
 }): ReactElement {
   const { t } = useStudioCopy();
+  const content = preview.present ? stripAnsiEscapeSequences(preview.content) : emptyMessage;
   const meta = [
     preview.path,
     preview.truncated ? t("truncated") : "",
-    preview.authoritative ? t("authoritative") : "",
   ].filter(Boolean).join(" · ");
   return (
-    <Card withBorder radius="md" p="md">
+    <div id={anchorId} className="call-content-preview">
       <Group justify="space-between" align="flex-start" mb="sm">
         <Title order={3} size="h4">{title}</Title>
         <Text size="xs" c="dimmed">{meta}</Text>
       </Group>
-      <Code block className="studio-code-block">
-        {preview.present ? preview.content : emptyMessage}
-      </Code>
-    </Card>
+      {preview.present && isMarkdownCallPreview(preview) ? (
+        <div className="artifact-markdown call-artifact-markdown" data-studio-section="call-markdown-preview">
+          {renderMarkdownBlocks(content)}
+        </div>
+      ) : (
+        <Code block className="studio-code-block">{content}</Code>
+      )}
+    </div>
   );
 }
 
-function CallFailureSummary({ call }: { call: StudioCallSummary }): ReactElement | null {
-  const { t } = useStudioCopy();
-  const hasFailure = call.error_kind !== "none" || Boolean(call.error_summary) || (
-    call.exit_code !== null && call.exit_code !== 0
-  );
-  if (!hasFailure) {
-    return null;
-  }
-  const exit = call.exit_code === null ? `exit=${t("unknown")}` : `exit=${call.exit_code}`;
-  return (
-    <Alert mt="md" color="red" title={t("failureSummary")} variant="light">
-      {callErrorKindLabel(call.error_kind)} · {exit} · {call.error_summary ?? t("noRelatedItems")}
-    </Alert>
-  );
+function isMarkdownCallPreview(preview: StudioCallPreview): boolean {
+  return /\.(?:md|markdown)$/i.test(preview.path ?? "");
 }
 
-function CallAdoptionControls({
-  call,
-  onSubmitAdoption,
+type CallArtifactId = "prompt" | "output" | "stderr";
+
+interface CallArtifactItem {
+  id: CallArtifactId;
+  title: string;
+  path: string;
+  hasContent: boolean;
+  timestamp: string | null;
+  preview: StudioCallPreview;
+  emptyMessage: string;
+}
+
+function CallArtifactSidebar({
+  artifacts,
+  selectedArtifactId,
+  onSelectArtifact,
 }: {
-  call: StudioCallSummary;
-  onSubmitAdoption?: (request: StudioCallAdoptionRequest) => Promise<StudioCallAdoptionResponse>;
+  artifacts: CallArtifactItem[];
+  selectedArtifactId: CallArtifactId | null;
+  onSelectArtifact: (artifactId: CallArtifactId) => void;
 }): ReactElement {
   const { t } = useStudioCopy();
-  const [reason, setReason] = useState("");
-  const [relatedCommit, setRelatedCommit] = useState("");
-  const [relatedRunId, setRelatedRunId] = useState("");
-  const [supersededByCallId, setSupersededByCallId] = useState("");
-  const [submission, setSubmission] = useState<{
-    status: "idle" | "submitting" | "success" | "error";
-    message: string;
-  }>({ status: "idle", message: "" });
-
-  const disabledReason = callAdoptionDisabledReason(call, onSubmitAdoption, t);
-  const disabled = disabledReason !== undefined || submission.status === "submitting";
-
-  async function submit(status: StudioCallAdoptionRequest["status"]): Promise<void> {
-    if (!onSubmitAdoption) {
-      const message = t("adoptionActionsUnavailable");
-      setSubmission({ status: "error", message });
-      showStudioError("Call 标记失败", message);
-      return;
-    }
-    setSubmission({ status: "submitting", message: `${t("markedLocalEvidence")}: ${callAdoptionStatusLabel(status)}...` });
-    try {
-      const trimmedReason = trimmedValue(reason);
-      const trimmedRelatedCommit = trimmedValue(relatedCommit);
-      const trimmedRelatedRunId = trimmedValue(relatedRunId);
-      const trimmedSupersededByCallId = trimmedValue(supersededByCallId);
-      const response = await onSubmitAdoption({
-        status,
-        ...(trimmedReason ? { reason: trimmedReason } : {}),
-        ...(trimmedRelatedCommit ? { related_commit: trimmedRelatedCommit } : {}),
-        ...(trimmedRelatedRunId ? { related_run_id: trimmedRelatedRunId } : {}),
-        ...(trimmedSupersededByCallId ? { superseded_by_call_id: trimmedSupersededByCallId } : {}),
-      });
-      if (response.ok) {
-        setSubmission({ status: "success", message: `${t("markedLocalEvidence")}: ${callAdoptionStatusLabel(status)}` });
-        showStudioSuccess("Call 标记成功", callAdoptionStatusLabel(status));
-        return;
-      }
-      const message = `${t("actionRejected")}: ${adoptionResponseMessage(response.payload)}`;
-      setSubmission({ status: "error", message });
-      showStudioError("Call 标记失败", message);
-    } catch (error) {
-      const message = `${t("actionRejected")}: ${error instanceof Error ? error.message : String(error)}`;
-      setSubmission({ status: "error", message });
-      showStudioError("Call 标记失败", message);
-    }
-  }
-
   return (
-    <Card mt="md" withBorder radius="md" p="md" aria-label={t("callAdoptionActions")}>
-      <Stack gap="md">
-        <BoxedCopy disabledReason={disabledReason} />
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-          <Textarea
-            label={t("reason")}
-            value={reason}
-            onChange={(event) => setReason(event.currentTarget.value)}
-            placeholder={t("reasonPlaceholder")}
-          />
-          <TextInput
-            label={t("relatedCommit")}
-            value={relatedCommit}
-            onChange={(event) => setRelatedCommit(event.currentTarget.value)}
-            placeholder={t("optional")}
-          />
-          <TextInput
-            label={t("relatedRun")}
-            value={relatedRunId}
-            onChange={(event) => setRelatedRunId(event.currentTarget.value)}
-            placeholder={t("optional")}
-          />
-          <TextInput
-            label={t("supersededByCall")}
-            value={supersededByCallId}
-            onChange={(event) => setSupersededByCallId(event.currentTarget.value)}
-            placeholder={t("requiredForSuperseded")}
-          />
-        </SimpleGrid>
-        <Group grow>
-          <Button
-            type="button"
-            data-call-adoption-action="accepted"
-            disabled={disabled}
-            onClick={() => void submit("accepted")}
-          >
-            {t("accept")}
-          </Button>
-          <Button
-            type="button"
-            data-call-adoption-action="rejected"
-            disabled={disabled}
-            color="red"
-            variant="light"
-            onClick={() => void submit("rejected")}
-          >
-            {t("reject")}
-          </Button>
-          <Button
-            type="button"
-            data-call-adoption-action="superseded"
-            disabled={disabled}
-            color="yellow"
-            variant="light"
-            onClick={() => void submit("superseded")}
-          >
-            {t("supersede")}
-          </Button>
+    <Paper
+      component="aside"
+      className="studio-panel artifact-sidebar-panel call-artifact-sidebar-panel"
+      data-studio-section="call-artifact-sidebar"
+      withBorder
+      radius="md"
+      p="md"
+    >
+      <Stack gap="sm">
+        <Group className="artifact-sidebar-list-heading" justify="space-between" align="center" gap="xs">
+          <Text size="sm" fw={800}>{t("artifacts")}</Text>
+          <Badge size="xs" variant="light">{artifacts.length} {t("artifactTotal")}</Badge>
         </Group>
-        {submission.status === "error" ? (
-          <Alert color="red" variant="light">
-            {submission.message}
-          </Alert>
-        ) : null}
+        {artifacts.length > 0 ? (
+          <Stack className="artifact-sidebar-list" gap={8} aria-label={t("artifacts")}>
+            {artifacts.map((artifact) => (
+              <Button
+                className="artifact-sidebar-item call-artifact-sidebar-item"
+                variant={artifact.id === selectedArtifactId ? "light" : "default"}
+                color={artifact.id === selectedArtifactId ? "agentmesh" : "gray"}
+                h="auto"
+                p={0}
+                key={artifact.id}
+                data-call-artifact-sidebar-item={artifact.id}
+                aria-current={artifact.id === selectedArtifactId ? "true" : undefined}
+                onClick={() => onSelectArtifact(artifact.id)}
+              >
+                <Group className="artifact-sidebar-item-row" justify="space-between" gap="xs" wrap="nowrap" w="100%">
+                  <Stack className="artifact-sidebar-item-main" gap={2} miw={0} align="flex-start">
+                    <Text size="sm" fw={800}>{artifact.title}</Text>
+                    <Text size="xs" c="dimmed" truncate="end" title={artifact.path}>{artifact.path}</Text>
+                  </Stack>
+                  <Stack className="call-artifact-sidebar-meta" gap={4} align="flex-end">
+                    <Badge
+                      className="call-artifact-sidebar-status"
+                      size="xs"
+                      variant="light"
+                      color={artifact.hasContent ? "agentmesh" : "gray"}
+                    >
+                      {artifact.hasContent ? t("generated") : t("noContent")}
+                    </Badge>
+                    <Text
+                      className="artifact-sidebar-item-time"
+                      component="time"
+                      dateTime={artifact.timestamp ?? undefined}
+                      size="xs"
+                      c="dimmed"
+                      fw={700}
+                      title={artifact.timestamp ? formatLocalDateTime(artifact.timestamp) : t("noTiming")}
+                    >
+                      {artifact.timestamp ? formatLocalTime(artifact.timestamp) : "--:--:--"}
+                    </Text>
+                  </Stack>
+                </Group>
+              </Button>
+            ))}
+          </Stack>
+        ) : <Alert variant="light">{t("noArtifacts")}</Alert>}
       </Stack>
-    </Card>
+    </Paper>
   );
 }
 
-function BoxedCopy({ disabledReason }: { disabledReason?: string }): ReactElement {
-  const { t } = useStudioCopy();
-  return (
-    <Stack gap={3}>
-      <Title order={3} size="h4">{t("localEvidenceMarker")}</Title>
-      <Text size="sm" c="dimmed">
-        {t("localEvidenceNote")}
-      </Text>
-      {disabledReason ? <Badge color="gray">{disabledReason}</Badge> : null}
-    </Stack>
-  );
-}
-
-function CallAdoptionHistory({ events }: { events: StudioCallAdoptionEvent[] }): ReactElement {
-  const { t } = useStudioCopy();
-  return (
-    <Card mt="md" withBorder radius="md" p="md">
-      <Title order={3} size="h4" mb="sm">{t("adoptionHistory")}</Title>
-      {events.length > 0 ? (
-        <List type="ordered" size="sm">
-          {events.map((event) => (
-            <List.Item key={`${event.updated_at}:${event.status}`}>
-              <Stack gap={2}>
-                <Text fw={800}>{callAdoptionStatusLabel(event.status)}</Text>
-                <Text size="xs" c="dimmed">{formatTimestamp(event.updated_at)} · {event.updated_by_entrypoint}</Text>
-                {event.reason ? <Text size="sm">{event.reason}</Text> : null}
-                {event.related_commit ? <Text size="xs">{event.related_commit}</Text> : null}
-                {event.related_run_id ? <Text size="xs">{event.related_run_id}</Text> : null}
-                {event.superseded_by_call_id ? <Text size="xs">{event.superseded_by_call_id}</Text> : null}
-              </Stack>
-            </List.Item>
-          ))}
-        </List>
-      ) : (
-        <Text size="sm" c="dimmed">{t("noAdoptionEvents")}</Text>
-      )}
-    </Card>
-  );
-}
-
-function callAdoptionDisabledReason(
-  call: StudioCallSummary,
-  onSubmitAdoption: unknown,
+function callArtifactItems(
+  detail: StudioCallDetail,
   t: (key: StudioCopyKey) => string,
-): string | undefined {
-  if (call.read_only || call.unsupported_schema) {
-    return t("readOnly");
-  }
-  if (call.adoption_status !== "unreviewed") {
-    return `${t("alreadyReviewed")}: ${callAdoptionStatusLabel(call.adoption_status)}`;
-  }
-  if (!onSubmitAdoption) {
-    return t("adoptionActionsUnavailable");
-  }
-  return undefined;
+): CallArtifactItem[] {
+  const candidates: Array<{
+    id: CallArtifactItem["id"];
+    title: string;
+    defaultPath: string;
+    timestamp: string | null;
+    preview: StudioCallPreview;
+    emptyMessage: string;
+  }> = [
+    {
+      id: "prompt",
+      title: t("prompt"),
+      defaultPath: "prompt.md",
+      timestamp: detail.call.created_at,
+      preview: detail.prompt,
+      emptyMessage: t("noPromptRecorded"),
+    },
+    {
+      id: "output",
+      title: t("output"),
+      defaultPath: "output.md",
+      timestamp: detail.call.completed_at,
+      preview: detail.output,
+      emptyMessage: t("noOutputFile"),
+    },
+    {
+      id: "stderr",
+      title: t("stderr"),
+      defaultPath: "stderr.txt",
+      timestamp: detail.call.completed_at,
+      preview: detail.stderr,
+      emptyMessage: t("noStderrRecorded"),
+    },
+  ];
+  return candidates.map(({ id, title, defaultPath, timestamp, preview, emptyMessage }) => ({
+    id,
+    title,
+    path: preview.path ?? defaultPath,
+    hasContent: preview.present && preview.content.length > 0,
+    timestamp,
+    preview,
+    emptyMessage,
+  }));
 }
 
-function trimmedValue(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+function preferredCallArtifactId(artifacts: CallArtifactItem[]): CallArtifactId | null {
+  for (const id of ["output", "prompt", "stderr"] as const) {
+    if (artifacts.some((artifact) => artifact.id === id && artifact.hasContent)) {
+      return id;
+    }
+  }
+  return artifacts[0]?.id ?? null;
 }
 
-function adoptionResponseMessage(payload: StudioCallAdoptionResponse["payload"]): string {
-  return "error" in payload ? payload.error : `${payload.call.id}: ${callAdoptionStatusLabel(payload.call.adoption_status)}`;
+const ANSI_ESCAPE_SEQUENCE = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
+function stripAnsiEscapeSequences(value: string): string {
+  return value.replace(ANSI_ESCAPE_SEQUENCE, "");
+}
+
+function CallEvidencePanel({
+  detail,
+  artifact,
+}: {
+  detail: StudioCallDetail;
+  artifact: CallArtifactItem | undefined;
+}): ReactElement {
+  const { t } = useStudioCopy();
+  const call = detail.call;
+  const failed = isFailedCall(call);
+  const exit = call.exit_code === null ? `exit=${t("unknown")}` : `exit=${call.exit_code}`;
+  const hasStderr = detail.stderr.present && detail.stderr.content.trim().length > 0;
+  const errorContent = hasStderr
+    ? stripAnsiEscapeSequences(detail.stderr.content)
+    : call.error_summary ?? t("noRelatedItems");
+  return (
+    <Paper
+      className={`studio-panel call-detail-evidence-panel${failed ? " call-detail-failure-panel" : ""}`}
+      data-studio-section="call-detail-evidence"
+      data-selected-call-artifact={artifact?.id}
+      withBorder
+      radius="md"
+      p="lg"
+    >
+      <PanelHeader title={t("content")} meta={failed ? `${callErrorKindLabel(call.error_kind)} · ${exit}` : ""} />
+      {failed && !hasStderr ? <Code block mt="md" className="studio-code-block">{errorContent}</Code> : null}
+      {artifact ? (
+        <CallPreviewPanel
+          anchorId={`call-content-${artifact.id}`}
+          title={artifact.title}
+          preview={artifact.preview}
+          emptyMessage={artifact.emptyMessage}
+        />
+      ) : <Alert mt="md" variant="light">{t("noArtifacts")}</Alert>}
+    </Paper>
+  );
+}
+
+function isFailedCall(call: StudioCallSummary): boolean {
+  return call.error_kind !== "none" || Boolean(call.error_summary) || (
+    call.exit_code !== null && call.exit_code !== 0
+  );
 }
 
 function warningLabel(warning: StudioCallWarning, t: (key: StudioCopyKey) => string): string {
@@ -446,6 +480,38 @@ function callDetailMessage(
 
 function formatTimestamp(value: string | null | undefined): string {
   return formatLocalDateTime(value);
+}
+
+function formatDuration(
+  durationMs: number | null,
+  t: (key: StudioCopyKey) => string,
+): string {
+  if (durationMs === null || !Number.isFinite(durationMs) || durationMs < 0) {
+    return t("noTiming");
+  }
+  const totalSeconds = Math.floor(durationMs / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}秒`;
+  }
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}分${String(seconds).padStart(2, "0")}秒`;
+  }
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  return `${hours}小时${String(minutes).padStart(2, "0")}分${String(seconds).padStart(2, "0")}秒`;
+}
+
+function callAgentDisplayName(
+  agentId: string | null,
+  agentLabels: Record<string, string> | undefined,
+  t: (key: StudioCopyKey) => string,
+): string {
+  if (!agentId) {
+    return t("unknown");
+  }
+  return agentLabels?.[agentId]?.trim() || agentId;
 }
 
 function PanelHeader({ title, meta }: { title: string; meta: string }): ReactElement {

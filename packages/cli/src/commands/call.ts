@@ -20,7 +20,7 @@ import { recordCliWorkspaceActivity } from "../workspace-activity.js";
 export async function call(args: string[], configPath?: string): Promise<number> {
   const agentName = optionValue(args, "--agent");
   if (!agentName) {
-    console.error("usage: agentmesh call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--title <title>] [--no-record]");
+    console.error("usage: agentmesh call --agent <agent-id> [--prompt <text>] [--prompt-file <path>] [--output-file <path>] [--timeout-secs <n>] [--purpose <purpose>] [--title <title>] [--comparison-group <id>] [--json] [--no-record]");
     return 2;
   }
   if (agentName === "current") {
@@ -29,6 +29,7 @@ export async function call(args: string[], configPath?: string): Promise<number>
     );
   }
   const noRecord = args.includes("--no-record");
+  const json = args.includes("--json");
   const outputFile = optionValue(args, "--output-file");
   if (!noRecord) {
     assertAgentMeshWorkspace(process.cwd());
@@ -57,6 +58,7 @@ export async function call(args: string[], configPath?: string): Promise<number>
         promptContent: promptFile
           ? readFileSync(promptFile, { encoding: "utf-8" })
           : prompt,
+        comparisonGroupId: optionValue(args, "--comparison-group"),
       });
   if (created) {
     recordCliWorkspaceActivity(process.cwd());
@@ -71,23 +73,36 @@ export async function call(args: string[], configPath?: string): Promise<number>
       outputFile,
       timeoutSecs: optionalNumber(args, "--timeout-secs"),
     });
-    writeCapturedOutput(result.stdout, result.stderr, outputFile);
+    writeCapturedOutput(json ? undefined : result.stdout, result.stderr, outputFile);
+    let completed: ReturnType<typeof completeCallRecord> | undefined;
     if (created) {
       const status: CallRecordStatus = result.exitCode === 0 ? "success" : "failed";
-      completeCallRecord(created, {
+      completed = completeCallRecord(created, {
         status,
         result,
         outputFile,
         errorKind: status === "success" ? "none" : "adapter_error",
       });
     }
+    if (json) {
+      console.log(JSON.stringify({
+        schema_version: 1,
+        call_id: completed?.id ?? null,
+        status: completed?.status ?? (result.exitCode === 0 ? "success" : "failed"),
+        result_status: completed?.result_status ?? null,
+        exit_code: result.exitCode,
+        output: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+      }));
+    }
     return result.exitCode;
   } catch (error) {
     const output = agentCallOutputFromError(error);
-    writeCapturedOutput(output?.stdout, output?.stderr, outputFile);
+    writeCapturedOutput(json ? undefined : output?.stdout, output?.stderr, outputFile);
+    let completed: ReturnType<typeof completeCallRecord> | undefined;
     if (created) {
       const timedOut = error instanceof AgentCallError && error.timedOut;
-      completeCallRecord(created, {
+      completed = completeCallRecord(created, {
         status: timedOut ? "timeout" : "failed",
         stdout: output?.stdout,
         stderr: output?.stderr,
@@ -95,6 +110,17 @@ export async function call(args: string[], configPath?: string): Promise<number>
         errorKind: timedOut ? "timeout" : "adapter_error",
         errorSummary: error instanceof Error ? error.message : String(error),
       });
+    }
+    if (json) {
+      console.log(JSON.stringify({
+        schema_version: 1,
+        call_id: completed?.id ?? null,
+        status: completed?.status ?? "failed",
+        result_status: completed?.result_status ?? null,
+        exit_code: completed?.exit_code ?? null,
+        output: output?.stdout ?? "",
+        stderr: output?.stderr ?? "",
+      }));
     }
     throw error;
   }

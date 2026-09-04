@@ -45,6 +45,33 @@ Commands that create a run or recorded call accept `--title <title>`.
 - Treat the title as display metadata only. Never replace run ids, call ids,
   packet paths, or relationship keys with it.
 
+## Direct Call Result Ownership
+
+Only the entry agent or workflow that consumes a direct call result may classify it.
+Studio is a read-only observer of call evidence and must not decide whether a
+result was used.
+
+Use `--json` for recorded direct calls whose result will be consumed. Read the
+`call_id`, `status`, `output`, and `stderr` fields from the response. After the
+consumer has made a real downstream decision:
+
+```bash
+agentmesh calls mark <call-id> --status accepted --reason "used in implementation" --json
+agentmesh calls mark <call-id> --status rejected --reason "discarded after verification" --json
+agentmesh calls select <call-id> --reason "selected from comparison group" --json
+```
+
+- Mark `accepted` only when the output materially influences subsequent work.
+- Mark `rejected` only after the consumer explicitly discards the output.
+- Leave the result `unprocessed` when no decision was made. Invocation success
+  alone never implies acceptance.
+- For compared calls, pass the same `--comparison-group <id>` to each call and
+  use `calls select` only after choosing the final result. Selection records the
+  chosen call as accepted and supersedes the previously accepted result in that
+  group.
+- Never classify a call merely because it appears in Studio or because another
+  agent produced it.
+
 ## Setup Commands
 
 Use these commands when the user asks to set up a project or register local
@@ -209,9 +236,9 @@ agentmesh flow events <run-id>
 agentmesh flow events <run-id> --json
 ```
 
-The JSON summary is stable, but fields such as `workflow`,
-`failed_stage`, `release_verdict`, and assignments for stages outside a
-workflow may be `null` or omitted.
+The JSON summary is stable, but fields such as `workflow`, `current_stage`,
+`release_verdict`, and assignments for stages outside a workflow may be `null`
+or omitted.
 Use `flow events` for compact packet timelines before opening raw
 `events.jsonl`.
 

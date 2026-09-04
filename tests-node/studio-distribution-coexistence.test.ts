@@ -22,7 +22,7 @@ function makeWorkspace(): string {
   return mkdtempSync(path.join(tmpdir(), "agentmesh-studio-coexistence-"));
 }
 
-function writeRun(workspace: string, runId: string, schemaVersion = 1): string {
+function writeRun(workspace: string, runId: string, schemaVersion = 2): string {
   const runDir = path.join(workspace, ".agentmesh", "runs", runId);
   mkdirSync(runDir, { recursive: true });
   writeFileSync(
@@ -30,10 +30,8 @@ function writeRun(workspace: string, runId: string, schemaVersion = 1): string {
     `${JSON.stringify(currentPacketStatus({
       schema_version: schemaVersion,
       run_id: runId,
-      status: "created",
       workflow: "coexistence-test",
       stages: ["plan"],
-      completed_stages: [],
     }), null, 2)}\n`,
   );
   writeFileSync(path.join(runDir, "events.jsonl"), "");
@@ -124,8 +122,8 @@ async function startCliStudio(workspace: string): Promise<{
 test("CLI Studio and desktop Studio keep separate sessions while using runtime APIs", async () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  writeRun(workspace, "shared-cli-run", 1);
-  writeRun(workspace, "shared-desktop-run", 1);
+  writeRun(workspace, "shared-cli-run");
+  writeRun(workspace, "shared-desktop-run");
 
   const cliStudio = await startCliStudio(workspace);
   const desktopStudio = await startStudioDesktopHost({

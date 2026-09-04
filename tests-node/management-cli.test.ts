@@ -74,7 +74,7 @@ function writeWorkflow(filePath: string, workflowId = "docs-delivery"): void {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Docs Delivery"',
       'stages = ["plan", "review", "decide"]',
       'description = "Plan, review, and decide a documentation artifact."',
@@ -284,7 +284,7 @@ test("workflows add update and remove manage the user-level global registry", ()
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'name = "Docs Delivery Updated"',
       'stages = ["plan", "review", "decide"]',
       'description = "Updated documentation delivery workflow."',
@@ -355,7 +355,7 @@ test("workflows add rejects invalid workflow files before copying", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "review", "decide"]',
       'description = "Invalid workflow."',
       'when_to_use = ["Invalid workflow file is tested."]',

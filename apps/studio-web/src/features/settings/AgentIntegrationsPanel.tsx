@@ -12,14 +12,13 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { skillTargetStatusLabel } from "../../app/status-labels.js";
 import type {
   AgentMeshSkillTarget,
   InstallAgentSkillsResponse,
-  InstallCommandLineToolResponse,
   StudioProviderCliToolReport,
   StudioIntegrationsReport,
 } from "../../api/integrations.js";
@@ -30,13 +29,13 @@ export type AgentIntegrationsState =
   | {
       status: "ready";
       report: StudioIntegrationsReport;
-      commandResult?: InstallCommandLineToolResponse | { error: string };
       skillResult?: InstallAgentSkillsResponse | { error: string };
+      refreshError?: string;
     };
 
 export interface AgentIntegrationsPanelProps {
   state: AgentIntegrationsState;
-  onInstallCommandLineTool: () => Promise<void>;
+  onRefreshIntegrations: () => Promise<void>;
   onInstallAgentSkills: (request: {
     targets: AgentMeshSkillTarget[];
     force: boolean;
@@ -53,11 +52,12 @@ const defaultTargets: AgentMeshSkillTarget[] = [
 
 export function AgentIntegrationsPanel({
   state,
-  onInstallCommandLineTool,
+  onRefreshIntegrations,
   onInstallAgentSkills,
 }: AgentIntegrationsPanelProps): ReactElement {
   const { t } = useStudioCopy();
-  const [commandBusy, setCommandBusy] = useState(false);
+  const refreshBusyRef = useRef(false);
+  const [refreshBusy, setRefreshBusy] = useState(false);
   const [skillBusy, setSkillBusy] = useState(false);
   const [forceSkill, setForceSkill] = useState(false);
   const [selectedTargets, setSelectedTargets] = useState<AgentMeshSkillTarget[]>(["codex"]);
@@ -81,7 +81,6 @@ export function AgentIntegrationsPanel({
   }
 
   const report = state.report;
-  const commandLine = report.command_line_tool;
   const providerCliRows = report.provider_clis.tools;
   const selectedTargetSet = new Set(selectedTargets);
   const targetRows: StudioIntegrationsReport["skills"]["targets"] = report.skills.targets.length > 0
@@ -94,15 +93,23 @@ export function AgentIntegrationsPanel({
       expected: true,
     }));
   const selectedCount = selectedTargets.length;
-  async function installCommandLine(): Promise<void> {
-    setCommandBusy(true);
+  async function refreshIntegrations(
+    successTitle: string,
+    failureTitle: string,
+  ): Promise<void> {
+    if (refreshBusyRef.current) {
+      return;
+    }
+    refreshBusyRef.current = true;
+    setRefreshBusy(true);
     try {
-      await onInstallCommandLineTool();
-      showStudioSuccess("命令行工具安装成功");
+      await onRefreshIntegrations();
+      showStudioSuccess(successTitle);
     } catch (error) {
-      showStudioError("命令行工具安装失败", readableError(error, "请稍后重试"));
+      showStudioError(failureTitle, readableError(error, "请稍后重试"));
     } finally {
-      setCommandBusy(false);
+      refreshBusyRef.current = false;
+      setRefreshBusy(false);
     }
   }
 
@@ -122,16 +129,13 @@ export function AgentIntegrationsPanel({
     <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
       <PanelHeader title={t("environment")} />
       <Tabs
-        defaultValue="command-line"
+        defaultValue="skills"
         keepMounted
         keepMountedMode="display-none"
         mt="md"
         data-studio-section="agent-integrations-tabs"
       >
         <Tabs.List grow aria-label={t("environment")}>
-          <Tabs.Tab value="command-line" data-studio-section="agent-integrations-command-tab">
-            {t("commandLineTool")}
-          </Tabs.Tab>
           <Tabs.Tab value="skills" data-studio-section="agent-integrations-skill-tab">
             {t("agentSkill")}
           </Tabs.Tab>
@@ -139,34 +143,6 @@ export function AgentIntegrationsPanel({
             {t("cliDiagnostics")}
           </Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="command-line" pt="md" data-studio-section="agent-integrations-command-panel">
-          <Card withBorder radius="md" p="md">
-            <Group justify="space-between" align="flex-start" mb="sm">
-              <Title order={3} size="h4">{t("commandLineTool")}</Title>
-              <Badge color={commandLine.status === "current" ? "green" : commandLine.status === "update_available" ? "yellow" : "gray"}>
-                {commandStatusLabel(commandLine.status)}
-              </Badge>
-            </Group>
-            <Stack gap={4} mb="md">
-              <Fact label={t("commandLinePath")} value={commandLine.path ?? t("targetMissing")} />
-              <Fact label={t("installedVersion")} value={commandLine.installed_version} />
-              <Fact label={t("latestVersion")} value={commandLine.latest_version} />
-              <Fact label={t("source")} value={commandLine.source} />
-            </Stack>
-            {commandLine.diagnostics.map((diagnostic, diagnosticIndex) => (
-              <Alert key={`${diagnostic}-${diagnosticIndex}`} color="yellow" variant="light" mb="sm">{diagnostic}</Alert>
-            ))}
-            <Button
-              mt="sm"
-              type="button"
-              loading={commandBusy}
-              disabled={!commandLine.supported}
-              onClick={() => void installCommandLine()}
-            >
-              {t(commandActionKey(commandLine.status))}
-            </Button>
-          </Card>
-        </Tabs.Panel>
         <Tabs.Panel value="skills" pt="md" data-studio-section="agent-integrations-skill-panel">
           <Card withBorder radius="md" p="md">
             <Group justify="space-between" align="flex-start" mb="sm">
@@ -218,7 +194,24 @@ export function AgentIntegrationsPanel({
           <Card withBorder radius="md" p="md">
             <Group justify="space-between" align="flex-start" mb="sm">
               <Title order={3} size="h4">{t("cliDiagnostics")}</Title>
-              <Badge>{providerCliRows.filter((tool) => tool.found).length}/{providerCliRows.length}</Badge>
+              <Group gap="xs" wrap="nowrap">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="light"
+                  loading={refreshBusy}
+                  disabled={refreshBusy}
+                  leftSection={<RefreshIcon />}
+                  data-studio-action="refresh-cli-diagnostics"
+                  onClick={() => void refreshIntegrations(
+                    "外部 CLI 状态已刷新",
+                    "外部 CLI 状态刷新失败",
+                  )}
+                >
+                  刷新
+                </Button>
+                <Badge>{providerCliRows.filter((tool) => tool.found).length}/{providerCliRows.length}</Badge>
+              </Group>
             </Group>
             <Stack gap="sm">
               {providerCliRows.map((tool) => (
@@ -254,33 +247,24 @@ export function AgentIntegrationsPanel({
   );
 }
 
+function RefreshIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 18 18" width="14" height="14" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M14.5 5.5V2.75m0 0h-2.75m2.75 0-2.1 2.1A5.75 5.75 0 1 0 14.1 11"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function readableError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : fallback;
-}
-
-function commandActionKey(
-  status: StudioIntegrationsReport["command_line_tool"]["status"],
-): StudioCopyKey {
-  if (status === "missing") {
-    return "commandLineInstall";
-  }
-  if (status === "update_available") {
-    return "commandLineUpdate";
-  }
-  return "commandLineReinstall";
-}
-
-function commandStatusLabel(
-  status: StudioIntegrationsReport["command_line_tool"]["status"],
-): string {
-  switch (status) {
-    case "current": return "已是最新";
-    case "update_available": return "可更新";
-    case "missing": return "未安装";
-    case "unknown": return "状态未知";
-  }
 }
 
 function providerCliSourceText(

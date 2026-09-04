@@ -21,11 +21,12 @@ import {
 function makeReleaseRunDir(): string {
   const runDir = mkdtempSync(path.join(tmpdir(), "agentmesh-release-"));
   const status: PacketStatus = {
-    schema_version: 1,
+    schema_version: 2,
     run_id: "release-ts",
     created_at: "2026-05-14T00:00:00.000Z",
     updated_at: "2026-05-14T00:00:00.000Z",
-    status: "review_completed",
+    run_status: "awaiting_current",
+    current_stage: "decide",
     stages: ["review", "decide"],
     stage_nodes: [
       { id: "review", type: "review", occurrence: 1 },
@@ -63,7 +64,7 @@ function makeReleaseRunDir(): string {
       review: {},
       decide: {},
     },
-    completed_stages: ["review"],
+    stage_status: { review: "completed", decide: "planned" },
     stage_timing: {
       review: {
         started_at: "2026-05-14T00:00:00.000Z",

@@ -53,16 +53,17 @@ function packetStatus(overrides: Record<string, unknown> = {}): Record<string, u
   ];
   const stageNodes = (overrides.stage_nodes as ReturnType<typeof deriveStageNodes> | undefined)
     ?? deriveStageNodes(stages);
+  const firstStage = stageNodes[0]?.id;
   return {
     schema_version: CURRENT_PACKET_SCHEMA_VERSION,
     run_id: "contract-smoke",
     created_at: "2026-05-14T00:00:00.000Z",
     updated_at: "2026-05-14T00:00:00.000Z",
-    status: "running",
+    run_status: "awaiting_current",
+    ...(firstStage ? { current_stage: firstStage } : {}),
     stages,
     stage_nodes: stageNodes,
-    completed_stages: [],
-    stage_state: Object.fromEntries(stageNodes.map((node) => [node.id, "planned"])),
+    stage_status: Object.fromEntries(stageNodes.map((node) => [node.id, "planned"])),
     stage_assignments: Object.fromEntries(stageNodes.map((node) => [node.id, ["current"]])),
     stage_invocations: Object.fromEntries(stageNodes.map((node) => [
       node.id,
@@ -94,7 +95,7 @@ function packetStatus(overrides: Record<string, unknown> = {}): Record<string, u
 
 test("core exports packet contract schemas with schema version policy", () => {
   assert.equal(CURRENT_SCHEMA_VERSION, 1);
-  assert.equal(CURRENT_PACKET_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION);
+  assert.equal(CURRENT_PACKET_SCHEMA_VERSION, 2);
   assert.equal(MAX_FANOUT_AGENTS, 6);
   assert.equal(MAX_FALLBACK_AGENTS, 3);
   assert.equal(MAX_FALLBACK_ATTEMPTS_PER_AGENT, 2);
@@ -106,14 +107,15 @@ test("core exports packet contract schemas with schema version policy", () => {
     () => assertSupportedSchemaVersion(2, "status.json"),
     /status\.json\.schema_version 2 is newer than supported version 1/,
   );
-  assert.deepEqual(assertSupportedPacketSchemaVersion(CURRENT_SCHEMA_VERSION, "status.json"), CURRENT_SCHEMA_VERSION);
+  assert.deepEqual(assertSupportedPacketSchemaVersion(CURRENT_PACKET_SCHEMA_VERSION, "status.json"), CURRENT_PACKET_SCHEMA_VERSION);
   assert.throws(
-    () => assertSupportedPacketSchemaVersion(CURRENT_SCHEMA_VERSION + 1, "status.json"),
-    /unsupported packet schema version: 2/,
+    () => assertSupportedPacketSchemaVersion(1, "status.json"),
+    /unsupported packet schema version: 1/,
   );
 
   const status = PacketStatusSchema.parse(packetStatus({
-    completed_stages: ["plan"],
+    current_stage: "execute",
+    stage_status: { plan: "completed", execute: "planned", review: "planned", decide: "planned" },
     stage_timing: {
       plan: {
         started_at: "2026-05-14T00:00:00.000Z",
@@ -234,10 +236,59 @@ test("core exports packet contract schemas with schema version policy", () => {
     "running",
     "completed",
     "failed",
+    "timed_out",
     "skipped",
     "needs_decision",
     "handoff_ready",
   ]);
+});
+
+test("packet v2 separates run lifecycle from exact per-stage status", () => {
+  assert.equal(CURRENT_SCHEMA_VERSION, 1);
+  assert.equal(CURRENT_PACKET_SCHEMA_VERSION, 2);
+  assert.throws(
+    () => assertSupportedPacketSchemaVersion(1, "status.json"),
+    /unsupported packet schema version: 1/,
+  );
+
+  const stages = ["review", "decide"];
+  const stageNodes = deriveStageNodes(stages);
+  const base = packetStatus({
+    schema_version: 2,
+    stages,
+    stage_nodes: stageNodes,
+    run_status: "awaiting_current",
+    current_stage: "decide",
+    stage_status: { review: "completed", decide: "planned" },
+    stage_assignments: { review: ["reviewer"], decide: ["current"] },
+    stage_invocations: {
+      review: [{ lane_id: "review:reviewer", kind: "primary", agent: "reviewer", timeout_seconds: 900 }],
+      decide: [{ lane_id: "decide:current", kind: "current", agent: "current", timeout_seconds: null }],
+    },
+    stage_failure_policies: {
+      review: { mode: "allow", max_fallback_agents: 1 },
+      decide: { mode: "allow", max_fallback_agents: 1 },
+    },
+    stage_fallbacks: {
+      review: { agents: [], max_attempts_per_agent: 1 },
+      decide: { agents: [], max_attempts_per_agent: 1 },
+    },
+    stage_attempts: { review: [], decide: [] },
+    assignment_provenance: { review: "test", decide: "test" },
+    fallback_provenance: { review: "none", decide: "none" },
+    timeout_provenance: { review: {}, decide: {} },
+    stage_timing: { review: { attempt_count: 1 }, decide: { attempt_count: 0 } },
+  });
+  assert.equal(PacketStatusSchema.parse(base).run_status, "awaiting_current");
+  assert.throws(() => PacketStatusSchema.parse({ ...base, schema_version: 1 }));
+  assert.throws(() => PacketStatusSchema.parse({ ...base, status: "review_completed" }));
+  assert.throws(() => PacketStatusSchema.parse({ ...base, stage_status: { review: "completed" } }));
+  assert.throws(() => PacketStatusSchema.parse({
+    ...base,
+    run_status: "completed",
+    current_stage: "decide",
+    stage_status: { review: "completed", decide: "completed" },
+  }));
 });
 
 test("core exports workflow and release verdict schemas", () => {
@@ -395,21 +446,27 @@ test("core derives stable stage nodes for repeated workflow stages", () => {
   );
 });
 
-test("packet status schema validates mutable stage state against stage node ids", () => {
+test("packet status schema validates explicit stage status against stage node ids", () => {
   const stages = ["plan", "execute", "review", "execute", "review", "decide"];
   const nodes = deriveStageNodes(stages);
   const status = PacketStatusSchema.parse(packetStatus({
     run_id: "repeated-status",
-    status: "execute_2_failed",
+    run_status: "failed",
+    current_stage: "execute_2",
     stages,
     stage_nodes: nodes,
-    completed_stages: ["plan", "execute", "review"],
-    failed_stage: "execute_2",
-    stage_state: Object.fromEntries(nodes.map((node) => [node.id, "planned"])),
+    stage_status: {
+      plan: "completed",
+      execute: "completed",
+      review: "completed",
+      execute_2: "failed",
+      review_2: "planned",
+      decide: "planned",
+    },
     stage_assignments: Object.fromEntries(nodes.map((node) => [node.id, ["current"]])),
     stage_timing: Object.fromEntries(nodes.map((node) => [node.id, { attempt_count: 0 }])),
   }));
-  assert.equal(status.failed_stage, "execute_2");
+  assert.equal(status.current_stage, "execute_2");
 
   assert.throws(() =>
     PacketStatusSchema.parse(packetStatus({
@@ -434,8 +491,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "bad-completed-stage",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      completed_stages: ["execute_2"],
-      stage_state: { plan: "planned", execute: "planned" },
+      stage_status: { plan: "planned", execute: "planned", execute_2: "completed" },
       stage_assignments: { plan: ["current"], execute: ["current"] },
       stage_timing: { plan: { attempt_count: 0 }, execute: { attempt_count: 0 } },
     })),
@@ -445,9 +501,9 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "bad-failed-stage",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      completed_stages: [],
-      failed_stage: "missing_node",
-      stage_state: { plan: "planned", execute: "planned" },
+      run_status: "failed",
+      current_stage: "missing_node",
+      stage_status: { plan: "planned", execute: "planned" },
       stage_assignments: { plan: ["current"], execute: ["current"] },
       stage_timing: { plan: { attempt_count: 0 }, execute: { attempt_count: 0 } },
     })),
@@ -457,8 +513,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "empty-stage-nodes",
       stages: ["plan", "execute"],
       stage_nodes: [],
-      completed_stages: [],
-      stage_state: {},
+      stage_status: {},
       stage_assignments: {},
       stage_timing: {},
     })),
@@ -471,8 +526,7 @@ test("packet status schema validates mutable stage state against stage node ids"
         { id: "execute", type: "execute", occurrence: 1 },
         { id: "execute", type: "execute", occurrence: 1 },
       ],
-      completed_stages: [],
-      stage_state: { execute: "planned" },
+      stage_status: { execute: "planned" },
       stage_assignments: { execute: ["current"] },
       stage_timing: { execute: { attempt_count: 0 } },
     })),
@@ -482,8 +536,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "mismatched-stage-nodes",
       stages: ["plan", "execute"],
       stage_nodes: [{ id: "review", type: "review", occurrence: 1 }],
-      completed_stages: ["review"],
-      stage_state: { review: "planned" },
+      stage_status: { review: "planned" },
       stage_assignments: { review: ["current"] },
       stage_timing: { review: { attempt_count: 0 } },
     })),
@@ -493,8 +546,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "bad-stage-state",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      completed_stages: [],
-      stage_state: { execute_2: "completed" },
+      stage_status: { plan: "planned", execute: "planned", execute_2: "completed" },
       stage_assignments: { plan: ["current"], execute: ["current"] },
       stage_timing: { plan: { attempt_count: 0 }, execute: { attempt_count: 0 } },
     })),
@@ -504,8 +556,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "bad-stage-assignment",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      completed_stages: [],
-      stage_state: { plan: "planned", execute: "planned" },
+      stage_status: { plan: "planned", execute: "planned" },
       stage_assignments: { execute_2: ["worker"] },
       stage_timing: { plan: { attempt_count: 0 }, execute: { attempt_count: 0 } },
     })),
@@ -515,8 +566,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "missing-stage-assignment",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      completed_stages: [],
-      stage_state: { plan: "planned", execute: "planned" },
+      stage_status: { plan: "planned", execute: "planned" },
       stage_assignments: { plan: ["current"] },
       stage_invocations: {
         plan: [{ lane_id: "plan:current", kind: "current", agent: "current", timeout_seconds: null }],
@@ -530,7 +580,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "missing-stage-timing",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      stage_state: { plan: "planned", execute: "planned" },
+      stage_status: { plan: "planned", execute: "planned" },
       stage_assignments: { plan: ["current"], execute: ["current"] },
       stage_timing: { plan: { attempt_count: 0 } },
     })),
@@ -540,7 +590,7 @@ test("packet status schema validates mutable stage state against stage node ids"
       run_id: "bad-agent-timing",
       stages: ["plan", "execute"],
       stage_nodes: deriveStageNodes(["plan", "execute"]),
-      stage_state: { plan: "planned", execute: "planned" },
+      stage_status: { plan: "planned", execute: "planned" },
       stage_assignments: { plan: ["current"], execute: ["current"] },
       stage_timing: { plan: { attempt_count: 0 }, execute: { attempt_count: 0 } },
       agent_timing: { execute_2: { worker: { attempt_count: 1 } } },

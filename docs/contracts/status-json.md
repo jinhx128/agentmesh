@@ -12,11 +12,12 @@ Legacy packet status files are rejected by validation; there is no automatic leg
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "run_id": "example",
   "created_at": "2026-05-15T09:00:00.000Z",
   "updated_at": "2026-05-15T09:03:00.000Z",
-  "status": "running",
+  "run_status": "running",
+  "current_stage": "execute",
   "stage_assignments": {
     "plan": ["planner"],
     "execute": ["worker"],
@@ -100,7 +101,12 @@ Legacy packet status files are rejected by validation; there is no automatic leg
     "review": { "review:reviewer": "system_default" },
     "decide": { "decide:decider": "system_default" }
   },
-  "completed_stages": ["plan"],
+  "stage_status": {
+    "plan": "completed",
+    "execute": "running",
+    "review": "planned",
+    "decide": "planned"
+  },
   "stage_timing": {
     "plan": {
       "started_at": "2026-05-15T09:00:00.000Z",
@@ -245,14 +251,14 @@ Temporary workflow runs include provenance for the workflow file:
     "hash": "sha256:...",
     "schema_version": 1,
     "workflow_recipe_version": 1,
-    "compatible_packet_schema_versions": [1]
+    "compatible_packet_schema_versions": [2]
   }
 }
 ```
 
 ## Stage State Machine
 
-Stage state values:
+`stage_status` stores one state for every `stage_nodes[].id`. Stage state values:
 
 - `planned`
 - `running`
@@ -274,13 +280,13 @@ needs_decision -> running
 completed -> completed
 ```
 
-`completed_stages`, `failed_stage`, `stage_state`, and `stage_assignments` use
-node ids when `stage_nodes` exists. `failed_stage` is a scalar pointer to the
-latest unresolved failed node. `events.jsonl` remains the historical source for
-older failures.
+`stage_assignments`, `stage_invocations`, `stage_failure_policies`,
+`stage_fallbacks`, `stage_attempts`, and timing/provenance maps use node ids.
+`events.jsonl` remains the historical source for older transitions.
 
-`stage_nodes` is required for newly written current packet schema status files.
-`completed_stages` and `failed_stage` must reference known node ids.
+`stage_nodes` and `stage_status` are required for newly written current packet
+schema status files. `stage_status` must contain exactly one entry for every
+known node id.
 
 ## Release Verdict
 

@@ -85,6 +85,7 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
   const assignmentResolution = resolveStageAssignments(input, stageNodes);
   const stageAssignments = assignmentResolution.assignments;
   const routingResolution = resolveExecutionRouting(input, stageNodes, stageAssignments);
+  const firstStage = stageNodes[0];
   const runDir = path.resolve(cwd, ".agentmesh", "runs", input.runId);
   const createdAt = new Date();
   const now = createdAt.toISOString();
@@ -105,7 +106,10 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
     }),
     created_at: now,
     updated_at: now,
-    status: "created",
+    run_status: stageAssignments[firstStage.id]?.includes("current")
+      ? "awaiting_current"
+      : "pending",
+    current_stage: firstStage.id,
     stage_assignments: stageAssignments,
     stage_invocations: routingResolution.invocations,
     stage_failure_policies: routingResolution.failurePolicies,
@@ -116,7 +120,6 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
     timeout_provenance: routingResolution.timeoutProvenance,
     stages: [...stages],
     stage_nodes: stageNodes,
-    completed_stages: [],
     user_gate: Boolean(input.userGate || input.executionPolicy?.require_user_gate),
     workflow: input.workflow ?? BUILTIN_WORKFLOW_IDS.GUIDED_DELIVERY,
     ...(input.workflowSource ? { workflow_source: input.workflowSource } : {}),
@@ -141,7 +144,7 @@ export async function createFlowRun(input: FlowRunInput, cwd = process.cwd()): P
       ? { resolved_execution_policy: input.executionPolicy }
       : {}),
     ...(input.configProvenance ? { config_provenance: input.configProvenance } : {}),
-    stage_state: Object.fromEntries(
+    stage_status: Object.fromEntries(
       stageNodes.map((node) => [node.id, "planned" satisfies StageState]),
     ),
     stage_timing: Object.fromEntries(

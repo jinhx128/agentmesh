@@ -77,7 +77,7 @@ export interface ActivityNavigatorProps {
 
 export interface ActivityStatusPresentation {
   label: string;
-  tone: "blue" | "cyan" | "green" | "red" | "gray" | "orange" | "yellow";
+  tone: "blue" | "cyan" | "green" | "red" | "gray" | "orange" | "yellow" | "violet";
 }
 
 export const ACTIVITY_GROUP_PREVIEW_LIMIT = 5;
@@ -170,13 +170,11 @@ export function activityExpandedGroupsAfterHeaderToggle(
 
 export function activityStatusPresentation(status: string | undefined): ActivityStatusPresentation {
   const normalized = status?.trim().toLocaleLowerCase() ?? "";
-  const stageSuffix = /(?:^|_)(timed_out|running|created|pending|success|completed|failed|error|aborted|cancelled|timeout|stale)$/.exec(
-    normalized,
-  )?.[1];
-  switch (stageSuffix ?? normalized) {
+  switch (normalized) {
     case "running": return { label: "运行中", tone: "cyan" };
     case "created":
     case "pending": return { label: "等待中", tone: "blue" };
+    case "awaiting_current": return { label: "待决策", tone: "violet" };
     case "success":
     case "completed": return { label: "成功", tone: "green" };
     case "failed":
@@ -436,7 +434,7 @@ function ActivityButton({
   onDelete: () => void;
 }): ReactElement {
   const typeLabel = item.kind === "run" ? "运行" : "调用";
-  const status = item.kind === "run" ? item.run.status : item.call.status;
+  const status = item.kind === "run" ? item.run.run_status : item.call.status;
   const statusPresentation = activityStatusPresentation(status);
   const deleteLabel = `删除${typeLabel}：${item.title}`;
   return (
@@ -685,7 +683,7 @@ function projectRunActivity(run: StudioRunSummary): StudioActivityItem {
       run.workspace.label,
       run.workspace.path,
       run.workflow,
-      run.status,
+      run.run_status,
       run.latest_event,
     ]),
     run,

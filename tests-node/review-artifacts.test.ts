@@ -178,11 +178,12 @@ test("release summary reads the unified raw review output section", () => {
     ].join("\n"),
   );
   const status: PacketStatus = {
-    schema_version: 1,
+    schema_version: 2,
     run_id: "review-artifact-summary",
     created_at: "2026-05-14T00:00:00.000Z",
     updated_at: "2026-05-14T00:00:00.000Z",
-    status: "review_completed",
+    run_status: "awaiting_current",
+    current_stage: "decide",
     stages: ["review", "decide"],
     stage_nodes: [
       { id: "review", type: "review", occurrence: 1 },
@@ -220,7 +221,7 @@ test("release summary reads the unified raw review output section", () => {
       review: {},
       decide: {},
     },
-    completed_stages: ["review"],
+    stage_status: { review: "completed", decide: "planned" },
     stage_timing: {
       review: {
         started_at: "2026-05-14T00:00:00.000Z",

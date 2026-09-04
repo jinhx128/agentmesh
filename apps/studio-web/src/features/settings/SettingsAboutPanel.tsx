@@ -1,8 +1,10 @@
 import {
   Alert,
   Badge,
+  Box,
   Button,
   Card,
+  Divider,
   Group,
   List,
   Paper,
@@ -12,11 +14,12 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import type { ReactElement } from "react";
-import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
-import { formatLocalDateTime } from "../../app/time.js";
+import { useState, type ReactElement } from "react";
+import { useStudioCopy } from "../../app/copy.js";
+import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import type { StudioCompatibilityDiagnostics } from "../../api/compatibility.js";
 import type { DesktopAppUpdaterState } from "../../api/desktop-updater.js";
+import type { StudioIntegrationsReport } from "../../api/integrations.js";
 import type { StudioUpdateReport, StudioUpdateTargetReport } from "../../api/update.js";
 
 export type SettingsAboutState =
@@ -31,14 +34,19 @@ export type SettingsAboutState =
 export type SettingsAboutUpdateState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; report: StudioUpdateReport };
+  | { status: "ready"; report: StudioUpdateReport; refreshError?: string };
 
 export interface SettingsAboutPanelProps {
   state: SettingsAboutState;
-  onRefreshUpdate?: () => void;
+  refreshBusy?: boolean;
+  onRefreshUpdate?: () => Promise<void>;
+  commandLineTool?: {
+    state: SettingsCommandLineToolState;
+    onInstall: () => Promise<void>;
+  };
   desktopUpdater?: {
     state: DesktopAppUpdaterState;
-    onCheck: () => Promise<void>;
+    refreshError?: string;
     onInstall: () => Promise<void>;
   };
   desktopAutoUpdate?: {
@@ -47,13 +55,29 @@ export interface SettingsAboutPanelProps {
   };
 }
 
+export type SettingsCommandLineToolState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | {
+      status: "ready";
+      report: StudioIntegrationsReport["command_line_tool"];
+      refreshError?: string;
+    };
+
 export type DesktopAutoUpdatePreferenceState =
   | { status: "loading" }
   | { status: "ready"; enabled: boolean }
   | { status: "saving"; enabled: boolean }
   | { status: "error"; enabled: boolean; message: string };
 
-export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater, desktopAutoUpdate }: SettingsAboutPanelProps): ReactElement {
+export function SettingsAboutPanel({
+  state,
+  refreshBusy = false,
+  onRefreshUpdate,
+  commandLineTool,
+  desktopUpdater,
+  desktopAutoUpdate,
+}: SettingsAboutPanelProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "loading") {
     return (
@@ -74,103 +98,21 @@ export function SettingsAboutPanel({ state, onRefreshUpdate, desktopUpdater, des
   }
 
   const compatibility = state.compatibility;
-  const metadata = compatibility.metadata;
-  const decisionLabel = compatibilityDecisionLabel(compatibility.decision, t);
-  const decisionDescription = compatibilityDecisionDescription(compatibility);
   const reasonItems = compatibility.reasons.map(localizeCompatibilityReason);
   return (
     <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
       <PanelHeader title={t("about")} meta={t("versionInfo")} />
-      <Card className="studio-subcard studio-compatibility-card" mt="md" withBorder radius="md" p="md">
-        <Stack gap="md">
-          <Group justify="space-between" align="flex-start" gap="sm">
-            <Badge color={compatibility.decision === "read_write" ? "green" : "yellow"}>{decisionLabel}</Badge>
-            <Text size="sm" c="dimmed">{decisionDescription}</Text>
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
-            <InfoItem label={t("runtimeVersion")} value={compatibility.current_runtime_version} />
-            <InfoItem label={t("currentEntrypoint")} value={entrypointLabel(compatibility.current_entrypoint)} />
-            <InfoItem label={t("minWriteRuntimeVersion")} value={metadata?.min_write_runtime_version ?? missingMetadataValue(compatibility)} />
-            <InfoItem label={t("lastUpdatedAt")} value={metadata ? formatLocalDateTime(metadata.updated_at) : missingMetadataValue(compatibility)} />
-          </SimpleGrid>
-          {compatibility.decision !== "read_write" ? (
-            <Text size="sm" c="yellow.8">{compatibility.decision === "read_only"
-              ? t("upgradeBeforeMutating")
-              : t("upgradeBeforeReading")}</Text>
-          ) : null}
-        </Stack>
-      </Card>
-      <UpdateCard state={state.update ?? { status: "loading" }} onRefresh={onRefreshUpdate} />
-      {desktopUpdater ? <DesktopUpdaterCard {...desktopUpdater} autoUpdate={desktopAutoUpdate} /> : null}
-      {reasonItems.length > 0 ? (
-        <Stack mt="md" gap="xs">
-          <Text fw={800} mb="xs">{t("compatibilityDiagnostics")}</Text>
-          <List size="sm">
-            {reasonItems.map((reason) => <List.Item key={reason}>{reason}</List.Item>)}
-          </List>
-        </Stack>
-      ) : null}
+      <VersionUpdateCard
+        compatibility={compatibility}
+        state={state.update ?? { status: "loading" }}
+        refreshBusy={refreshBusy}
+        onRefresh={onRefreshUpdate}
+        commandLineTool={commandLineTool}
+        desktopUpdater={desktopUpdater}
+        desktopAutoUpdate={desktopAutoUpdate}
+        reasonItems={reasonItems}
+      />
     </Paper>
-  );
-}
-
-function DesktopUpdaterCard({
-  state,
-  onCheck,
-  onInstall,
-  autoUpdate,
-}: {
-  state: DesktopAppUpdaterState;
-  onCheck: () => Promise<void>;
-  onInstall: () => Promise<void>;
-  autoUpdate?: NonNullable<SettingsAboutPanelProps["desktopAutoUpdate"]>;
-}): ReactElement {
-  const checking = state.status === "checking";
-  const downloading = state.status === "downloading" || state.status === "restarting";
-  const progress = state.status === "downloading" && state.totalBytes
-    ? Math.min(100, Math.round((state.downloadedBytes / state.totalBytes) * 100))
-    : undefined;
-  return (
-    <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="desktop-app-updater">
-      <Stack gap="md">
-        <Group justify="space-between" align="flex-start" gap="sm">
-          <Title order={3} size="h4">应用更新</Title>
-          <Badge
-            color={state.status === "current" ? "green" : state.status === "error" ? "red" : "blue"}
-            role="status"
-            aria-live="polite"
-          >
-            {desktopUpdaterLabel(state)}
-          </Badge>
-        </Group>
-        {state.status === "update_available" ? (
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <InfoItem label="当前应用版本" value={state.currentVersion} />
-            <InfoItem label="可用应用版本" value={state.version} />
-          </SimpleGrid>
-        ) : null}
-        {state.status === "update_available" && state.notes ? <Text size="sm">{state.notes}</Text> : null}
-        {state.status === "downloading" ? (
-          <Text size="sm" role="status" aria-live="polite">已下载 {formatBytes(state.downloadedBytes)}{state.totalBytes
-            ? ` / ${formatBytes(state.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
-            : ""}</Text>
-        ) : null}
-        {state.status === "error" ? <Alert color="red" variant="light" role="alert">{state.message}</Alert> : null}
-        {autoUpdate ? <DesktopAutoUpdateSwitch {...autoUpdate} /> : null}
-        {state.status !== "unavailable" ? (
-          <Group gap="sm">
-            <Button size="xs" variant="light" disabled={checking || downloading} onClick={() => void onCheck()}>
-              {checking ? "检查中" : "检查应用更新"}
-            </Button>
-            {state.status === "update_available" ? (
-              <Button size="xs" disabled={downloading} onClick={() => void onInstall()}>
-                安装并重启
-              </Button>
-            ) : null}
-          </Group>
-        ) : null}
-      </Stack>
-    </Card>
   );
 }
 
@@ -216,61 +158,54 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function UpdateCard({
+function VersionUpdateCard({
+  compatibility,
   state,
+  refreshBusy,
   onRefresh,
+  commandLineTool,
+  desktopUpdater,
+  desktopAutoUpdate,
+  reasonItems,
 }: {
+  compatibility: StudioCompatibilityDiagnostics;
   state: SettingsAboutUpdateState;
-  onRefresh?: () => void;
+  refreshBusy: boolean;
+  onRefresh?: () => Promise<void>;
+  commandLineTool?: SettingsAboutPanelProps["commandLineTool"];
+  desktopUpdater?: SettingsAboutPanelProps["desktopUpdater"];
+  desktopAutoUpdate?: SettingsAboutPanelProps["desktopAutoUpdate"];
+  reasonItems: string[];
 }): ReactElement {
-  if (state.status === "loading") {
-    return (
-      <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
-        <PanelHeader
-          title="版本更新"
-          meta="检查中"
-          action={<UpdateRefreshButton onRefresh={onRefresh} disabled />}
-        />
-        <Alert mt="md" variant="light">正在检查 AgentMesh 最新版本。</Alert>
-      </Card>
-    );
-  }
-  if (state.status === "error") {
-    return (
-      <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
-        <PanelHeader
-          title="版本更新"
-          meta="暂时无法检查"
-          action={<UpdateRefreshButton onRefresh={onRefresh} />}
-        />
-        <Alert mt="md" color="yellow" variant="light">{updateErrorMessage(state.message)}</Alert>
-      </Card>
-    );
-  }
-  const report = state.report;
+  const compatibilityWarning = compatibility.decision === "read_only"
+    ? "当前版本可以读取这个工作区；写入前需要升级 AgentMesh。"
+    : compatibility.decision === "refused"
+      ? "当前版本不能安全读取或写入这个工作区；请升级 AgentMesh 后再继续。"
+      : undefined;
+
   return (
-    <Card className="studio-subcard studio-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-update">
-      <Stack gap="md">
+    <Card className="studio-subcard studio-update-card studio-version-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-version-update">
+      <Stack gap="lg">
         <Group justify="space-between" align="flex-start" gap="sm">
-          <PanelHeader
-            title="版本更新"
-            meta={report.update_available ? "发现新版本" : "已是最新"}
-            action={<UpdateRefreshButton onRefresh={onRefresh} />}
-          />
-          <Badge color={report.update_available ? "blue" : "green"}>{report.update_available ? "可更新" : "当前版本"}</Badge>
+          <Title order={3} size="h4">版本与更新</Title>
+          <UpdateRefreshButton onRefresh={onRefresh} busy={refreshBusy} />
         </Group>
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-          <InfoItem label="当前版本" value={report.current_version} />
-          <InfoItem label="最新版本" value={report.latest_version} />
-          <InfoItem label="CLI 更新" value={updateTargetLabel(report.cli)} />
-          <InfoItem label="桌面端更新" value={updateTargetLabel(report.desktop)} />
-        </SimpleGrid>
-        {report.cli.install_command ? (
-          <InfoItem label="CLI 更新命令" value={report.cli.install_command.join(" ")} />
+        {compatibilityWarning ? <Alert color="yellow" variant="light">{compatibilityWarning}</Alert> : null}
+        {reasonItems.length > 0 ? (
+          <Alert color="yellow" variant="light" title="兼容性元数据">
+            <Text size="sm" fw={700} mb={4}>诊断说明</Text>
+            <List size="sm">
+              {reasonItems.map((reason) => <List.Item key={reason}>{reason}</List.Item>)}
+            </List>
+          </Alert>
         ) : null}
-        {report.desktop.asset_name && report.desktop.asset_url ? (
-          <InfoItem label="桌面端下载" value={`${report.desktop.asset_name} · ${report.desktop.asset_url}`} />
-        ) : null}
+        <CommandLineToolSection integration={commandLineTool} />
+        <Divider />
+        <DesktopUpdateSection
+          update={state}
+          updater={desktopUpdater}
+          autoUpdate={desktopAutoUpdate}
+        />
       </Stack>
     </Card>
   );
@@ -278,19 +213,174 @@ function UpdateCard({
 
 function UpdateRefreshButton({
   onRefresh,
-  disabled = false,
+  busy,
 }: {
-  onRefresh?: () => void;
-  disabled?: boolean;
+  onRefresh?: () => Promise<void>;
+  busy: boolean;
 }): ReactElement | null {
   if (!onRefresh) {
     return null;
   }
   return (
-    <Button size="xs" variant="light" onClick={onRefresh} disabled={disabled}>
-      重新检查
+    <Button size="xs" variant="light" onClick={() => void onRefresh()} loading={busy} disabled={busy}>
+      {busy ? "检查中" : "重新检查"}
     </Button>
   );
+}
+
+function CommandLineToolSection({
+  integration,
+}: {
+  integration?: SettingsAboutPanelProps["commandLineTool"];
+}): ReactElement {
+  const { t } = useStudioCopy();
+  const [busy, setBusy] = useState(false);
+  const state = integration?.state ?? { status: "loading" as const };
+  const report = state.status === "ready" ? state.report : undefined;
+  async function install(): Promise<void> {
+    if (!integration) return;
+    setBusy(true);
+    try {
+      await integration.onInstall();
+      showStudioSuccess("命令行工具安装成功");
+    } catch (error) {
+      showStudioError("命令行工具安装失败", readableError(error, "请稍后重试"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Box component="section" className="studio-version-component" data-studio-section="settings-command-line-tool">
+      <Group justify="space-between" align="flex-start" gap="md" mb="sm">
+        <Box>
+          <Text fw={800}>AgentMesh CLI</Text>
+          <Text size="xs" c="dimmed">终端中的 AgentMesh 命令行工具</Text>
+        </Box>
+        <Badge color={commandLineStatusColor(state)}>{commandLineStateLabel(state)}</Badge>
+      </Group>
+      {state.status === "loading" ? <Alert variant="light">正在检测命令行工具。</Alert> : null}
+      {state.status === "error" ? <Alert color="red" variant="light">{state.message}</Alert> : null}
+      {state.status === "ready" && report ? (
+        <Stack gap="sm">
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+            <InfoItem label={t("installedVersion")} value={report.installed_version || t("targetMissing")} />
+            <InfoItem label={t("latestVersion")} value={report.latest_version || t("targetMissing")} />
+            <InfoItem label={t("commandLinePath")} value={report.path ?? t("targetMissing")} />
+          </SimpleGrid>
+          {state.refreshError ? <Alert color="yellow" variant="light">命令行工具状态刷新失败：{state.refreshError}</Alert> : null}
+          {report.diagnostics.map((diagnostic, index) => (
+            <Alert key={`${diagnostic}-${index}`} color="yellow" variant="light">{diagnostic}</Alert>
+          ))}
+          <Group justify="flex-end">
+            <Button size="xs" loading={busy} disabled={!report.supported || busy} onClick={() => void install()}>
+              {commandLineActionLabel(report.status)}
+            </Button>
+          </Group>
+        </Stack>
+      ) : null}
+    </Box>
+  );
+}
+
+function DesktopUpdateSection({
+  update,
+  updater,
+  autoUpdate,
+}: {
+  update: SettingsAboutUpdateState;
+  updater?: SettingsAboutPanelProps["desktopUpdater"];
+  autoUpdate?: SettingsAboutPanelProps["desktopAutoUpdate"];
+}): ReactElement {
+  const nativeState = updater?.state ?? { status: "unavailable" as const };
+  const report = update.status === "ready" ? update.report : undefined;
+  const currentVersion = nativeState.status === "update_available" ? nativeState.currentVersion : report?.current_version ?? "暂不可用";
+  const latestVersion = nativeState.status === "update_available" ? nativeState.version : report?.latest_version ?? "暂不可用";
+  const progress = nativeState.status === "downloading" && nativeState.totalBytes
+    ? Math.min(100, Math.round((nativeState.downloadedBytes / nativeState.totalBytes) * 100))
+    : undefined;
+  const downloading = nativeState.status === "downloading" || nativeState.status === "restarting";
+  return (
+    <Box component="section" className="studio-version-component" data-studio-section="settings-desktop-app">
+      <Group justify="space-between" align="flex-start" gap="md" mb="sm">
+        <Box>
+          <Text fw={800}>桌面应用</Text>
+          <Text size="xs" c="dimmed">AgentMesh.app 与原生更新</Text>
+        </Box>
+        <Badge color={desktopStatusColor(nativeState, report)}>{desktopStatusLabel(nativeState, report)}</Badge>
+      </Group>
+      <Stack gap="sm">
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+          <InfoItem label="当前应用版本" value={currentVersion} />
+          <InfoItem label="最新应用版本" value={latestVersion} />
+        </SimpleGrid>
+        {update.status === "loading" ? <Alert variant="light">正在检查发布版本。</Alert> : null}
+        {update.status === "error" ? <Alert color="red" variant="light" title="发布版本暂时无法检查">{updateErrorMessage(update.message)}</Alert> : null}
+        {update.status === "ready" && update.refreshError ? <Alert color="yellow" variant="light">发布版本刷新失败：{updateErrorMessage(update.refreshError)}</Alert> : null}
+        {nativeState.status === "update_available" && nativeState.notes ? <Text size="sm">{nativeState.notes}</Text> : null}
+        {nativeState.status === "downloading" ? (
+          <Text size="sm" role="status" aria-live="polite">已下载 {formatBytes(nativeState.downloadedBytes)}{nativeState.totalBytes
+            ? ` / ${formatBytes(nativeState.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
+            : ""}</Text>
+        ) : null}
+        {nativeState.status === "error" ? <Alert color="red" variant="light" role="alert">{nativeState.message}</Alert> : null}
+        {updater?.refreshError ? <Alert color="yellow" variant="light">桌面应用状态刷新失败：{updater.refreshError}</Alert> : null}
+        {autoUpdate ? <DesktopAutoUpdateSwitch {...autoUpdate} /> : null}
+        {nativeState.status === "update_available" && updater ? (
+          <Group justify="flex-end">
+            <Button size="xs" disabled={downloading} onClick={() => void updater.onInstall()}>安装并重启</Button>
+          </Group>
+        ) : null}
+      </Stack>
+    </Box>
+  );
+}
+
+function readableError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
+}
+
+function commandLineActionLabel(status: StudioIntegrationsReport["command_line_tool"]["status"]): string {
+  if (status === "missing") return "安装命令行工具";
+  if (status === "update_available") return "更新命令行工具";
+  return "重新安装命令行工具";
+}
+
+function commandLineStateLabel(state: SettingsCommandLineToolState): string {
+  if (state.status === "loading") return "检测中";
+  if (state.status === "error") return "检测失败";
+  switch (state.report.status) {
+    case "current": return "已是最新";
+    case "update_available": return "可更新";
+    case "missing": return "未安装";
+    case "unknown": return "状态未知";
+  }
+}
+
+function commandLineStatusColor(state: SettingsCommandLineToolState): string {
+  if (state.status === "error") return "red";
+  if (state.status !== "ready") return "blue";
+  if (state.report.status === "current") return "green";
+  if (state.report.status === "update_available") return "yellow";
+  return "gray";
+}
+
+function desktopStatusLabel(
+  state: DesktopAppUpdaterState,
+  report: StudioUpdateReport | undefined,
+): string {
+  if (state.status === "unavailable" && report) return updateTargetLabel(report.desktop);
+  return desktopUpdaterLabel(state);
+}
+
+function desktopStatusColor(
+  state: DesktopAppUpdaterState,
+  report: StudioUpdateReport | undefined,
+): string {
+  if (state.status === "error") return "red";
+  if (state.status === "current") return "green";
+  if (state.status === "unavailable" && report?.desktop.status === "current") return "green";
+  if (state.status === "update_available" || report?.desktop.status.includes("update_available")) return "yellow";
+  return "blue";
 }
 
 function updateErrorMessage(message: string): string {
@@ -313,13 +403,6 @@ function updateTargetLabel(target: StudioUpdateTargetReport): string {
   return target.reason ?? "发布资产缺失";
 }
 
-function missingMetadataValue(compatibility: StudioCompatibilityDiagnostics): string {
-  if (compatibility.metadata_state === "missing_legacy") {
-    return "尚未生成（旧工作区首次成功写入后补齐）";
-  }
-  return "未记录（兼容性元数据不可用）";
-}
-
 function InfoItem({ label, value }: { label: string; value: string | number }): ReactElement {
   return (
     <Stack className="studio-info-item" gap={2}>
@@ -327,45 +410,6 @@ function InfoItem({ label, value }: { label: string; value: string | number }): 
       <Text size="sm" fw={700} style={{ overflowWrap: "anywhere" }}>{value}</Text>
     </Stack>
   );
-}
-
-function compatibilityDecisionLabel(
-  decision: StudioCompatibilityDiagnostics["decision"],
-  t: (key: StudioCopyKey) => string,
-): string {
-  return {
-    read_write: t("readWrite"),
-    read_only: t("readOnly"),
-    refused: t("refused"),
-  }[decision];
-}
-
-function compatibilityDecisionDescription(
-  compatibility: StudioCompatibilityDiagnostics,
-): string {
-  if (compatibility.decision === "read_only") {
-    return "当前版本可以读取这个工作区；写入前需要升级 AgentMesh。";
-  }
-  if (compatibility.decision === "refused") {
-    return "当前版本不能安全读取或写入这个工作区；请升级 AgentMesh 后再继续。";
-  }
-  if (compatibility.metadata_state === "missing_legacy") {
-    return "当前按旧工作区兼容处理，可以读取和写入；下次成功写入会自动补齐元数据。";
-  }
-  return "当前版本可以读取和写入这个工作区。";
-}
-
-function entrypointLabel(entrypoint: string): string {
-  const labels: Record<string, string> = {
-    cli: "命令行",
-    codex: "Codex",
-    cursor: "Cursor",
-    desktop: "桌面端",
-    studio: "Web 端",
-    "studio-desktop": "桌面端",
-  };
-  const label = labels[entrypoint] ?? entrypoint;
-  return label === entrypoint ? entrypoint : `${label}（${entrypoint}）`;
 }
 
 function localizeCompatibilityReason(reason: string): string {

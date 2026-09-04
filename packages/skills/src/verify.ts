@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  CURRENT_PACKET_SCHEMA_VERSION,
   CURRENT_SCHEMA_VERSION,
   WORKFLOW_RECIPE_SCHEMA_VERSION,
 } from "@agentmesh/core";
@@ -14,7 +15,7 @@ const GENERATED_METADATA_END = "<!-- agentmesh-skill-version-metadata:end -->";
 
 export interface SkillVersionMetadata {
   agentmesh_cli_version: string;
-  packet_schema_version: typeof CURRENT_SCHEMA_VERSION;
+  packet_schema_version: typeof CURRENT_PACKET_SCHEMA_VERSION;
   workflow_recipe_schema_version: typeof WORKFLOW_RECIPE_SCHEMA_VERSION;
 }
 
@@ -132,7 +133,7 @@ export function agentmeshSkillMarkdown(
 export function skillVersionMetadata(projectRoot = moduleProjectRoot()): SkillVersionMetadata {
   return {
     agentmesh_cli_version: packageVersion(projectRoot),
-    packet_schema_version: CURRENT_SCHEMA_VERSION,
+    packet_schema_version: CURRENT_PACKET_SCHEMA_VERSION,
     workflow_recipe_schema_version: WORKFLOW_RECIPE_SCHEMA_VERSION,
   };
 }

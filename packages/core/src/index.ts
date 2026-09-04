@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const CURRENT_SCHEMA_VERSION = 1 as const;
 export const SUPPORTED_SCHEMA_VERSIONS = [CURRENT_SCHEMA_VERSION] as const;
-export const CURRENT_PACKET_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
+export const CURRENT_PACKET_SCHEMA_VERSION = 2 as const;
 export const SUPPORTED_PACKET_SCHEMA_VERSIONS = [CURRENT_PACKET_SCHEMA_VERSION] as const;
 export const WORKFLOW_RECIPE_SCHEMA_VERSION = 1 as const;
 export const BUILTIN_WORKFLOW_IDS = {
@@ -140,6 +140,7 @@ export const STAGE_STATES = [
   "running",
   "completed",
   "failed",
+  "timed_out",
   "skipped",
   "needs_decision",
   "handoff_ready",
@@ -147,6 +148,18 @@ export const STAGE_STATES = [
 
 export const StageStateSchema = z.enum(STAGE_STATES);
 export type StageState = z.infer<typeof StageStateSchema>;
+
+export const RUN_STATUSES = [
+  "pending",
+  "running",
+  "awaiting_current",
+  "completed",
+  "failed",
+  "timed_out",
+  "aborted",
+] as const;
+export const RunStatusSchema = z.enum(RUN_STATUSES);
+export type RunStatus = z.infer<typeof RunStatusSchema>;
 
 export const REVIEW_SESSION_MODES = [
   "auto",
@@ -317,7 +330,8 @@ export const PacketStatusSchema = z
     title: NonEmptyStringSchema.optional(),
     created_at: NonEmptyStringSchema,
     updated_at: NonEmptyStringSchema,
-    status: NonEmptyStringSchema,
+    run_status: RunStatusSchema,
+    current_stage: NonEmptyStringSchema.optional(),
     stage_assignments: z.record(z.string(), z.array(NonEmptyStringSchema)),
     stage_invocations: z.record(z.string(), z.array(StageInvocationSchema)),
     stage_failure_policies: z.record(z.string(), StageFailurePolicySchema),
@@ -328,9 +342,7 @@ export const PacketStatusSchema = z
     timeout_provenance: z.record(z.string(), z.unknown()),
     stages: z.array(NonEmptyStringSchema),
     stage_nodes: z.array(StageNodeSchema),
-    completed_stages: z.array(NonEmptyStringSchema),
-    failed_stage: NonEmptyStringSchema.optional(),
-    stage_state: z.record(z.string(), StageStateSchema).optional(),
+    stage_status: z.record(z.string(), StageStateSchema),
     stage_timing: z.record(z.string(), InvocationTimingSchema),
     agent_timing: z.record(z.string(), z.record(z.string(), InvocationTimingSchema)),
     runtime_timing: RuntimeTimingSchema.optional(),
@@ -355,31 +367,24 @@ export const PacketStatusSchema = z
   .superRefine((status, ctx) => {
     validateStageNodeSequence(status.stages, status.stage_nodes, ctx);
     const validStageIds = new Set(status.stage_nodes.map((node) => node.id));
-    for (const completedStage of status.completed_stages) {
-      if (!validStageIds.has(completedStage)) {
-        ctx.addIssue({
-          code: "custom",
-          message: `completed_stages contains unknown stage: ${completedStage}`,
-          path: ["completed_stages"],
-        });
-      }
-    }
-    if (status.failed_stage && !validStageIds.has(status.failed_stage)) {
+    if (status.current_stage && !validStageIds.has(status.current_stage)) {
       ctx.addIssue({
         code: "custom",
-        message: `failed_stage contains unknown stage: ${status.failed_stage}`,
-        path: ["failed_stage"],
+        message: `current_stage contains unknown stage: ${status.current_stage}`,
+        path: ["current_stage"],
       });
     }
-    for (const stageId of Object.keys(status.stage_state ?? {})) {
-      if (!validStageIds.has(stageId)) {
+    validateExactStageRecordKeys("stage_status", status.stage_status, validStageIds, ctx);
+    for (const legacyField of ["status", "completed_stages", "failed_stage", "stage_state"] as const) {
+      if (legacyField in status) {
         ctx.addIssue({
           code: "custom",
-          message: `stage_state contains unknown stage: ${stageId}`,
-          path: ["stage_state", stageId],
+          message: `${legacyField} is not supported by packet schema v2`,
+          path: [legacyField],
         });
       }
     }
+    validateRunStageStatusConsistency(status, ctx);
     validateExactStageRecordKeys("stage_assignments", status.stage_assignments, validStageIds, ctx);
     validateExactStageRecordKeys("stage_invocations", status.stage_invocations, validStageIds, ctx);
     validateExactStageRecordKeys(
@@ -420,6 +425,62 @@ export const PacketStatusSchema = z
     }
   });
 export type PacketStatus = z.infer<typeof PacketStatusSchema>;
+
+function validateRunStageStatusConsistency(
+  status: {
+    run_status: RunStatus;
+    current_stage?: string;
+    stage_status: Record<string, StageState>;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const currentStageStatus = status.current_stage
+    ? status.stage_status[status.current_stage]
+    : undefined;
+  if (status.run_status === "completed") {
+    if (status.current_stage) {
+      ctx.addIssue({
+        code: "custom",
+        message: "completed run must not declare current_stage",
+        path: ["current_stage"],
+      });
+    }
+    if (Object.values(status.stage_status).some((stageStatus) => stageStatus !== "completed")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "completed run requires every stage_status to be completed",
+        path: ["stage_status"],
+      });
+    }
+    return;
+  }
+  if (status.run_status === "aborted") {
+    return;
+  }
+  if (!status.current_stage) {
+    ctx.addIssue({
+      code: "custom",
+      message: `${status.run_status} run requires current_stage`,
+      path: ["current_stage"],
+    });
+    return;
+  }
+  const expectedCurrentStageStatuses: Partial<Record<RunStatus, StageState[]>> = {
+    pending: ["planned"],
+    awaiting_current: ["planned", "needs_decision"],
+    running: ["running"],
+    failed: ["failed"],
+    timed_out: ["timed_out"],
+  };
+  const expected = expectedCurrentStageStatuses[status.run_status];
+  if (expected && currentStageStatus && !expected.includes(currentStageStatus)) {
+    ctx.addIssue({
+      code: "custom",
+      message: `${status.run_status} run requires current_stage status to be ${expected.join(" or ")}`,
+      path: ["stage_status", status.current_stage],
+    });
+  }
+}
 
 function validateExactStageRecordKeys(
   label: string,

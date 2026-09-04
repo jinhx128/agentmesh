@@ -1266,7 +1266,7 @@ export function buildWorkflowTomlFromManualFields(fields: WorkflowManualFields):
   const lines = [
     "schema_version = 1",
     "workflow_recipe_version = 1",
-    "compatible_packet_schema_versions = [1]",
+    "compatible_packet_schema_versions = [2]",
     `name = ${tomlString(workflowName)}`,
     `stages = ${tomlArray(stages)}`,
     `description = ${tomlString(fields.description.trim())}`,

@@ -1,7 +1,7 @@
 import type { StudioApiClient, StudioApiJsonResponse } from "./client.js";
 
 export type StudioCallStatus = "running" | "success" | "failed" | "aborted" | "timeout" | "stale";
-export type StudioCallAdoptionStatus = "unreviewed" | "accepted" | "rejected" | "superseded";
+export type StudioCallResultStatus = "unprocessed" | "accepted" | "rejected" | "superseded";
 
 export interface StudioCallArtifactRef {
   kind: "file";
@@ -61,7 +61,9 @@ export interface StudioCallSummary {
   tokens_in: number | null;
   tokens_out: number | null;
   cost_estimate_usd: number | null;
-  adoption_status: StudioCallAdoptionStatus;
+  result_status: StudioCallResultStatus;
+  comparison_group_id: string | null;
+  replaced_by_call_id: string | null;
   read_only?: boolean;
   schema_warning?: string;
   unsupported_schema: boolean;
@@ -92,17 +94,15 @@ export interface StudioCallPreview {
   authoritative: boolean | null;
 }
 
-export interface StudioCallAdoptionEvent {
+export interface StudioCallResultEvent {
   schema_version: number;
   call_id: string;
-  previous_status: StudioCallAdoptionStatus;
-  status: Exclude<StudioCallAdoptionStatus, "unreviewed">;
+  previous_status: StudioCallResultStatus;
+  status: Exclude<StudioCallResultStatus, "unprocessed">;
   updated_at: string;
   updated_by_entrypoint: string;
   reason: string | null;
-  related_commit: string | null;
-  related_run_id: string | null;
-  superseded_by_call_id: string | null;
+  replaced_by_call_id: string | null;
 }
 
 export interface StudioCallDetail {
@@ -111,25 +111,9 @@ export interface StudioCallDetail {
   prompt: StudioCallPreview;
   output: StudioCallPreview;
   stderr: StudioCallPreview;
-  adoption_events: StudioCallAdoptionEvent[];
+  result_events: StudioCallResultEvent[];
   warnings: StudioCallWarning[];
 }
-
-export interface StudioCallAdoptionRequest {
-  status: Exclude<StudioCallAdoptionStatus, "unreviewed">;
-  reason?: string;
-  related_commit?: string;
-  related_run_id?: string;
-  superseded_by_call_id?: string;
-}
-
-export interface StudioCallAdoptionError {
-  error: string;
-}
-
-export type StudioCallAdoptionResponse = StudioApiJsonResponse<
-  StudioCallDetail | StudioCallAdoptionError
->;
 
 export interface StudioCallDeletePayload {
   deleted: true;
@@ -167,18 +151,6 @@ export function loadStudioCallDetail(
 ): Promise<StudioCallDetail> {
   return client.getJson<StudioCallDetail>(
     withWorkspaceId(`/api/calls/${encodeURIComponent(callId)}`, workspaceId),
-  );
-}
-
-export function submitStudioCallAdoption(
-  client: StudioApiClient,
-  callId: string,
-  request: StudioCallAdoptionRequest,
-  workspaceId?: string,
-): Promise<StudioCallAdoptionResponse> {
-  return client.postJsonWithStatus<StudioCallDetail | StudioCallAdoptionError>(
-    withWorkspaceId(`/api/calls/${encodeURIComponent(callId)}/adoption`, workspaceId),
-    request,
   );
 }
 

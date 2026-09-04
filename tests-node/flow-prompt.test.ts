@@ -16,7 +16,7 @@ test("prompt assembly references context without replaying local content", () =>
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "bounded-context-prompt",
         workflow: "bounded-context-prompt",
         stages: ["plan"],
@@ -24,9 +24,9 @@ test("prompt assembly references context without replaying local content", () =>
         stage_assignments: {
           plan: ["current"],
         },
-        completed_stages: [],
+        run_status: "awaiting_current",
         current_stage: "plan",
-        stage_state: {},
+        stage_status: { plan: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -61,14 +61,15 @@ test("resumed reviewer prompt adds one bounded current-packet delta without leak
   writeFileSync(
     path.join(runDir, "status.json"),
     JSON.stringify({
-      schema_version: 1,
+      schema_version: 2,
       run_id: "resumed-prompt",
       workflow: "resumed-prompt",
       stages: ["review"],
       stage_nodes: [{ id: "review", type: "review", occurrence: 1 }],
       stage_assignments: { review: ["reviewer"] },
-      completed_stages: [],
-      stage_state: {},
+      run_status: "running",
+      current_stage: "review",
+      stage_status: { review: "running" },
       stage_attempts: {},
       user_gate: false,
     }, null, 2) + "\n",
@@ -169,10 +170,10 @@ test("decide prompt preserves packet-derived non-hermetic risk when prior findin
   const runDir = path.join(workspace, ".agentmesh", "runs", "decide-provenance");
   mkdirSync(runDir, { recursive: true });
   writeFileSync(path.join(runDir, "status.json"), JSON.stringify({
-    schema_version: 1, run_id: "decide-provenance", workflow: "w-67ef1b1f", stages: ["review", "decide"],
+    schema_version: 2, run_id: "decide-provenance", workflow: "w-67ef1b1f", stages: ["review", "decide"],
     stage_nodes: [{ id: "review", type: "review", occurrence: 1 }, { id: "decide", type: "decide", occurrence: 1 }],
-    stage_assignments: { review: ["reviewer"], decide: ["current"] }, completed_stages: ["review"],
-    stage_state: {}, stage_attempts: { review: [{ lane_id: "review:reviewer", actual_agent: "reviewer", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" }], decide: [] }, user_gate: false,
+    run_status: "awaiting_current", current_stage: "decide", stage_status: { review: "completed", decide: "planned" },
+    stage_assignments: { review: ["reviewer"], decide: ["current"] }, stage_attempts: { review: [{ lane_id: "review:reviewer", actual_agent: "reviewer", status: "completed", session_mode: "resumed", hermetic: false, non_hermetic_reason: "session_resume" }], decide: [] }, user_gate: false,
     resolved_reviewer_session_policy: { requested_mode: "independent", effective_mode: "independent", source: "workflow" },
   }, null, 2) + "\n");
   writeFileSync(path.join(runDir, "request.md"), "# Request\n\nDecide current evidence.\n");
@@ -200,7 +201,7 @@ test("prompt assembly displays absolute packet directory when run is outside cwd
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "absolute-context-prompt",
         workflow: "absolute-context-prompt",
         stages: ["plan"],
@@ -208,9 +209,9 @@ test("prompt assembly displays absolute packet directory when run is outside cwd
         stage_assignments: {
           plan: ["current"],
         },
-        completed_stages: [],
+        run_status: "awaiting_current",
         current_stage: "plan",
-        stage_state: {},
+        stage_status: { plan: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -236,14 +237,15 @@ test("prompt assembly marks truncated context references", () => {
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "truncated-context-reference",
         workflow: "truncated-context-reference",
         stages: ["plan"],
         stage_nodes: [{ id: "plan", type: "plan", occurrence: 1 }],
         stage_assignments: { plan: ["current"] },
-        completed_stages: [],
-        stage_state: {},
+        run_status: "awaiting_current",
+        current_stage: "plan",
+        stage_status: { plan: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -273,14 +275,15 @@ test("execute prompts require a structured handoff", () => {
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "execute-handoff-contract",
         workflow: "execute-handoff-contract",
         stages: ["execute"],
         stage_nodes: [{ id: "execute", type: "execute", occurrence: 1 }],
         stage_assignments: { execute: ["current"] },
-        completed_stages: [],
-        stage_state: {},
+        run_status: "awaiting_current",
+        current_stage: "execute",
+        stage_status: { execute: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -308,7 +311,7 @@ test("prompt assembly marks missing prior artifacts", () => {
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "missing-prior-artifact",
         workflow: "missing-prior-artifact",
         stages: ["plan", "execute"],
@@ -317,8 +320,9 @@ test("prompt assembly marks missing prior artifacts", () => {
           { id: "execute", type: "execute", occurrence: 1 },
         ],
         stage_assignments: { plan: ["current"], execute: ["current"] },
-        completed_stages: ["plan"],
-        stage_state: { plan: "completed", execute: "planned" },
+        run_status: "awaiting_current",
+        current_stage: "execute",
+        stage_status: { plan: "completed", execute: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -344,7 +348,7 @@ test("prompt assembly bounds large release summaries", () => {
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "bounded-release-summary-prompt",
         workflow: "bounded-release-summary-prompt",
         stages: ["decide"],
@@ -352,9 +356,9 @@ test("prompt assembly bounds large release summaries", () => {
         stage_assignments: {
           decide: ["current"],
         },
-        completed_stages: [],
+        run_status: "awaiting_current",
         current_stage: "decide",
-        stage_state: {},
+        stage_status: { decide: "planned" },
         stage_attempts: {},
         user_gate: false,
       },
@@ -411,7 +415,7 @@ test("prompt assembly truncates long prior review raw outputs while preserving o
     path.join(runDir, "status.json"),
     JSON.stringify(
       {
-        schema_version: 1,
+        schema_version: 2,
         run_id: "bounded-review-prompt",
         workflow: "bounded-review-prompt",
         stages: ["plan", "review", "decide", "review", "decide"],
@@ -429,9 +433,9 @@ test("prompt assembly truncates long prior review raw outputs while preserving o
           review_2: ["reviewer_c"],
           decide_2: ["current"],
         },
-        completed_stages: ["plan", "review", "decide", "review_2"],
+        run_status: "awaiting_current",
         current_stage: "decide_2",
-        stage_state: {},
+        stage_status: { plan: "completed", review: "completed", decide: "completed", review_2: "completed", decide_2: "planned" },
         stage_attempts: {},
         user_gate: false,
       },

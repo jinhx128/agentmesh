@@ -1,6 +1,6 @@
 schema_version = 1
 workflow_recipe_version = 1
-compatible_packet_schema_versions = [1]
+compatible_packet_schema_versions = [2]
 name = "Docs Check"
 stages = ["plan", "review", "decide"]
 description = "Plan, review, and decide a documentation or release-note artifact."

@@ -69,17 +69,19 @@ import {
 import {
   assertStageInRun,
   canonicalStageOutputPath,
+  failedStageId,
   firstIncompleteStage,
   protectCompletedArtifact,
-  setStageState,
+  setRunWaitingForStage,
+  setStageStatus,
   stageAgents,
   stageArtifactFile,
   stageArtifactName,
   stageFanoutOutputPath,
   stageNodeForId,
   stageNodes,
+  stageIsCompleted,
   stageOutputPath,
-  stringField,
 } from "./state.js";
 import type { DispatchOptions, DispatchResult } from "./types.js";
 
@@ -169,14 +171,14 @@ export async function retryFlowStage(
   cwd = process.cwd(),
 ): Promise<DispatchResult> {
   const runDir = resolveRunDirectory(run, cwd);
-  return withRunMutationLockAsync(runDir, `flow.retry:${stage ?? "failed_stage"}`, async () => {
+  return withRunMutationLockAsync(runDir, `flow.retry:${stage ?? "failed"}`, async () => {
     const status = loadStatus(runDir);
-    const target = stage ?? stringField(status, "failed_stage");
+    const target = stage ?? failedStageId(status);
     if (!target) {
       throw new Error("no failed stage to retry; pass --stage <stage>");
     }
     assertStageInRun(status, target);
-    if (status.completed_stages.includes(target)) {
+    if (stageIsCompleted(status, target)) {
       throw new Error(`cannot retry completed stage; artifact is protected: ${target}`);
     }
     assertRetryAllowed(status, target);
@@ -195,7 +197,7 @@ export async function resumeFlow(
   const runDir = resolveRunDirectory(run, cwd);
   return withRunMutationLockAsync(runDir, `flow.resume:${stage ?? "next"}`, async () => {
     const status = loadStatus(runDir);
-    const start = stage ?? stringField(status, "failed_stage") ?? firstIncompleteStage(status);
+    const start = stage ?? failedStageId(status) ?? firstIncompleteStage(status);
     if (!start) {
       return { runDir, dispatched: [] };
     }
@@ -228,11 +230,13 @@ async function dispatchRemainingStages(
   const dispatched: string[] = [];
   for (const node of orderedNodes.slice(Math.max(startIndex, 0))) {
     status = loadStatus(runDir);
-    if (status.completed_stages.includes(node.id)) {
+    if (stageIsCompleted(status, node.id)) {
       continue;
     }
     const agents = stageAgents(status, node.id);
     if (agents.includes("current")) {
+      setRunWaitingForStage(status, node.id);
+      saveStatus(runDir, status);
       appendStageEvent(runDir, "stage.awaiting_current", status, node.id);
       return { runDir, dispatched, awaitingCurrent: node.id };
     }
@@ -251,7 +255,7 @@ async function dispatchOneStage(
 ): Promise<void> {
   const node = stageNodeForId(status, stage);
   assertPredecessorsCompleted(status, node.id);
-  if (status.completed_stages.includes(node.id)) {
+  if (stageIsCompleted(status, node.id)) {
     return;
   }
   const agents = stageAgents(status, node.id);
@@ -290,7 +294,7 @@ async function dispatchOneStage(
     }
     if (failures.length > 0) {
       const failure = failures[0];
-      failStage(runDir, node.id, failure.agent, failure.exitCode);
+      failStage(runDir, node.id, failure.agent, failure.exitCode, failure.timedOut);
       throw fanoutFailureError(node.id, failure);
     }
     if (requiresFanoutSynthesis(node.type)) {
@@ -330,7 +334,7 @@ async function dispatchOneStage(
       if (node.type === "review") {
         recordReviewAgentFailure(runDir, agent, result.exitCode, node);
       }
-      failStage(runDir, node.id, result.actualAgent, result.exitCode);
+      failStage(runDir, node.id, result.actualAgent, result.exitCode, result.timedOut);
       throw stageAttemptFailureError(node.id, result);
     }
     recordStageOutput(runDir, status, node.id, result.actualAgent, outputPath, isFanout);
@@ -363,8 +367,9 @@ function startStage(runDir: string, stage: string, agents: string[]): void {
     ...status.stage_timing,
     [stage]: timing,
   };
-  status.status = `${stage}_running`;
-  setStageState(status, stage, "running");
+  status.run_status = "running";
+  status.current_stage = stage;
+  setStageStatus(status, stage, "running");
   saveStatus(runDir, status);
   appendStageEvent(runDir, "stage.started", status, stage, { agents });
 }
@@ -389,17 +394,25 @@ function completeStage(runDir: string, stage: string, agent: string): void {
     ...status.stage_timing,
     [stage]: timing,
   };
-  if (!status.completed_stages.includes(stage)) {
-    status.completed_stages = [...status.completed_stages, stage];
+  setStageStatus(status, stage, "completed");
+  const nextStage = firstIncompleteStage(status);
+  if (nextStage) {
+    setRunWaitingForStage(status, nextStage);
+  } else {
+    status.run_status = "completed";
+    delete status.current_stage;
   }
-  status.status = `${stage}_completed`;
-  delete status.failed_stage;
-  setStageState(status, stage, "completed");
   saveStatus(runDir, status);
   appendStageEvent(runDir, "stage.completed", status, stage, { agent });
 }
 
-function failStage(runDir: string, stage: string, agent: string, exitCode?: number): void {
+function failStage(
+  runDir: string,
+  stage: string,
+  agent: string,
+  exitCode?: number,
+  timedOut = false,
+): void {
   const status = loadStatus(runDir);
   const now = touchStatus(status);
   const existingTiming = status.stage_timing[stage];
@@ -419,9 +432,9 @@ function failStage(runDir: string, stage: string, agent: string, exitCode?: numb
     ...status.stage_timing,
     [stage]: timing,
   };
-  status.status = `${stage}_failed`;
-  status.failed_stage = stage;
-  setStageState(status, stage, "failed");
+  status.run_status = timedOut ? "timed_out" : "failed";
+  status.current_stage = stage;
+  setStageStatus(status, stage, timedOut ? "timed_out" : "failed");
   saveStatus(runDir, status);
   appendStageEvent(runDir, "stage.failed", status, stage, {
     agent,
@@ -1616,7 +1629,7 @@ function assertPredecessorsCompleted(
     if (node.id === stage) {
       return;
     }
-    if (!status.completed_stages.includes(node.id)) {
+    if (!stageIsCompleted(status, node.id)) {
       throw new Error(
         `cannot ${action} ${stage} before predecessor stage '${node.id}' is completed`,
       );

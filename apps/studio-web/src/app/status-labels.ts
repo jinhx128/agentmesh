@@ -1,9 +1,9 @@
 import type {
-  StudioCallAdoptionStatus,
+  StudioCallResultStatus,
   StudioCallStatus,
 } from "../api/calls.js";
+import type { StudioRunStatus } from "../api/runs.js";
 import type { StudioSkillTargetReport } from "../api/integrations.js";
-import { workflowStageLabel } from "./stages.js";
 
 const UNKNOWN_STATUS = "未知状态";
 
@@ -18,50 +18,29 @@ export function callStatusLabel(status: StudioCallStatus): string {
   }[status];
 }
 
-export function callAdoptionStatusLabel(status: StudioCallAdoptionStatus): string {
+export function callResultStatusLabel(status: StudioCallResultStatus): string {
   return {
     accepted: "已采纳",
-    rejected: "已拒绝",
-    superseded: "已取代",
-    unreviewed: "未处理",
+    rejected: "未采用",
+    superseded: "已被替换",
+    unprocessed: "未处理",
   }[status];
 }
 
 export function runStatusLabel(status: string | null | undefined): string {
-  const normalized = status?.trim().toLowerCase();
-  if (!normalized) {
+  if (!status) {
     return UNKNOWN_STATUS;
   }
-  const exact: Record<string, string> = {
+  const labels: Record<StudioRunStatus, string> = {
     aborted: "已中止",
-    cancelled: "已中止",
     completed: "成功",
-    created: "等待中",
-    error: "失败",
     failed: "失败",
+    awaiting_current: "等待决策",
     pending: "等待中",
     running: "运行中",
-    stale: "已失联",
-    success: "成功",
     timed_out: "已超时",
-    timeout: "已超时",
   };
-  if (exact[normalized]) {
-    return exact[normalized];
-  }
-  const match = normalized.match(/^(.+)_(running|completed|failed|pending|timed_out)$/);
-  if (!match) {
-    return UNKNOWN_STATUS;
-  }
-  const stage = workflowStageLabel(match[1] ?? "");
-  const suffix = {
-    completed: "完成",
-    failed: "失败",
-    pending: "待开始",
-    running: "中",
-    timed_out: "超时",
-  }[match[2] as "running" | "completed" | "failed" | "pending" | "timed_out"];
-  return `${stage}${suffix}`;
+  return labels[status as StudioRunStatus] ?? UNKNOWN_STATUS;
 }
 
 export function reviewerSessionModeLabel(mode: string): string {

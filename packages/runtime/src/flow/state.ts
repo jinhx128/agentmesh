@@ -119,29 +119,41 @@ export function protectCompletedArtifact(
   nodeId: string,
   artifactPath: string,
 ): void {
-  if (status.completed_stages.includes(nodeId) && existsSync(artifactPath)) {
+  if (stageIsCompleted(status, nodeId) && existsSync(artifactPath)) {
     throw new Error(`refusing to overwrite completed ${nodeId} artifact: ${artifactPath}`);
   }
 }
 
 export function firstIncompleteStage(status: PacketStatus): string | undefined {
-  return stageNodes(status).find((node) => !status.completed_stages.includes(node.id))?.id;
+  return stageNodes(status).find((node) => !stageIsCompleted(status, node.id))?.id;
 }
 
-export function setStageState(status: PacketStatus, stage: string, state: StageState): void {
-  const stageState = isStageStateMap(status.stage_state) ? status.stage_state : {};
-  status.stage_state = { ...stageState, [stage]: state };
+export function stageIsCompleted(status: PacketStatus, stage: string): boolean {
+  return status.stage_status[stage] === "completed";
 }
 
-export function stringField(status: PacketStatus, key: string): string | undefined {
-  const value = status[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+export function completedStageIds(status: PacketStatus): string[] {
+  return stageNodes(status)
+    .filter((node) => stageIsCompleted(status, node.id))
+    .map((node) => node.id);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export function failedStageId(status: PacketStatus): string | undefined {
+  if (status.current_stage && ["failed", "timed_out"].includes(status.stage_status[status.current_stage] ?? "")) {
+    return status.current_stage;
+  }
+  return stageNodes(status).find((node) =>
+    ["failed", "timed_out"].includes(status.stage_status[node.id] ?? "")
+  )?.id;
 }
 
-function isStageStateMap(value: unknown): value is Record<string, StageState> {
-  return isRecord(value);
+export function setStageStatus(status: PacketStatus, stage: string, state: StageState): void {
+  status.stage_status = { ...status.stage_status, [stage]: state };
+}
+
+export function setRunWaitingForStage(status: PacketStatus, stage: string): void {
+  status.current_stage = stage;
+  status.run_status = stageAgents(status, stage).includes("current")
+    ? "awaiting_current"
+    : "pending";
 }

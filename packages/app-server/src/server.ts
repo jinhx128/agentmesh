@@ -13,9 +13,6 @@ import {
   listStudioRuns,
 } from "./packet-browser.js";
 import {
-  adoptStudioCall,
-  isConflictStudioCallAdoptionError,
-  isInvalidStudioCallAdoptionError,
   isInvalidStudioCallIdError,
   isMissingStudioCallError,
   listStudioCalls,
@@ -788,41 +785,6 @@ function handleStudioRequest(
     }
     return;
   }
-  const callAdoptionMatch = rawPathname.match(/^\/api\/calls\/([^/]+)\/adoption$/);
-  if (callAdoptionMatch) {
-    if (!requireMethod(request, response, "POST")) {
-      return;
-    }
-    let callId: string;
-    try {
-      callId = decodeURIComponent(callAdoptionMatch[1]);
-    } catch {
-      sendJson(response, 400, { error: "invalid call id" });
-      return;
-    }
-    return readJsonBody(request)
-      .then((body) => {
-        sendJson(response, 200, adoptStudioCall(callId, body as Record<string, unknown>, {
-          cwd,
-          ...studioWorkspaceQueryOptions(url.searchParams),
-        }));
-      })
-      .catch((error) => {
-        if (isInvalidStudioCallIdError(error) || isInvalidStudioCallAdoptionError(error)) {
-          sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        if (isMissingStudioCallError(error)) {
-          sendJson(response, 404, { error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        if (isConflictStudioCallAdoptionError(error)) {
-          sendJson(response, 409, { error: error instanceof Error ? error.message : String(error) });
-          return;
-        }
-        sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
-      });
-  }
   const callMatch = rawPathname.match(/^\/api\/calls\/([^/]+)$/);
   if (callMatch) {
     let callId: string;
@@ -1164,7 +1126,7 @@ function rejectGlobalResourceScopeQuery(searchParams: URLSearchParams, resource:
 
 function activeAgentDeletionRefusal(agentId: string, cwd: string): string | undefined {
   for (const run of listStudioRuns({ cwd, scope: "current" })) {
-    if (!String(run.status ?? "").includes("running")) {
+    if (!["pending", "running", "awaiting_current"].includes(run.run_status)) {
       continue;
     }
     try {

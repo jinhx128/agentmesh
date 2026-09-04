@@ -124,10 +124,8 @@ function writeRun(workspace: string, runId: string): void {
     path.join(runDir, "status.json"),
     JSON.stringify(currentPacketStatus({
       run_id: runId,
-      status: "created",
       workflow: "studio-cli-test",
       stages: ["plan"],
-      completed_stages: [],
     })) + "\n",
   );
   writeFileSync(path.join(runDir, "events.jsonl"), "");

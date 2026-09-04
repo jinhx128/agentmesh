@@ -135,7 +135,7 @@ test("continuous review dispatch writes safe provenance then resumes without lea
   writeFileSync(workflow, [
     "schema_version = 1",
     "workflow_recipe_version = 1",
-    "compatible_packet_schema_versions = [1]",
+    "compatible_packet_schema_versions = [2]",
     'name = "Review Only"',
     'stages = ["review"]',
     'description = "Dispatch one review stage."',
@@ -216,7 +216,7 @@ test("correction impact controls real continuous dispatch resume without fingerp
   const reviewer = path.join(workspace, "correction-reviewer.sh");
   const workflow = path.join(workspace, "review-only.toml");
   writeFileSync(workflow, [
-    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [1]",
+    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [2]",
     'name = "Review Only"', 'stages = ["review"]', 'description = "Correction session test."',
     'when_to_use = ["Correction impact."]', 'packet_artifacts = ["findings.md"]', 'quality_gates = ["Review output exists."]', "",
   ].join("\n"));
@@ -272,7 +272,7 @@ test("expired continuous reviewer resume recovers once before the existing lane 
   writeFileSync(workflow, [
     "schema_version = 1",
     "workflow_recipe_version = 1",
-    "compatible_packet_schema_versions = [1]",
+    "compatible_packet_schema_versions = [2]",
     'name = "Review Only"',
     'stages = ["review"]',
     'description = "Dispatch one review stage."',
@@ -350,7 +350,7 @@ test("timed-out structured resume keeps timeout provenance and does not fresh re
   const reviewer = path.join(workspace, "reviewer-timeout-session.sh");
   const workflow = path.join(workspace, "review-only.toml");
   writeFileSync(workflow, [
-    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [1]",
+    "schema_version = 1", "workflow_recipe_version = 1", "compatible_packet_schema_versions = [2]",
     'name = "Review Only"', 'stages = ["review"]', 'description = "Timeout test."',
     'when_to_use = ["Timeout provenance."]', 'packet_artifacts = ["findings.md"]', 'quality_gates = ["Review."]', "",
   ].join("\n"));
@@ -1318,7 +1318,7 @@ test("dispatch records fallback attempts from packet routing", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["execute", "decide"]',
       'description = "Fallback execute."',
       'when_to_use = ["An execute fallback is tested."]',
@@ -1411,7 +1411,7 @@ test("dispatch records timed out attempts without fallback on terminal policy", 
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "decide"]',
       'description = "Terminal plan timeout."',
       'when_to_use = ["A terminal timeout is tested."]',
@@ -1459,7 +1459,7 @@ test("dispatch records timed out attempts without fallback on terminal policy", 
   const status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "timeout-attempt-flow", "status.json"), "utf-8"),
   );
-  assert.equal(status.failed_stage, "plan");
+  assert.equal(status.current_stage, "plan");
   assert.equal(status.stage_attempts.plan.length, 1);
   assert.equal(status.stage_attempts.plan[0].lane_id, "plan:sleepy");
   assert.equal(status.stage_attempts.plan[0].status, "timed_out");
@@ -2252,8 +2252,8 @@ test("plan fanout synthesis failure marks stage failed", () => {
   assert.match(dispatch.stderr, /stage 'plan' synthesis failed for agent 'planner_a' with exit code 9/);
 
   const status = JSON.parse(readFileSync(path.join(workspace, ".agentmesh", "runs", "synthesis-failure-flow", "status.json"), "utf-8"));
-  assert.equal(status.failed_stage, "plan");
-  assert.deepEqual(status.completed_stages, []);
+  assert.equal(status.current_stage, "plan");
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), []);
 });
 
 test("plan fanout synthesis retry reuses completed candidate outputs", () => {
@@ -2434,7 +2434,7 @@ test("dispatch rejects current stages while prompt and attach remain supported",
   const status = JSON.parse(
     readFileSync(path.join(workspace, ".agentmesh", "runs", "current-host-flow", "status.json"), "utf-8"),
   );
-  assert.deepEqual(status.completed_stages, ["plan", "execute"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute"]);
   assert.deepEqual(status.stage_attempts.plan, []);
   assert.deepEqual(status.stage_attempts.execute, []);
 });
@@ -2515,7 +2515,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       assert.equal(firstLease.workspace, workspace);
       assert.equal(firstLease.scope, "run:owner-lock-flow");
       assert.equal(firstLease.entrypoint, "desktop");
-      assert.equal(firstLease.runtime_version, "0.1.15");
+      assert.equal(firstLease.runtime_version, "0.2.0");
       assert.equal(firstLease.operation, "owner-metadata");
       assert.equal(firstLease.operation_id, "operation-123");
       assert.equal(firstLease.command, "flow.dispatch:plan");
@@ -2535,7 +2535,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
       ]);
       assert.equal(attach.status, 1);
       assert.match(attach.stderr, /entrypoint desktop/);
-      assert.match(attach.stderr, /runtime 0\.1\.15/);
+      assert.match(attach.stderr, /runtime 0\.2\.0/);
       assert.match(attach.stderr, /operation_id operation-123/);
       assert.match(attach.stderr, /command flow\.dispatch:plan/);
 
@@ -2546,7 +2546,7 @@ test("run mutation lock writes owner metadata and refreshes heartbeat", async ()
     },
     {
       entrypoint: "desktop",
-      runtimeVersion: "0.1.15",
+      runtimeVersion: "0.2.0",
       operationId: "operation-123",
       command: "flow.dispatch:plan",
       heartbeatIntervalMs: 5,
@@ -2593,7 +2593,7 @@ test("run mutation lock reclaims expired leases", () => {
   assert.equal(attach.status, 0, attach.stderr);
   assert.equal(existsSync(lockDir), false);
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["plan"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan"]);
 });
 
 test("async run mutation lock releases after awaited success and failure", async () => {
@@ -2731,7 +2731,7 @@ test("verify dispatch writes canonical verification artifact and timing", () => 
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "verify", "decide"]',
       'description = "Exercise verify dispatch."',
       'when_to_use = ["A workflow needs a verification artifact."]',
@@ -2821,7 +2821,7 @@ test("verify dispatch writes canonical verification artifact and timing", () => 
   );
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["plan", "execute", "verify"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute", "verify"]);
   assert.equal(status.stage_timing.verify.attempt_count, 1);
   assert.match(status.stage_timing.verify.completed_at, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(status.agent_timing.verify.verifier.attempt_count, 1);
@@ -2879,7 +2879,7 @@ test("dispatch all writes repeated verify artifacts without collisions", () => {
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "verify", "verify", "decide"]',
       'description = "Exercise repeated verify dispatch."',
       'when_to_use = ["A workflow needs repeated verification."]',
@@ -2952,7 +2952,7 @@ test("dispatch all writes repeated verify artifacts without collisions", () => {
   assert.equal(artifacts.verification_2.path, "verification_2.md");
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["plan", "execute", "verify", "verify_2"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute", "verify", "verify_2"]);
   assert.equal(status.stage_timing.verify.attempt_count, 1);
   assert.equal(status.stage_timing.verify_2.attempt_count, 1);
 });
@@ -2987,7 +2987,7 @@ test("run creation rejects verify agents whose capabilities exclude verify", () 
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["verify", "decide"]',
       'description = "Exercise verify capability gate."',
       'when_to_use = ["A workflow starts with verification."]',
@@ -3089,7 +3089,7 @@ test("verify fanout starts agents concurrently and writes aggregate evidence", (
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["verify", "decide"]',
       'description = "Exercise verify fanout."',
       'when_to_use = ["A workflow tries multi-agent verification."]',
@@ -3150,7 +3150,7 @@ test("verify fanout starts agents concurrently and writes aggregate evidence", (
   assert.equal(artifacts.verification.path, "verification.md");
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["verify"]);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["verify"]);
   assert.equal(status.stage_timing.verify.attempt_count, 1);
   assert.equal(status.agent_timing.verify.verifier_a.attempt_count, 1);
   assert.equal(status.agent_timing.verify.verifier_b.attempt_count, 1);
@@ -3214,7 +3214,7 @@ test("verify fanout preserves partial evidence and retry reuses completed output
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["verify", "decide"]',
       'description = "Exercise verify fanout retry."',
       'when_to_use = ["A workflow retries partial verification."]',
@@ -3299,8 +3299,9 @@ test("verify fanout preserves partial evidence and retry reuses completed output
   assert.equal(reused.duration_ms, 0);
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, ["verify"]);
-  assert.equal(status.failed_stage, undefined);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["verify"]);
+  assert.equal(status.current_stage, "decide");
+  assert.equal(status.run_status, "awaiting_current");
 });
 
 test("dispatch all runs repeated workflow nodes in order without artifact collisions", () => {
@@ -3368,7 +3369,7 @@ test("dispatch all runs repeated workflow nodes in order without artifact collis
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "review", "decide", "execute", "review", "decide"]',
       'description = "Exercise repeated dispatch."',
       'when_to_use = ["A delivery needs a second execution round."]',
@@ -3442,7 +3443,7 @@ test("dispatch all runs repeated workflow nodes in order without artifact collis
   assert.match(readFileSync(path.join(runDir, "decision_2.md"), "utf-8"), /Decision output/);
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, [
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), [
     "plan",
     "execute",
     "review",
@@ -3451,7 +3452,7 @@ test("dispatch all runs repeated workflow nodes in order without artifact collis
     "review_2",
     "decide_2",
   ]);
-  assert.equal(status.status, "decide_2_completed");
+  assert.equal(status.run_status, "completed");
 
   const artifacts = loadArtifacts(runDir);
   assert.equal(artifacts.handoff.path, "handoff.md");
@@ -3477,7 +3478,7 @@ test("flow attach rejects repeated successor nodes until predecessors complete",
     [
       "schema_version = 1",
       "workflow_recipe_version = 1",
-      "compatible_packet_schema_versions = [1]",
+      "compatible_packet_schema_versions = [2]",
       'stages = ["plan", "execute", "review", "execute", "review", "decide"]',
       'description = "Exercise current-owned repeated nodes."',
       'when_to_use = ["A current host owns every stage."]',
@@ -3524,7 +3525,7 @@ test("flow attach rejects repeated successor nodes until predecessors complete",
 
   const runDir = path.join(workspace, ".agentmesh", "runs", "attach-repeated-successor-flow");
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.deepEqual(status.completed_stages, []);
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), []);
   assert.equal(existsSync(path.join(runDir, "handoff_2.md")), false);
 });
 
@@ -4041,8 +4042,8 @@ test("review fanout failure preserves partial evidence for the decider", () => {
   assert.match(decidePrompt.stdout, /reviewer_a output before partial failure/);
 
   const status = JSON.parse(readFileSync(path.join(runDir, "status.json"), "utf-8"));
-  assert.equal(status.failed_stage, "review");
-  assert.deepEqual(status.completed_stages, ["plan", "execute"]);
+  assert.equal(status.current_stage, "review");
+  assert.deepEqual(Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage), ["plan", "execute"]);
   const events = readFileSync(path.join(runDir, "events.jsonl"), "utf-8")
     .trim()
     .split("\n")

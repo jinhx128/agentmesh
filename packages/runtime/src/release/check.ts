@@ -113,10 +113,10 @@ export function buildReleaseEvidenceSummary(
     "",
     "## Run",
     "",
-    `- Status: ${status.status ?? "-"}`,
+    `- Run status: ${status.run_status}`,
     `- Workflow: ${String(status.workflow ?? "-")}`,
-    `- Completed stages: ${status.completed_stages?.join(", ") || "-"}`,
-    `- Failed stage: ${String(status.failed_stage ?? "-")}`,
+    `- Completed stages: ${Object.entries(status.stage_status).filter(([, value]) => value === "completed").map(([stage]) => stage).join(", ") || "-"}`,
+    `- Current stage: ${status.current_stage ?? "-"}`,
     `- Release verdict: ${verdictValue}`,
   ];
   if (verdictDiagnostic) {
@@ -466,11 +466,11 @@ function formatEvent(event: PacketEvent): string {
   for (const key of [
     "stage",
     "agent",
-    "status",
+    "run_status",
     "artifact",
     "path",
     "exit_code",
-    "failed_stage",
+    "current_stage",
   ]) {
     if (key in event) {
       parts.push(`${key}=${String(event[key])}`);

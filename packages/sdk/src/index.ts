@@ -12,9 +12,13 @@ import {
   BUILTIN_WORKFLOW_IDS,
   CURRENT_PACKET_SCHEMA_VERSION,
   CURRENT_SCHEMA_VERSION,
+  PacketStatusSchema,
   WORKFLOW_RECIPE_SCHEMA_VERSION,
   deriveStageNodes,
   type PacketEvent,
+  type PacketStatus,
+  type RunStatus,
+  type StageState,
   type StageNode,
 } from "@agentmesh/core";
 
@@ -38,8 +42,8 @@ type CallErrorKind =
   | "user_aborted"
   | "internal"
   | "unknown";
-type CallAdoptionStatus = "unreviewed" | "accepted" | "rejected" | "superseded";
-type FinalCallAdoptionStatus = Exclude<CallAdoptionStatus, "unreviewed">;
+type CallResultStatus = "unprocessed" | "accepted" | "rejected" | "superseded";
+type FinalCallResultStatus = Exclude<CallResultStatus, "unprocessed">;
 
 interface ConfigSourceRef {
   source: ConfigLayerKind;
@@ -130,22 +134,22 @@ interface DirectCallRecord {
   tokens_in: number | null;
   tokens_out: number | null;
   cost_estimate_usd: number | null;
-  adoption_status: CallAdoptionStatus;
+  result_status: CallResultStatus;
+  comparison_group_id: string | null;
+  replaced_by_call_id: string | null;
   read_only?: boolean;
   schema_warning?: string;
 }
 
-interface CallAdoptionEvent {
+interface CallResultEvent {
   schema_version: number;
   call_id: string;
-  previous_status: CallAdoptionStatus;
-  status: FinalCallAdoptionStatus;
+  previous_status: CallResultStatus;
+  status: FinalCallResultStatus;
   updated_at: string;
   updated_by_entrypoint: string;
   reason: string | null;
-  related_commit: string | null;
-  related_run_id: string | null;
-  superseded_by_call_id: string | null;
+  replaced_by_call_id: string | null;
 }
 
 export interface AgentMeshRunReadOptions extends AgentMeshReadOptions {
@@ -247,17 +251,17 @@ export interface AgentMeshRunEventPage extends AgentMeshEventPage {
 
 export type AgentMeshWorkspaceCompatibility = WorkspaceCompatibilityDiagnostics;
 export type AgentMeshCallRecord = DirectCallRecord;
-export type AgentMeshCallAdoptionEvent = CallAdoptionEvent;
+export type AgentMeshCallResultEvent = CallResultEvent;
 export const AGENTMESH_CALLS_RELATIVE_DIR = path.join(".agentmesh", "calls");
 
 export interface AgentMeshRunSummary {
   run_id: string;
   run_dir: string;
   title?: string;
-  status: string;
+  run_status: RunStatus;
   stages: string[];
   stage_nodes?: AgentMeshStageNodeSummary[];
-  completed_stages: string[];
+  stage_status: Record<string, StageState>;
   stage_timing: AgentMeshStageTimingSummary[];
   stage_assignments?: Record<string, string[]>;
   stage_invocations?: Record<string, Array<Record<string, unknown>>>;
@@ -588,7 +592,7 @@ const STATUS_FILE = "status.json";
 const ARTIFACTS_FILE = "artifacts.toml";
 const WORKSPACE_COMPATIBILITY_RELATIVE_PATH = path.join(".agentmesh", "compatibility.json");
 const WORKSPACE_COMPATIBILITY_SCHEMA_VERSION = 1;
-const CALL_RECORD_SCHEMA_VERSION = 1;
+const CALL_RECORD_SCHEMA_VERSION = 2;
 const RUNTIME_CALLS_RELATIVE_DIR = AGENTMESH_CALLS_RELATIVE_DIR;
 const STALE_RUNNING_MS = 2 * 60 * 60 * 1000;
 
@@ -840,11 +844,11 @@ export function getCall(
   return readRuntimeCallRecord(resolveCallDirectory(callIdOrDir, options.cwd));
 }
 
-export function listCallAdoptionEvents(
+export function listCallResultEvents(
   callIdOrDir: string,
   options: AgentMeshCallReadOptions = {},
-): AgentMeshCallAdoptionEvent[] {
-  return readRuntimeCallAdoptionEvents(resolveCallDirectory(callIdOrDir, options.cwd));
+): AgentMeshCallResultEvent[] {
+  return readRuntimeCallResultEvents(resolveCallDirectory(callIdOrDir, options.cwd));
 }
 
 export function resolveCallDirectory(callIdOrDir: string, cwd = process.cwd()): string {
@@ -891,12 +895,12 @@ function resolveRuntimeRunDirectory(runIdOrDir: string, cwd = process.cwd()): st
   return path.resolve(cwd, ".agentmesh", "runs", runIdOrDir);
 }
 
-function loadStatus(runDir: string): Record<string, unknown> {
+function loadStatus(runDir: string): PacketStatus {
   const payload = readJsonObject(path.join(runDir, STATUS_FILE), STATUS_FILE);
   if (payload.schema_version !== CURRENT_PACKET_SCHEMA_VERSION) {
     throw new Error(`unsupported packet schema version: ${String(payload.schema_version)}`);
   }
-  return payload;
+  return PacketStatusSchema.parse(payload);
 }
 
 function isUnsupportedPacketSchemaVersionError(error: unknown): boolean {
@@ -949,7 +953,7 @@ function workspaceCompatibilityDiagnostics(
 ): WorkspaceCompatibilityDiagnostics {
   const compatibilityPath = path.join(path.resolve(workspace), WORKSPACE_COMPATIBILITY_RELATIVE_PATH);
   const base = {
-    current_runtime_version: options.runtimeVersion ?? "0.1.15",
+    current_runtime_version: options.runtimeVersion ?? "0.2.0",
     current_entrypoint: options.entrypoint ?? "cli",
     compatibility_path: compatibilityPath,
   };
@@ -1054,15 +1058,15 @@ function readRuntimeCallRecord(callDir: string): DirectCallRecord {
   return record;
 }
 
-function readRuntimeCallAdoptionEvents(callDir: string): CallAdoptionEvent[] {
-  const eventsPath = path.join(callDir, "adoption.jsonl");
+function readRuntimeCallResultEvents(callDir: string): CallResultEvent[] {
+  const eventsPath = path.join(callDir, "result-events.jsonl");
   if (!isFile(eventsPath)) {
     return [];
   }
   return readFileSync(eventsPath, "utf-8")
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line) as CallAdoptionEvent);
+    .map((line) => JSON.parse(line) as CallResultEvent);
 }
 
 function agentSummary(
@@ -1115,7 +1119,7 @@ function workflowSummary(
       ? {
           latest_run: {
             run_id: latestRun.run_id,
-            status: latestRun.status,
+            status: latestRun.run_status,
             ...(latestRun.updated_at ? { updated_at: latestRun.updated_at } : {}),
             ...(latestRun.latest_event ? { latest_event: latestRun.latest_event } : {}),
             ...(latestRun.latest_event_timestamp
@@ -1187,12 +1191,11 @@ function runSummary(
   eventTail: number,
   reviewerSessions: Array<Omit<ReviewerSessionSummary, "hermetic">> = [],
 ): AgentMeshRunSummary {
-  const status = loadStatus(runDir) as Record<string, unknown>;
+  const status = loadStatus(runDir);
   const events = readEventTail(runDir, eventTail);
   const latestEvent = events.at(-1) as Record<string, unknown> | undefined;
   const stages = stringArray(status.stages);
   const stageNodes = stageNodeSummaries(status.stage_nodes);
-  const orderedStageIds = stageNodes.length > 0 ? stageNodes.map((node) => node.id) : stages;
   const safeReviewerSessions = reviewerSessionSummaries(status, reviewerSessions);
   return {
     run_id: stringValue(status.run_id) ?? path.basename(runDir),
@@ -1200,11 +1203,11 @@ function runSummary(
     ...(stringValue(status.title) ? { title: stringValue(status.title) } : {}),
     ...(stringValue(status.created_at) ? { created_at: stringValue(status.created_at) } : {}),
     ...(stringValue(status.updated_at) ? { updated_at: stringValue(status.updated_at) } : {}),
-    status: stringValue(status.status) ?? "unknown",
+    run_status: status.run_status,
     ...(stringValue(status.workflow) ? { workflow: stringValue(status.workflow) } : {}),
     stages,
     ...(stageNodes.length > 0 ? { stage_nodes: stageNodes } : {}),
-    completed_stages: stringArray(status.completed_stages),
+    stage_status: { ...status.stage_status },
     stage_timing: stageTimingSummaries(status),
     ...stageExecutionFacts(status),
     ...(numberValue(status.context_bytes) !== undefined
@@ -1213,7 +1216,7 @@ function runSummary(
     ...(isRecord(status.prompt_bytes)
       ? { prompt_bytes: promptByteMetrics(status.prompt_bytes) }
       : {}),
-    ...currentStage(status, orderedStageIds),
+    ...(status.current_stage ? { current_stage: status.current_stage } : {}),
     ...(isRecord(status.resolved_context_policy)
       ? { resolved_context_policy: status.resolved_context_policy }
       : {}),
@@ -1374,19 +1377,6 @@ function promptByteMetrics(value: Record<string, unknown>): Record<string, Agent
     };
   }
   return output;
-}
-
-function currentStage(
-  status: Record<string, unknown>,
-  stages: string[],
-): { current_stage?: string } {
-  const explicit = stringValue(status.current_stage);
-  if (explicit) {
-    return { current_stage: explicit };
-  }
-  const completed = new Set(stringArray(status.completed_stages));
-  const current = stages.find((stage) => !completed.has(stage));
-  return current ? { current_stage: current } : {};
 }
 
 function stageTimingSummaries(status: Record<string, unknown>): AgentMeshStageTimingSummary[] {
