@@ -18,6 +18,7 @@ import { buildAgentProcessEnv } from "../process-env.js";
 
 const DOCTOR_AUTH_PROMPT = "AgentMesh doctor authentication probe. Reply with OK.";
 const DEFAULT_DOCTOR_PROBE_TIMEOUT_SECS = 30;
+const DEFAULT_CODEX_PROBE_TIMEOUT_SECS = 60;
 const DOCTOR_HELP_TIMEOUT_SECS = 5;
 const DOCTOR_VERSION_TIMEOUT_SECS = 5;
 const DOCTOR_OUTPUT_DETAIL_MAX_CHARS = 240;
@@ -106,11 +107,10 @@ export function buildDoctorReport(
   const loaded = loadConfigWithSources(configPath);
   const resolvedAgents = normalizeAgents(loaded.config, loaded.agentSources);
   const probeAuth = options.probeAuth ?? true;
-  const timeoutSecs = options.probeTimeoutSecs ?? DEFAULT_DOCTOR_PROBE_TIMEOUT_SECS;
   const agents = selectDoctorAgents(resolvedAgents, options.agents)
     .map((agent) => probeAgentReadiness(agent, {
       probeAuth,
-      probeTimeoutSecs: timeoutSecs,
+      probeTimeoutSecs: options.probeTimeoutSecs,
       providerToolDiscovery: options.providerToolDiscovery,
     }));
   const diagnostics = workflowRegistryDiagnostics(configPath);
@@ -130,7 +130,11 @@ export function probeAgentReadiness(
   options: AgentReadinessProbeOptions = {},
 ): DoctorAgentReport {
   const probeAuth = options.probeAuth ?? true;
-  const timeoutSecs = options.probeTimeoutSecs ?? DEFAULT_DOCTOR_PROBE_TIMEOUT_SECS;
+  const timeoutSecs = options.probeTimeoutSecs ?? (
+    lookupRuntimeAdapter(agent.adapter).id === "codex-cli"
+      ? DEFAULT_CODEX_PROBE_TIMEOUT_SECS
+      : DEFAULT_DOCTOR_PROBE_TIMEOUT_SECS
+  );
   const availability = availabilityStatus(
     agent,
     probeAuth,
@@ -289,12 +293,36 @@ function availabilityStatus(
       toolResolution,
     };
   }
-  const result = spawnSync(command[0], command.slice(1), {
+  let result = spawnSync(command[0], command.slice(1), {
     env: buildAgentProcessEnv(env),
     input: stdin,
     encoding: "utf-8",
     timeout: timeoutSecs * 1000,
   });
+  let codexModelProbed = false;
+  // Custom providers can be usable even when Codex has no stored login.
+  if (adapterId === "codex-cli" && !result.error && result.status !== 0) {
+    try {
+      const prepared = prepareAdapterInvocation({
+        ...effectiveAgent,
+        args: [...effectiveAgent.args, "--sandbox", "read-only", "--ephemeral"],
+      }, { prompt: `${DOCTOR_AUTH_PROMPT} Do not access files or run commands.` });
+      result = spawnSync(prepared.command[0], prepared.command.slice(1), {
+        env: buildAgentProcessEnv(prepared.env),
+        input: prepared.stdin,
+        encoding: "utf-8",
+        timeout: timeoutSecs * 1000,
+      });
+      codexModelProbed = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: `auth probe failed (${message})`,
+        agent: effectiveAgent,
+        toolResolution,
+      };
+    }
+  }
   if (result.error) {
     if (isTimeoutError(result.error)) {
       return {
@@ -310,9 +338,9 @@ function availabilityStatus(
     };
   }
   if (result.status === 0) {
-    if (adapterId === "antigravity-cli" && !hasProbeResponse(result.stdout ?? "")) {
+    if ((adapterId === "antigravity-cli" || codexModelProbed) && !hasProbeResponse(result.stdout ?? "")) {
       return {
-        status: "auth probe failed (empty response; Antigravity CLI did not confirm model readiness)",
+        status: `auth probe failed (empty response; ${lookupRuntimeAdapter(adapterId).label} did not confirm model readiness)`,
         agent: effectiveAgent,
         toolResolution,
       };
@@ -493,6 +521,9 @@ function doctorHints(
 
 function adapterLoginHint(adapter: string, command: string): string {
   const label = lookupRuntimeAdapter(adapter).label;
+  if (adapter === "codex-cli") {
+    return `Verify ${label} authentication: run \`${command} login\` for the official account, or check the configured provider/API key and confirm \`${command}\` can run non-interactively.`;
+  }
   return `Open ${label} once on this machine, refresh its login state, then verify \`${command}\` can run non-interactively.`;
 }
 

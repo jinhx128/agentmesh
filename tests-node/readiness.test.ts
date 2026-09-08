@@ -206,6 +206,98 @@ test("single agent readiness probe accepts an in-memory candidate agent", () => 
   assert.equal(readFileSync(stdinFile, "utf-8"), "");
 });
 
+test("Codex readiness falls back to a read-only model probe when interactive login is unavailable", () => {
+  const workspace = makeWorkspace();
+  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const commandPath = path.join(workspace, "fake-codex");
+  const argsFile = path.join(workspace, "args.txt");
+  const stdinFile = path.join(workspace, "stdin.txt");
+  writeExecutable(
+    commandPath,
+    [
+      "#!/usr/bin/env bash",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(argsFile)}`,
+      'if [[ "$1" == "login" && "$2" == "status" ]]; then',
+      "  printf 'Not logged in\\n' >&2",
+      "  exit 1",
+      "fi",
+      'if [[ "$1" != "exec" || "$*" == *"--help"* ]]; then exit 0; fi',
+      'if [[ "$PROBE_PROVIDER_MARKER" != "configured" ]]; then exit 2; fi',
+      `cat >> ${JSON.stringify(stdinFile)}`,
+      "printf 'OK\\n'",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+
+  const report = probeAgentReadiness({
+    id: "codex-custom-provider",
+    label: "Codex Custom Provider",
+    adapter: "codex-cli",
+    command: commandPath,
+    args: ["exec", "--skip-git-repo-check", "--profile", "custom-provider"],
+    env: ["PROBE_PROVIDER_MARKER=configured"],
+    capabilities: ["plan", "execute", "review", "decide"],
+    model: "gpt-6-astra",
+    reasoning_effort: "high",
+  }, { probeAuth: true, probeTimeoutSecs: 5 });
+
+  assert.equal(report.ok, true);
+  assert.equal(report.classification, "ready");
+  const probeCommands = readFileSync(argsFile, "utf-8").trim().split("\n");
+  assert.equal(probeCommands[0], "login status");
+  assert.match(probeCommands[1], /^exec --skip-git-repo-check --profile custom-provider /);
+  assert.match(probeCommands[1], /-m gpt-6-astra/);
+  assert.match(probeCommands[1], /model_reasoning_effort="high"/);
+  assert.match(probeCommands[1], /--sandbox read-only --ephemeral/);
+  assert.equal(
+    readFileSync(stdinFile, "utf-8"),
+    "AgentMesh doctor authentication probe. Reply with OK. Do not access files or run commands.",
+  );
+});
+
+test("Codex fallback reports provider failures and rejects empty model responses", async (t) => {
+  for (const scenario of [
+    { name: "invalid key", body: "printf 'Invalid API key\\n' >&2\nexit 7", classification: "auth_failed", status: "auth probe failed (exit 7): Invalid API key" },
+    { name: "unavailable model", body: "printf 'model unavailable: gpt-6-astra\\n' >&2\nexit 2", classification: "model_unavailable", status: "auth probe failed (exit 2): model unavailable: gpt-6-astra" },
+    { name: "network failure", body: "printf 'Connection refused\\n' >&2\nexit 3", classification: "auth_failed", status: "auth probe failed (exit 3): Connection refused" },
+    { name: "empty response", body: "exit 0", classification: "auth_failed", status: "auth probe failed (empty response; Codex CLI did not confirm model readiness)" },
+    { name: "timeout", body: "exec sleep 2", classification: "auth_timeout", status: "auth probe timed out after 1s" },
+  ]) {
+    await t.test(scenario.name, () => {
+      const workspace = makeWorkspace();
+      t.after(() => rmSync(workspace, { recursive: true, force: true }));
+      const commandPath = path.join(workspace, "fake-codex");
+      writeExecutable(commandPath, [
+        "#!/usr/bin/env bash",
+        'if [[ "$1" == "--version" || "$*" == *"--help"* ]]; then exit 0; fi',
+        'if [[ "$1" == "login" ]]; then printf "Not logged in\\n" >&2; exit 1; fi',
+        scenario.body,
+        "",
+      ].join("\n"));
+
+      const result = probeAgentRegistrationReadiness({
+        id: "codex-custom-provider",
+        label: "Codex Custom Provider",
+        adapter: "codex-cli",
+        command: commandPath,
+        args: ["exec"],
+        env: [],
+        capabilities: ["plan"],
+        model: "gpt-6-astra",
+      }, { probeTimeoutSecs: scenario.classification === "auth_timeout" ? 1 : 5 });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.classification, scenario.classification);
+      assert.equal(result.report.status, scenario.status);
+      assert.doesNotMatch(result.message, /Not logged in/);
+      if (scenario.classification !== "auth_timeout") {
+        assert.match(result.hints.join("\n"), /provider\/API key/);
+      }
+    });
+  }
+});
+
 test("registration readiness supports skip verify with an explicit warning", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
@@ -1448,7 +1540,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   const markdown = agentmeshSkillMarkdown();
   for (const expected of [
     "## Version Metadata",
-    "AgentMesh CLI version: 0.2.0",
+    "AgentMesh CLI version: 0.2.1",
     "Packet schema version: 2",
     "Workflow recipe schema version: 1",
     "agentmesh version --json",
@@ -1475,7 +1567,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     encoding: "utf-8",
   });
   assert.equal(showResult.status, 0, showResult.stderr);
-  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.2\.1/);
   assert.match(showResult.stdout, /Packet schema version: 2/);
   assert.match(showResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1485,7 +1577,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     { cwd: workspace, encoding: "utf-8" },
   );
   assert.equal(exportResult.status, 0, exportResult.stderr);
-  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.2\.1/);
   assert.match(exportResult.stdout, /Packet schema version: 2/);
   assert.match(exportResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1499,7 +1591,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     claudeProjectSkillPath(workspace),
     "utf-8",
   );
-  assert.match(installedSkill, /AgentMesh CLI version: 0\.2\.0/);
+  assert.match(installedSkill, /AgentMesh CLI version: 0\.2\.1/);
   assert.match(installedSkill, /Packet schema version: 2/);
   assert.match(installedSkill, /Workflow recipe schema version: 1/);
 });

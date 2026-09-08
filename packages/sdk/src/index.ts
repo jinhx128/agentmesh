@@ -953,7 +953,7 @@ function workspaceCompatibilityDiagnostics(
 ): WorkspaceCompatibilityDiagnostics {
   const compatibilityPath = path.join(path.resolve(workspace), WORKSPACE_COMPATIBILITY_RELATIVE_PATH);
   const base = {
-    current_runtime_version: options.runtimeVersion ?? "0.2.0",
+    current_runtime_version: options.runtimeVersion ?? "0.2.1",
     current_entrypoint: options.entrypoint ?? "cli",
     compatibility_path: compatibilityPath,
   };

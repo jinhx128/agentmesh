@@ -953,6 +953,8 @@ test("agents add reports usage for positional ids and unknown adapters", () => {
 test("agents add rejects model names that cannot be resolved", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const binDir = path.join(workspace, "bin");
+  writeAiCliShim(binDir, "codex");
 
   const add = runCli(workspace, [
     "agents",
@@ -961,7 +963,7 @@ test("agents add rejects model names that cannot be resolved", () => {
     "codex",
     "--model",
     "gpt-6",
-  ]);
+  ], { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` });
 
   assert.equal(add.status, 2);
   assert.match(add.stderr, /could not resolve --model: gpt-6/);
@@ -971,6 +973,8 @@ test("agents add rejects model names that cannot be resolved", () => {
 test("agents add reports ambiguous model candidates without writing config", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const binDir = path.join(workspace, "bin");
+  writeAiCliShim(binDir, "codex");
 
   const add = runCli(workspace, [
     "agents",
@@ -979,7 +983,7 @@ test("agents add reports ambiguous model candidates without writing config", () 
     "codex",
     "--model",
     "gpt5",
-  ]);
+  ], { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` });
 
   assert.equal(add.status, 2);
   assert.match(add.stderr, /ambiguous --model: gpt5/);
