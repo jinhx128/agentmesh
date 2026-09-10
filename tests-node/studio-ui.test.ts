@@ -2479,6 +2479,18 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     "Antigravity Gemini 3.5 Flash",
   );
   assert.equal(
+    suggestAgentLabel("codex-cli", "gpt-6-astra", "high"),
+    "Codex GPT 6 Astra High",
+  );
+  assert.equal(
+    suggestAgentLabel("claude-code-cli", "claude-opus-4-1", "high"),
+    "Claude Claude Opus 4.1 High",
+  );
+  assert.equal(
+    suggestAgentLabel("cursor-agent", "cursor-small", "none"),
+    "Cursor Cursor Small",
+  );
+  assert.equal(
     buildWorkflowTomlFromManualFields({
       name: "Manual Flow",
       stages: "plan, review, decide",

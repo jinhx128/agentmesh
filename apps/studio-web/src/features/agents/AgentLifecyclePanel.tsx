@@ -106,7 +106,7 @@ export function AgentLifecyclePanel({
   const [model, setModel] = useState("");
   const [createModelCache, setCreateModelCache] = useState<AgentModelOptionCache>(() => emptyAgentModelOptionCache("idle"));
   const [reasoningEffort, setReasoningEffort] = useState("high");
-  const [agentName, setAgentName] = useState(suggestAgentLabel("codex-cli", ""));
+  const [agentName, setAgentName] = useState(suggestAgentLabel("codex-cli", "", "high"));
   const [agentNameTouched, setAgentNameTouched] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -120,7 +120,7 @@ export function AgentLifecyclePanel({
   const createModelData = agentModelSelectData(toolId, createModelEntry.options, model);
   const createModelPlaceholder = modelSelectPlaceholder(createModelEntry.status, createModelData, t);
   const createModelDisabled = isModelSelectDisabled(createModelEntry, createModelData);
-  const suggestedAgentLabel = suggestAgentLabel(toolId, model);
+  const suggestedAgentLabel = suggestAgentLabel(toolId, model, reasoningEffort);
   const submittedAgentName = agentName.trim() || suggestedAgentLabel;
   const canCreate = !createModelDisabled && model.trim().length > 0;
 
@@ -142,6 +142,9 @@ export function AgentLifecyclePanel({
         setCreateModelCache((current) => setModelCacheEntry(current, toolId, nextCache[toolId]));
         setModel((current) => {
           const nextModel = firstModelForTool(nextCache, toolId);
+          if (!agentNameTouched) {
+            setAgentName(suggestAgentLabel(toolId, current.trim().length > 0 ? current : nextModel, reasoningEffort));
+          }
           return current.trim().length > 0
             ? current
             : nextModel;
@@ -164,14 +167,22 @@ export function AgentLifecyclePanel({
     setModel(nextModel);
     setReasoningEffort(agentToolById(nextToolId).supportsReasoning ? "high" : "none");
     if (!agentNameTouched) {
-      setAgentName(suggestAgentLabel(nextToolId, nextModel));
+      setAgentName(suggestAgentLabel(nextToolId, nextModel, agentToolById(nextToolId).supportsReasoning ? "high" : "none"));
     }
   }
 
   function changeModel(value: string): void {
     setModel(value);
     if (!agentNameTouched) {
-      setAgentName(suggestAgentLabel(toolId, value));
+      setAgentName(suggestAgentLabel(toolId, value, reasoningEffort));
+    }
+  }
+
+  function changeReasoningEffort(value: string | null): void {
+    const nextReasoningEffort = value ?? "high";
+    setReasoningEffort(nextReasoningEffort);
+    if (!agentNameTouched) {
+      setAgentName(suggestAgentLabel(toolId, model, nextReasoningEffort));
     }
   }
 
@@ -186,7 +197,7 @@ export function AgentLifecyclePanel({
     setModel("");
     setCreateModelCache(emptyAgentModelOptionCache("idle"));
     setReasoningEffort("high");
-    setAgentName(suggestAgentLabel(nextToolId, ""));
+    setAgentName(suggestAgentLabel(nextToolId, "", "high"));
     setAgentNameTouched(false);
   }
 
@@ -317,7 +328,7 @@ export function AgentLifecyclePanel({
                 value={reasoningEffort}
                 data={REASONING_EFFORT_OPTIONS}
                 allowDeselect={false}
-                onChange={(value) => setReasoningEffort(value ?? "high")}
+                onChange={changeReasoningEffort}
               />
             ) : null}
           </div>
@@ -546,6 +557,10 @@ export function AgentEditForm({
 }): ReactElement {
   const { t } = useStudioCopy();
   const [label, setLabel] = useState(() => agent?.label ?? "");
+  const [labelTouched, setLabelTouched] = useState(() => {
+    if (!agent) return false;
+    return !isSuggestedAgentLabel(agent.label, agent.adapter, agent.model ?? "", agent.reasoning_effort ?? "");
+  });
   const [adapter, setAdapter] = useState(() => agent?.adapter ?? "");
   const loadAgentModelsRef = useRef(onLoadAgentModels);
   const [model, setModel] = useState(() => agent?.model ?? "");
@@ -563,7 +578,9 @@ export function AgentEditForm({
     if (!agent || !opened) {
       return;
     }
-    setLabel(agent.label ?? "");
+    const nextLabel = agent.label ?? "";
+    setLabel(nextLabel);
+    setLabelTouched(!isSuggestedAgentLabel(nextLabel, agent.adapter, agent.model ?? "", agent.reasoning_effort ?? ""));
     setAdapter(agent.adapter);
     setModel(agent.model ?? "");
     setModelCache(emptyAgentModelOptionCache("idle"));
@@ -594,6 +611,9 @@ export function AgentEditForm({
         setModelCache((current) => setModelCacheEntry(current, adapter, nextCache[adapter]));
         setModel((current) => {
           const nextModel = firstModelForTool(nextCache, adapter);
+          if (!labelTouched && current.trim().length === 0 && nextModel.length > 0) {
+            setLabel(suggestAgentLabel(adapter as AgentToolId, nextModel, reasoningEffort));
+          }
           return current.trim().length > 0
             ? current
             : nextModel;
@@ -632,6 +652,26 @@ export function AgentEditForm({
         ? (current.trim().length > 0 && current !== "none" ? current : "high")
         : "none"
     ));
+    if (!labelTouched) {
+      const nextModel = firstModelForTool(modelCache, nextTool.id);
+      const nextReasoning = nextTool.supportsReasoning ? (reasoningEffort === "none" ? "high" : reasoningEffort) : "none";
+      setLabel(suggestAgentLabel(nextAdapter as AgentToolId, nextModel, nextReasoning));
+    }
+  }
+
+  function changeModel(value: string): void {
+    setModel(value);
+    if (!labelTouched) {
+      setLabel(suggestAgentLabel(adapter as AgentToolId, value, reasoningEffort));
+    }
+  }
+
+  function changeReasoningEffort(value: string | null): void {
+    const nextReasoningEffort = value ?? "high";
+    setReasoningEffort(nextReasoningEffort);
+    if (!labelTouched) {
+      setLabel(suggestAgentLabel(adapter as AgentToolId, model, nextReasoningEffort));
+    }
   }
 
   async function submit(): Promise<void> {
@@ -670,7 +710,11 @@ export function AgentEditForm({
         aria-label={t("agentName")}
         label={t("agentName")}
         value={label}
-        onChange={(event) => setLabel(event.currentTarget.value)}
+        onChange={(event) => {
+          const value = event.currentTarget.value;
+          setLabel(value);
+          setLabelTouched(value.trim().length > 0);
+        }}
       />
       <div className="agent-create-field-grid">
         <Select
@@ -692,7 +736,7 @@ export function AgentEditForm({
           disabled={modelDisabled}
           nothingFoundMessage={t("noModelsFound")}
           allowDeselect={false}
-          onChange={(value) => setModel(value ?? model)}
+          onChange={(value) => changeModel(value ?? model)}
         />
       </div>
       {selectedTool.supportsReasoning ? (
@@ -703,7 +747,7 @@ export function AgentEditForm({
           value={reasoningEffort.trim() || "high"}
           data={REASONING_EFFORT_OPTIONS}
           allowDeselect={false}
-          onChange={(value) => setReasoningEffort(value ?? "high")}
+          onChange={changeReasoningEffort}
         />
       ) : null}
       <MultiSelect
@@ -869,11 +913,21 @@ function isAgentToolId(value: string | null): value is AgentToolId {
   return AGENT_TOOLS.some((tool) => tool.id === value);
 }
 
-export function suggestAgentLabel(toolId: AgentToolId, model: string): string {
-  return `${agentToolDisplayName(toolId)} ${modelDisplayName(model)}`.trim();
+export function suggestAgentLabel(toolId: AgentToolId | string, model: string, reasoningEffort = ""): string {
+  return [agentToolDisplayName(toolId), modelDisplayName(model), reasoningDisplayName(reasoningEffort)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 }
 
-function agentToolDisplayName(toolId: AgentToolId): string {
+function isSuggestedAgentLabel(label: string | undefined, toolId: string, model: string, reasoningEffort: string): boolean {
+  const normalized = label?.trim();
+  if (!normalized) return true;
+  return normalized === suggestAgentLabel(toolId, model, reasoningEffort)
+    || normalized === suggestAgentLabel(toolId, model);
+}
+
+function agentToolDisplayName(toolId: AgentToolId | string): string {
   switch (toolId) {
     case "antigravity-cli":
       return "Antigravity";
@@ -885,16 +939,29 @@ function agentToolDisplayName(toolId: AgentToolId): string {
       return "Cursor";
     case "opencode-cli":
       return "OpenCode";
+    default:
+      return toolId;
   }
+}
+
+function reasoningDisplayName(reasoningEffort: string): string {
+  const value = reasoningEffort.trim();
+  if (!value || value === "none") return "";
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
 function modelDisplayName(model: string): string {
   const segment = model.split("/").filter(Boolean).at(-1) ?? model;
-  return segment
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((part) => modelDisplayNamePart(part))
-    .join(" ");
+  const parts = segment.split(/[-_]+/).filter(Boolean);
+  const displayParts: string[] = [];
+  for (const part of parts) {
+    if (/^\d+$/.test(part) && /^\d+$/.test(displayParts.at(-1) ?? "")) {
+      displayParts[displayParts.length - 1] = `${displayParts.at(-1)}.${part}`;
+    } else {
+      displayParts.push(part);
+    }
+  }
+  return displayParts.map((part) => modelDisplayNamePart(part)).join(" ");
 }
 
 function modelDisplayNamePart(part: string): string {
