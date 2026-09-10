@@ -1,4 +1,7 @@
 import { execFile, spawnSync } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import type { AgentConfig } from "./adapters.js";
 import {
@@ -119,7 +122,16 @@ function resolveDesktopCommand(command: string, options: AgentMeshCliManagementO
 }
 
 function probeVersion(commandPath: string, timeoutMs: number, diagnostics: string[]): string {
-  const result = spawnSync(commandPath, ["--version"], { encoding: "utf-8", timeout: timeoutMs });
+  const nodePath = nodeInterpreterFor(commandPath);
+  const command = nodePath ? [nodePath, commandPath] : [commandPath];
+  const result = spawnSync(command[0], [...command.slice(1), "--version"], {
+    encoding: "utf-8",
+    timeout: timeoutMs,
+    env: cliChildEnv(nodePath),
+  });
+  if (nodePath) {
+    diagnostics.push(`version probe used Node.js runtime: ${nodePath}`);
+  }
   if (result.error) {
     diagnostics.push(`version probe failed: ${result.error.message}`);
     return "unknown";
@@ -222,10 +234,13 @@ function executeFile(
   timeoutMs: number,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(commandPath, args, {
+    const nodePath = nodeInterpreterFor(commandPath);
+    const command = nodePath ? [nodePath, commandPath] : [commandPath];
+    execFile(command[0], [...command.slice(1), ...args], {
       encoding: "utf-8",
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
+      env: cliChildEnv(nodePath),
     }, (error, stdout, stderr) => {
       const code = error && typeof (error as NodeJS.ErrnoException & { code?: unknown }).code === "number"
         ? (error as NodeJS.ErrnoException & { code: number }).code
@@ -237,6 +252,66 @@ function executeFile(
       });
     });
   });
+}
+
+function nodeInterpreterFor(commandPath: string): string | undefined {
+  try {
+    const firstLine = readFileSync(commandPath, "utf-8").split(/\r?\n/, 1)[0] ?? "";
+    if (!/^#!.*\bnode(?:\s|$)/i.test(firstLine)) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return findNodeExecutable();
+}
+
+function findNodeExecutable(): string | undefined {
+  const candidates = new Set<string>();
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (directory) candidates.add(path.join(directory, "node"));
+  }
+  const home = os.homedir();
+  for (const directory of [
+    path.join(home, ".local", "bin"),
+    path.join(home, ".fnm", "aliases", "default", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+  ]) {
+    candidates.add(path.join(directory, "node"));
+  }
+  for (const root of [path.join(home, ".local", "state", "fnm_multishells"), path.join(home, ".fnm", "node-versions")]) {
+    try {
+      for (const entry of readdirSync(root)) {
+        const directory = root.endsWith("node-versions")
+          ? path.join(root, entry, "installation", "bin")
+          : path.join(root, entry, "bin");
+        candidates.add(path.join(directory, "node"));
+      }
+    } catch {
+      // Optional version-manager directories may not exist.
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
+function cliChildEnv(nodePath: string | undefined): NodeJS.ProcessEnv {
+  if (!nodePath) return process.env;
+  const directory = path.dirname(nodePath);
+  const currentPath = process.env.PATH ?? "";
+  return {
+    ...process.env,
+    PATH: [directory, ...currentPath.split(path.delimiter).filter((entry) => entry && entry !== directory)]
+      .join(path.delimiter),
+  };
 }
 
 function npmInstallDiagnostic(operation: { exitCode: number; stdout: string; stderr: string }): string {
