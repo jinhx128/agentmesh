@@ -170,32 +170,42 @@ export function AgentIntegrationsPanel({
                 const isBusy = busyTarget === row.target;
                 const anyBusy = busyTarget !== null || refreshBusy;
                 return (
-                  <Group
+                  <Paper
                     key={row.target}
-                    justify="space-between"
-                    align="flex-start"
-                    gap="md"
-                    wrap="nowrap"
+                    withBorder
+                    radius="md"
+                    p="sm"
                     data-studio-section={`agent-skill-target-${row.target}`}
                   >
-                    <Stack gap={2} miw={0} style={{ flex: 1 }}>
-                      <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
-                      <Text size="xs" c="dimmed">{row.hint ?? row.expected_path}</Text>
-                    </Stack>
-                    <Group gap="xs" wrap="nowrap">
-                      <Badge color={isOk ? "green" : "gray"}>{skillTargetStatusLabel(row.status)}</Badge>
-                      <Button
-                        size="xs"
-                        variant={isOk ? "light" : "filled"}
-                        color={isOk ? "gray" : undefined}
-                        loading={isBusy}
-                        disabled={isOk || anyBusy}
-                        onClick={() => void installSkill(row.target)}
-                      >
-                        {isOk ? "已安装" : row.status === "missing" ? "安装" : "更新"}
-                      </Button>
+                    <Group justify="space-between" align="center" gap="md" wrap="nowrap">
+                      <Stack gap={2} miw={0} style={{ flex: 1 }}>
+                        <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
+                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                          {row.expected_path || row.hint}
+                        </Text>
+                        {manualSkillHint(row.status) ? (
+                          <Text size="xs" c="red">{manualSkillHint(row.status)}</Text>
+                        ) : null}
+                      </Stack>
+                      {isOk ? (
+                        <Badge color="green">{skillTargetStatusLabel(row.status)}</Badge>
+                      ) : (
+                        <Group gap="xs" wrap="nowrap">
+                          <Badge color={skillTargetColorFor(row.status)}>
+                            {skillTargetStatusLabel(row.status)}
+                          </Badge>
+                          <Button
+                            size="xs"
+                            loading={isBusy}
+                            disabled={anyBusy}
+                            onClick={() => void installSkill(row.target)}
+                          >
+                            {row.status === "missing" ? "安装" : "修复"}
+                          </Button>
+                        </Group>
+                      )}
                     </Group>
-                  </Group>
+                  </Paper>
                 );
               })}
             </Stack>
@@ -270,6 +280,30 @@ function RefreshIcon(): ReactElement {
       />
     </svg>
   );
+}
+
+/** Only surface a hint when the install button cannot resolve the problem by itself. */
+function manualSkillHint(status: SkillTargetRow["status"]): string | undefined {
+  if (status === "unreadable") {
+    return "无法读取该文件，请检查文件与上级目录的权限。";
+  }
+  if (status === "failed") {
+    return "安装失败，请查看运行日志或改用命令行安装。";
+  }
+  return undefined;
+}
+
+function skillTargetColorFor(status: SkillTargetRow["status"]): string {
+  switch (status) {
+    case "ok":
+      return "green";
+    case "missing":
+      return "gray";
+    case "content_mismatch":
+      return "yellow";
+    default:
+      return "red";
+  }
 }
 
 function skillTargetRows(rows: SkillTargetRow[]): Array<SkillTargetRow & { target: AgentMeshSkillTarget }> {

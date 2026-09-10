@@ -2304,6 +2304,24 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     },
   });
   assert.match(installedIntegrations, />5 \/ 5</);
+  const mismatchedIntegrations = renderAgentIntegrationsPanel({
+    status: "ready",
+    report: {
+      ...integrationsFixture(),
+      skills: {
+        targets: [
+          { target: "codex", expected_path: "~/.agents/skills/agentmesh/SKILL.md", status: "content_mismatch", ok: false, expected: true, hint: "Re-run `agentmesh skill install --target <host> --force` to refresh this file." },
+          { target: "claude", expected_path: "~/.claude/skills/agentmesh/SKILL.md", status: "unreadable", ok: false, expected: true, hint: "Check file permissions and parent directory ownership." },
+        ],
+      },
+    },
+  });
+  assert.match(mismatchedIntegrations, />内容不一致</);
+  assert.match(mismatchedIntegrations, />修复</);
+  assert.match(mismatchedIntegrations, />无法读取</);
+  assert.match(mismatchedIntegrations, /请检查文件与上级目录的权限/);
+  assert.doesNotMatch(mismatchedIntegrations, /Re-run `agentmesh skill install|Check file permissions/);
+  assert.match(mismatchedIntegrations, />0 \/ 5</);
   assert.doesNotMatch(installedIntegrations, />安装</);
   assert.doesNotMatch(installedIntegrations, />未安装</);
   assert.match(installedIntegrations, /agent-skill-target-claude"/);
