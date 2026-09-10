@@ -72,6 +72,7 @@ function detectProviderCli(
     ? providerCliVersion(resolution.path, options.versionTimeoutMs)
     : { version: "missing", diagnostics: [] };
   const diagnostics = [...resolution.diagnostics, ...versionProbe.diagnostics];
+  const diagnostic = diagnostics.find((entry) => !isSuccessDiagnostic(entry));
   return {
     tool: provider.tool,
     adapter: adapter.id,
@@ -84,8 +85,13 @@ function detectProviderCli(
     supports_resume: adapter.capabilities.supports_resume === true,
     supports_structured_session_id: adapter.capabilities.supports_structured_session_id === true,
     diagnostics,
-    ...(diagnostics[0] ? { diagnostic: diagnostics[0] } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
   };
+}
+
+/** Resolution success records only restate `source` and `path`; the UI shows those separately. */
+function isSuccessDiagnostic(entry: string): boolean {
+  return /^(?:configured provider path|PATH provider command|app preference provider path|well-known provider path|login-shell probe provider path) found: /.test(entry);
 }
 
 function providerCliVersion(commandPath: string, timeoutMs = 5_000): {

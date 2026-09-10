@@ -122,6 +122,37 @@ test("provider CLI detection projects only matrix-verified session capabilities"
   }
 });
 
+test("provider CLI detection only surfaces a headline diagnostic when it adds information beyond source and path", () => {
+  const binDir = mkdtempSync(path.join(tmpdir(), "agentmesh-provider-cli-"));
+  const previousPath = process.env.PATH;
+  process.env.PATH = binDir;
+  try {
+    writeExecutable(path.join(binDir, "codex"), "#!/bin/sh\necho codex-cli 1.2.3\n");
+    writeExecutable(path.join(binDir, "claude"), "#!/bin/sh\necho broken >&2\nexit 2\n");
+    const report = detectSupportedProviderClis({
+      enabled: true,
+      shellPath: path.join(tmpdir(), "missing-shell"),
+    });
+    const codex = report.tools.find((tool) => tool.tool === "codex");
+    assert.equal(codex?.found, true);
+    assert.equal(codex?.source, "path");
+    assert.match(codex?.diagnostics[0] ?? "", /^PATH provider command found: /);
+    assert.equal(codex?.diagnostic, undefined);
+
+    const claude = report.tools.find((tool) => tool.tool === "claude");
+    assert.equal(claude?.found, true);
+    assert.equal(claude?.diagnostic, "version probe exited with code 2");
+    assert.doesNotMatch(claude?.diagnostic ?? "", /provider command found/);
+  } finally {
+    if (previousPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
 test("canonical AgentMesh skill asks entry agents to provide concise Chinese titles", () => {
   const skill = agentmeshSkillMarkdown();
   assert.match(skill, /用户未提供标题/);

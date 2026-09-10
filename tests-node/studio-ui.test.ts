@@ -3828,8 +3828,7 @@ function integrationsFixture(): Extract<AgentIntegrationsState, { status: "ready
           source: "well_known",
           path: "/Users/example/.opencode/bin/opencode",
           version: "opencode 9.9.9",
-          diagnostics: ["well-known provider path found"],
-          diagnostic: "well-known provider path found",
+          diagnostics: ["well-known provider path found: /Users/example/.opencode/bin/opencode"],
         },
         {
           tool: "codex",
