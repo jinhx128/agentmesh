@@ -49,7 +49,7 @@ export interface StudioProviderCliToolReport {
 export interface StudioSkillTargetReport {
   target: AgentMeshSkillTarget;
   expected_path: string;
-  status: "ok" | "missing" | "unreadable" | "content_mismatch" | "legacy_only" | "failed";
+  status: "ok" | "missing" | "unreadable" | "content_mismatch" | "failed";
   ok: boolean;
   expected: boolean;
   hint?: string;

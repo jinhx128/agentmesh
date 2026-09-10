@@ -64,12 +64,12 @@ function writeExecutable(filePath: string, content: string): void {
   chmodSync(filePath, 0o755);
 }
 
-function sharedProjectSkillPath(workspace: string): string {
-  return path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md");
+function sharedGlobalSkillPath(home: string): string {
+  return path.join(home, ".agents", "skills", "agentmesh", "SKILL.md");
 }
 
-function claudeProjectSkillPath(workspace: string): string {
-  return path.join(workspace, ".claude", "skills", "agentmesh", "SKILL.md");
+function claudeGlobalSkillPath(home: string): string {
+  return path.join(home, ".claude", "skills", "agentmesh", "SKILL.md");
 }
 
 function assertSamePath(actual: string, expected: string): void {
@@ -1066,7 +1066,7 @@ test("skill verify reports missing, mismatch, and ok install states", () => {
   assert.equal(missing.files[0].classification, "missing");
   assert.match(missing.files[0].hint ?? "", /skill install/);
 
-  const installPath = claudeProjectSkillPath(workspace);
+  const installPath = claudeGlobalSkillPath(home);
   mkdirSync(path.dirname(installPath), { recursive: true });
   writeFileSync(installPath, "custom\n");
   const mismatch = verifySkillInstall("claude", {
@@ -1089,7 +1089,7 @@ test("skill verify reports missing, mismatch, and ok install states", () => {
   assert.equal(ok.files[0].classification, "ok");
 });
 
-test("skill target matrix uses shared project path with Claude project exception", () => {
+test("skill target matrix uses shared global path with Claude home exception", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
@@ -1097,7 +1097,7 @@ test("skill target matrix uses shared project path with Claude project exception
   const sharedTargets = ["codex", "cursor", "antigravity", "opencode"] as const;
 
   for (const target of sharedTargets) {
-    rmSync(path.join(workspace, ".agents"), { recursive: true, force: true });
+    rmSync(path.join(home, ".agents"), { recursive: true, force: true });
     const report = installSkill(target, {
       homeDir: home,
       cwd: workspace,
@@ -1105,8 +1105,9 @@ test("skill target matrix uses shared project path with Claude project exception
       force: true,
     });
     assert.equal(report.ok, true, target);
-    assert.equal(report.files[0].path, sharedProjectSkillPath(workspace), target);
-    assert.equal(readFileSync(sharedProjectSkillPath(workspace), "utf-8"), expectedSkill, target);
+    assert.equal(report.files[0].path, sharedGlobalSkillPath(home), target);
+    assert.equal(readFileSync(sharedGlobalSkillPath(home), "utf-8"), expectedSkill, target);
+    assert.equal(existsSync(path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md")), false, target);
     assert.equal(existsSync(path.join(home, ".codex-custom", "skills", "agentmesh", "SKILL.md")), false, target);
     assert.equal(existsSync(path.join(workspace, ".cursor", "rules", "agentmesh.mdc")), false, target);
     assert.equal(existsSync(path.join(home, ".antigravity", "extensions", "agentmesh", "SKILL.md")), false, target);
@@ -1119,12 +1120,12 @@ test("skill target matrix uses shared project path with Claude project exception
     force: true,
   });
   assert.equal(claude.ok, true);
-  assert.equal(claude.files[0].path, claudeProjectSkillPath(workspace));
-  assert.equal(readFileSync(claudeProjectSkillPath(workspace), "utf-8"), expectedSkill);
-  assert.equal(existsSync(path.join(home, ".claude", "skills", "agentmesh", "SKILL.md")), false);
+  assert.equal(claude.files[0].path, claudeGlobalSkillPath(home));
+  assert.equal(readFileSync(claudeGlobalSkillPath(home), "utf-8"), expectedSkill);
+  assert.equal(existsSync(path.join(workspace, ".claude", "skills", "agentmesh", "SKILL.md")), false);
 });
 
-test("skill expected files contract exposes target paths without host home fallbacks", () => {
+test("skill expected files contract exposes global target paths under the host home", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
@@ -1134,7 +1135,7 @@ test("skill expected files contract exposes target paths without host home fallb
     const files = expectedSkillFilesForTarget(target, { cwd: workspace, homeDir: home });
     assert.deepEqual(files, [
       {
-        path: sharedProjectSkillPath(workspace),
+        path: sharedGlobalSkillPath(home),
         target,
         expected: true,
       },
@@ -1143,71 +1144,11 @@ test("skill expected files contract exposes target paths without host home fallb
 
   assert.deepEqual(expectedSkillFilesForTarget("claude", { cwd: workspace, homeDir: home }), [
     {
-      path: claudeProjectSkillPath(workspace),
+      path: claudeGlobalSkillPath(home),
       target: "claude",
       expected: true,
     },
   ]);
-});
-
-test("skill verify reports legacy Cursor rule files without treating them as the target install", () => {
-  const workspace = makeWorkspace();
-  test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  const expectedSkill = "# AgentMesh Skill\n";
-  const legacyPath = path.join(workspace, ".cursor", "rules", "agentmesh.mdc");
-  mkdirSync(path.dirname(legacyPath), { recursive: true });
-  writeFileSync(legacyPath, "legacy cursor rule\n");
-
-  const report = verifySkillInstall("cursor", {
-    cwd: workspace,
-    expectedSkill,
-  });
-
-  assert.equal(report.ok, false);
-  assert.equal(report.files[0].path, sharedProjectSkillPath(workspace));
-  assert.equal(report.files[0].classification, "missing");
-  assert.equal(report.files[1].path, legacyPath);
-  assert.equal(report.files[1].expected, false);
-  assert.equal(report.files[1].classification, "legacy_only");
-  assert.match(report.files[1].hint ?? "", /legacy Cursor/);
-});
-
-test("skill install --force refreshes target file without deleting legacy Cursor rule", () => {
-  const workspace = makeWorkspace();
-  test.after(() => rmSync(workspace, { recursive: true, force: true }));
-  const home = path.join(workspace, "home");
-  const cliPath = fileURLToPath(new URL("../packages/cli/src/cli.js", import.meta.url));
-  const sharedPath = sharedProjectSkillPath(workspace);
-  const legacyPath = path.join(workspace, ".cursor", "rules", "agentmesh.mdc");
-  mkdirSync(path.dirname(sharedPath), { recursive: true });
-  mkdirSync(path.dirname(legacyPath), { recursive: true });
-  writeFileSync(sharedPath, "stale skill\n");
-  writeFileSync(legacyPath, "legacy cursor rule\n");
-
-  const installResult = spawnSync(
-    process.execPath,
-    [cliPath, "skill", "install", "--target", "cursor", "--force"],
-    { cwd: workspace, env: { ...process.env, HOME: home }, encoding: "utf-8" },
-  );
-  assert.equal(installResult.status, 0, installResult.stderr);
-  assert.doesNotMatch(installResult.stdout, /legacy_only/);
-  assert.doesNotMatch(installResult.stdout, /\.cursor\/rules\/agentmesh\.mdc/);
-
-  const installedSkill = readFileSync(sharedPath, "utf-8");
-  assert.match(installedSkill, /^---\nname: agentmesh\n/);
-  assert.equal(existsSync(legacyPath), true);
-
-  const verifyResult = spawnSync(
-    process.execPath,
-    [cliPath, "skill", "verify", "--target", "cursor", "--json"],
-    { cwd: workspace, env: { ...process.env, HOME: home }, encoding: "utf-8" },
-  );
-  assert.equal(verifyResult.status, 0, verifyResult.stderr);
-  const payload = JSON.parse(verifyResult.stdout);
-  assert.equal(payload.ok, true);
-  assert.equal(payload.files[0].classification, "ok");
-  assert.equal(payload.files[1].classification, "legacy_only");
-  assert.equal(existsSync(legacyPath), true);
 });
 
 test("doctor and skill verify CLI emit JSON readiness reports", () => {
@@ -1462,12 +1403,12 @@ test("skill install writes host files and verify reports ok", () => {
   const payload = JSON.parse(verifyResult.stdout);
   assert.equal(payload.ok, true);
   assert.equal(payload.files[0].classification, "ok");
-  assertSamePath(payload.files[0].path, claudeProjectSkillPath(workspace));
-  assert.equal(existsSync(claudeProjectSkillPath(workspace)), true);
-  assert.equal(existsSync(path.join(home, ".claude", "skills", "agentmesh", "SKILL.md")), false);
+  assertSamePath(payload.files[0].path, claudeGlobalSkillPath(home));
+  assert.equal(existsSync(claudeGlobalSkillPath(home)), true);
+  assert.equal(existsSync(path.join(workspace, ".claude", "skills", "agentmesh", "SKILL.md")), false);
 });
 
-test("skill install writes shared project SKILL.md for Codex-compatible hosts", () => {
+test("skill install writes shared global SKILL.md for Codex-compatible hosts", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
@@ -1483,7 +1424,7 @@ test("skill install writes shared project SKILL.md for Codex-compatible hosts", 
   assert.equal(installResult.status, 0, installResult.stderr);
 
   const installedSkill = readFileSync(
-    sharedProjectSkillPath(workspace),
+    sharedGlobalSkillPath(home),
     "utf-8",
   );
   assert.match(
@@ -1500,11 +1441,12 @@ test("skill install writes shared project SKILL.md for Codex-compatible hosts", 
   const payload = JSON.parse(verifyResult.stdout);
   assert.equal(payload.ok, true);
   assert.equal(payload.files[0].classification, "ok");
-  assertSamePath(payload.files[0].path, sharedProjectSkillPath(workspace));
+  assertSamePath(payload.files[0].path, sharedGlobalSkillPath(home));
+  assert.equal(existsSync(path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md")), false);
   assert.equal(existsSync(path.join(codexHome, "skills", "agentmesh", "SKILL.md")), false);
 });
 
-test("skill install and verify accept opencode as a shared project target", () => {
+test("skill install and verify accept opencode as a shared global target", () => {
   const workspace = makeWorkspace();
   test.after(() => rmSync(workspace, { recursive: true, force: true }));
   const home = path.join(workspace, "home");
@@ -1517,7 +1459,7 @@ test("skill install and verify accept opencode as a shared project target", () =
     { cwd: workspace, env, encoding: "utf-8" },
   );
   assert.equal(installResult.status, 0, installResult.stderr);
-  assert.ok(macTmpPath(installResult.stdout).includes(sharedProjectSkillPath(workspace)));
+  assert.ok(macTmpPath(installResult.stdout).includes(sharedGlobalSkillPath(home)));
 
   const verifyResult = spawnSync(
     process.execPath,
@@ -1528,7 +1470,7 @@ test("skill install and verify accept opencode as a shared project target", () =
   const payload = JSON.parse(verifyResult.stdout);
   assert.equal(payload.target, "opencode");
   assert.equal(payload.ok, true);
-  assertSamePath(payload.files[0].path, sharedProjectSkillPath(workspace));
+  assertSamePath(payload.files[0].path, sharedGlobalSkillPath(home));
 });
 
 test("skill output declares AgentMesh protocol version metadata", () => {
@@ -1548,9 +1490,8 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     "agentmesh update install --target cli --dry-run --json",
     "agentmesh cli detect --json",
     "skill install --target opencode",
-    ".agents/skills/agentmesh/SKILL.md",
-    ".claude/skills/agentmesh/SKILL.md",
-    "legacy Cursor rule",
+    "~/.agents/skills/agentmesh/SKILL.md",
+    "~/.claude/skills/agentmesh/SKILL.md",
     "do not provide an `agent-id`",
     "short internal id",
   ]) {
@@ -1588,7 +1529,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   );
   assert.equal(installResult.status, 0, installResult.stderr);
   const installedSkill = readFileSync(
-    claudeProjectSkillPath(workspace),
+    claudeGlobalSkillPath(home),
     "utf-8",
   );
   assert.match(installedSkill, /AgentMesh CLI version: 0\.2\.1/);

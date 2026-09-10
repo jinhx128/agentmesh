@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,12 +21,9 @@ export interface SkillVersionMetadata {
 }
 
 interface VerifyOptions {
-  /** Project root used for all current project-level skill install targets. */
+  /** Directory used only to locate the canonical SKILL.md source when running inside a checkout. */
   cwd?: string;
-  /**
-   * Reserved for future host-home diagnostics. Current target paths are
-   * intentionally project-level and are resolved from cwd only.
-   */
+  /** User home directory that owns the global host skill files. Defaults to `os.homedir()`. */
   homeDir?: string;
   expectedSkill?: string;
 }
@@ -36,8 +34,8 @@ export interface SkillMarkdownOptions {
 
 interface SkillFileReport {
   path: string;
-  status: "ok" | "missing" | "unreadable" | "content_mismatch" | "legacy_only";
-  classification: "ok" | "missing" | "unreadable" | "content_mismatch" | "legacy_only";
+  status: "ok" | "missing" | "unreadable" | "content_mismatch";
+  classification: "ok" | "missing" | "unreadable" | "content_mismatch";
   expected: boolean;
   diagnostic?: string;
   hint?: string;
@@ -76,15 +74,11 @@ export function verifySkillInstall(
   target: SkillTarget,
   options: VerifyOptions = {},
 ): SkillVerifyReport {
-  const expectedFiles = installFilesForTarget(target, options).map(inspectInstallFile);
-  const files = [
-    ...expectedFiles,
-    ...legacyFilesForTarget(target, options),
-  ];
+  const files = installFilesForTarget(target, options).map(inspectInstallFile);
   return {
     schema_version: 1,
     target,
-    ok: expectedFiles.every((file) => file.status === "ok"),
+    ok: files.every((file) => file.status === "ok"),
     files,
   };
 }
@@ -234,39 +228,18 @@ function installFilesForTarget(target: SkillTarget, options: VerifyOptions): Ins
 }
 
 function installPathsForTarget(target: SkillTarget, options: VerifyOptions): string[] {
-  const cwd = options.cwd ?? process.cwd();
-  if (isSharedProjectTarget(target)) {
-    return [path.join(cwd, ".agents", "skills", "agentmesh", "SKILL.md")];
+  const homeDir = options.homeDir ?? os.homedir();
+  if (isSharedAgentsTarget(target)) {
+    return [path.join(homeDir, ".agents", "skills", "agentmesh", "SKILL.md")];
   }
   if (target === "claude") {
-    return [path.join(cwd, ".claude", "skills", "agentmesh", "SKILL.md")];
+    return [path.join(homeDir, ".claude", "skills", "agentmesh", "SKILL.md")];
   }
   throw new Error(`unsupported skill verify target: ${target}`);
 }
 
-function isSharedProjectTarget(target: SkillTarget): boolean {
+function isSharedAgentsTarget(target: SkillTarget): boolean {
   return ["codex", "cursor", "antigravity", "opencode"].includes(target);
-}
-
-function legacyFilesForTarget(target: SkillTarget, options: VerifyOptions): SkillFileReport[] {
-  if (target !== "cursor") {
-    return [];
-  }
-  const cwd = options.cwd ?? process.cwd();
-  const legacyPath = path.join(cwd, ".cursor", "rules", "agentmesh.mdc");
-  if (!existsSync(legacyPath)) {
-    return [];
-  }
-  return [
-    {
-      path: legacyPath,
-      status: "legacy_only",
-      classification: "legacy_only",
-      expected: false,
-      hint:
-        "legacy Cursor rule detected. It is not deleted automatically; run `agentmesh skill install --target cursor --force` to refresh the shared project Skill.",
-    },
-  ];
 }
 
 function inspectInstallFile(installFile: InstallFile): SkillFileReport {

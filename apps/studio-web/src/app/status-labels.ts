@@ -72,7 +72,6 @@ export function skillTargetStatusLabel(status: StudioSkillTargetReport["status"]
   return {
     content_mismatch: "内容不一致",
     failed: "失败",
-    legacy_only: "仅有旧版配置",
     missing: "未安装",
     ok: "正常",
     unreadable: "无法读取",

@@ -454,8 +454,12 @@ test("root CLI pack installs and runs in a clean project", () => {
   assert.equal(verifyPayload.ok, true);
   assert.equal(verifiedExpectedFile?.classification, "ok");
   assert.equal(
-    existsSync(path.join(installDir, ".agents", "skills", "agentmesh", "SKILL.md")),
+    existsSync(path.join(smokeHome, ".agents", "skills", "agentmesh", "SKILL.md")),
     true,
+  );
+  assert.equal(
+    existsSync(path.join(installDir, ".agents", "skills", "agentmesh", "SKILL.md")),
+    false,
   );
 });
 

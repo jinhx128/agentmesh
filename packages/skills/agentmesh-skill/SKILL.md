@@ -133,22 +133,24 @@ should run verify stages.
 
 `agentmesh skill install` requires an explicit host target. The AgentMesh Skill
 source stays canonical in the package; each install target writes the expected
-project-level file for that host.
+global file for that host under the user home directory, so one install covers
+every project on the machine.
 `agentmesh skill install` verifies written files after installation. Use
 `agentmesh skill verify --target <host>` to check an existing host install, or
 add `--json` when an entry agent needs machine-readable install status.
 
 Current install targets:
 
-- `--target codex`: current project `.agents/skills/agentmesh/SKILL.md`.
-- `--target cursor`: current project `.agents/skills/agentmesh/SKILL.md`.
-- `--target antigravity`: current project `.agents/skills/agentmesh/SKILL.md`.
-- `--target opencode`: current project `.agents/skills/agentmesh/SKILL.md`.
-- `--target claude`: current project `.claude/skills/agentmesh/SKILL.md`.
+- `--target codex`: `~/.agents/skills/agentmesh/SKILL.md`.
+- `--target cursor`: `~/.agents/skills/agentmesh/SKILL.md`.
+- `--target antigravity`: `~/.agents/skills/agentmesh/SKILL.md`.
+- `--target opencode`: `~/.agents/skills/agentmesh/SKILL.md`.
+- `--target claude`: `~/.claude/skills/agentmesh/SKILL.md`.
 
-Legacy `.cursor/rules/agentmesh.mdc` files may still be reported by
-`skill verify --target cursor`, but `skill install --target cursor --force`
-refreshes only the shared project Skill and does not delete legacy Cursor rules.
+Older AgentMesh versions wrote project-level copies under `<project>/.agents/skills/`
+and `<project>/.claude/skills/`. They are no longer written or verified; a
+project-level copy shadows the global one for that project, so remove it when
+its version metadata falls behind.
 
 If a host has no stable local convention yet, use `agentmesh skill show` or
 `agentmesh skill export --format markdown` and place the markdown in that

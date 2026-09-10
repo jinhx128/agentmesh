@@ -261,17 +261,18 @@ agentmesh skill verify --target antigravity --json
 agentmesh skill export --format markdown > agentmesh-skill.md
 ```
 
-Release 里的 `agentmesh-skill-0.2.1.md` 是同一份可单独下载的 markdown。手动安装时，
+Release 里的 `agentmesh-skill-0.2.1.md` 是同一份可单独下载的 markdown。Skill 安装到用户
+主目录下的全局路径，一次安装对所有项目生效。手动安装时，
 Codex、Cursor、Antigravity CLI 和 OpenCode 使用：
 
 ```text
-.agents/skills/agentmesh/SKILL.md
+~/.agents/skills/agentmesh/SKILL.md
 ```
 
 Claude Code 使用：
 
 ```text
-.claude/skills/agentmesh/SKILL.md
+~/.claude/skills/agentmesh/SKILL.md
 ```
 
 ## 支持的 agent 工具

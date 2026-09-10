@@ -877,7 +877,12 @@ test("desktop keeps installed CLI status when npm registry is unavailable", asyn
 
 test("desktop skill install writes only selected targets and reports each result", async () => {
   const workspace = makeWorkspace();
-  test.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const home = path.join(workspace, "home");
+  const restoreHome = isolateHome(home);
+  test.after(() => {
+    restoreHome();
+    rmSync(workspace, { recursive: true, force: true });
+  });
   const workspaceSkillDir = path.join(workspace, "packages", "skills", "agentmesh-skill");
   mkdirSync(workspaceSkillDir, { recursive: true });
   writeFileSync(path.join(workspaceSkillDir, "SKILL.md"), "# Wrong Workspace Skill\n");
@@ -904,11 +909,12 @@ test("desktop skill install writes only selected targets and reports each result
     };
     assert.deepEqual(payload.installed_targets.map((target) => target.target), ["codex", "claude"]);
     assert.deepEqual(payload.installed_targets.map((target) => target.ok), [true, true]);
-    assert.equal(existsSync(path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md")), true);
-    assert.equal(existsSync(path.join(workspace, ".claude", "skills", "agentmesh", "SKILL.md")), true);
-    assert.equal(existsSync(path.join(workspace, ".cursor", "rules", "agentmesh.mdc")), false);
+    assert.equal(existsSync(path.join(home, ".agents", "skills", "agentmesh", "SKILL.md")), true);
+    assert.equal(existsSync(path.join(home, ".claude", "skills", "agentmesh", "SKILL.md")), true);
+    assert.equal(existsSync(path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md")), false);
+    assert.equal(existsSync(path.join(workspace, ".claude", "skills", "agentmesh", "SKILL.md")), false);
     const installedSkill = readFileSync(
-      path.join(workspace, ".agents", "skills", "agentmesh", "SKILL.md"),
+      path.join(home, ".agents", "skills", "agentmesh", "SKILL.md"),
       "utf-8",
     );
     assert.doesNotMatch(installedSkill, /Wrong Workspace Skill/);

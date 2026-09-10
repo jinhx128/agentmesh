@@ -34,7 +34,7 @@ export interface StudioCommandLineToolReport extends AgentMeshCliReport {
 export interface StudioSkillTargetReport {
   target: SkillTarget;
   expected_path: string;
-  status: "ok" | "missing" | "unreadable" | "content_mismatch" | "legacy_only" | "failed";
+  status: "ok" | "missing" | "unreadable" | "content_mismatch" | "failed";
   ok: boolean;
   expected: boolean;
   hint?: string;

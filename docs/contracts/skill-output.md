@@ -43,14 +43,15 @@ installed Skill content agree.
 
 - `agentmesh skill show` writes canonical markdown to stdout.
 - `agentmesh skill export --format markdown` writes the same markdown to stdout.
-- `agentmesh skill install --target <host>` writes the expected project-level
-  host file and verifies its content against the canonical markdown. Codex,
-  Cursor, Antigravity CLI, and OpenCode use
-  `.agents/skills/agentmesh/SKILL.md`; Claude Code uses
-  `.claude/skills/agentmesh/SKILL.md`.
+- `agentmesh skill install --target <host>` writes the expected global host
+  file under the user home directory and verifies its content against the
+  canonical markdown. Codex, Cursor, Antigravity CLI, and OpenCode use
+  `~/.agents/skills/agentmesh/SKILL.md`; Claude Code uses
+  `~/.claude/skills/agentmesh/SKILL.md`. One install covers every project.
 - `agentmesh skill verify --target <host> --json` reports installed file status
-  but does not mutate files. Legacy `.cursor/rules/agentmesh.mdc` is reported
-  as legacy-only evidence when present and is not deleted by install.
+  but does not mutate files. Project-level copies written by older versions
+  (`<project>/.agents/skills/`, `<project>/.claude/skills/`) and legacy
+  `.cursor/rules/agentmesh.mdc` are neither verified nor deleted.
 - `@agentmesh/skills` exposes `expectedSkillFilesForTarget` for read-only
-  diagnostics that need the same project-level target paths without writing
+  diagnostics that need the same global target paths without writing
   host files.
