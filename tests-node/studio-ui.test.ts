@@ -277,7 +277,7 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   const appSource = readFileSync(path.resolve("apps/studio-web/src/app/App.tsx"), "utf-8");
   const copySource = readFileSync(path.resolve("apps/studio-web/src/app/copy.ts"), "utf-8");
   const mainSource = readFileSync(path.resolve("apps/studio-web/src/main.tsx"), "utf-8");
-  assert.match(appSource, /navbar=\{\{\s*width:\s*300,\s*breakpoint:\s*"xs"\s*\}\}/);
+  assert.match(appSource, /navbar=\{\{\s*width:\s*280,\s*breakpoint:\s*"xs"\s*\}\}/);
   assert.match(appSource, /if\s*\(\s*workspaceView !== "runs"\s*\)\s*\{[\s\S]*setArtifactDrawerOpened\(false\)/);
   assert.match(appSource, /opened=\{artifactDrawerOpened && workspaceView === "runs"\}/);
   assert.doesNotMatch(appSource, /opened=\{artifactDrawerOpened && runDetailState\.status === "ready"\}/);
@@ -386,7 +386,7 @@ test("React app CSS uses new layout hooks and no legacy selector contract", () =
   assert.match(frontendCss, /@media \(max-width:\s*36em\)[\s\S]*\.run-summary-row\s*\{[^}]*grid-template-columns:\s*1fr;/s);
   assert.match(frontendCss, /\[data-studio-section="run-workspace"\]\s*\{[^}]*height:\s*100%;/s);
   assert.match(frontendCss, /\[data-studio-section="run-workspace"\]\s*\{[^}]*min-height:\s*100%;/s);
-  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(210px,\s*260px\)/s);
+  assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(190px,\s*230px\)/s);
   assert.doesNotMatch(frontendCss, /\.run-workspace-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(220px,\s*280px\)/s);
   assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*height:\s*100%;/s);
   assert.match(frontendCss, /\.run-workspace-layout\s*\{[^}]*min-height:\s*100%;/s);

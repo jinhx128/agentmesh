@@ -1012,7 +1012,7 @@ export function App(): ReactElement {
     <AppShell
       className="studio-shell"
       data-studio-section="react-baseline"
-      navbar={{ width: 300, breakpoint: "xs" }}
+      navbar={{ width: 280, breakpoint: "xs" }}
       padding={0}
     >
       <AppShell.Navbar className="studio-navbar" data-studio-section="activity-navigator">
