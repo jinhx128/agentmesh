@@ -666,8 +666,8 @@ test("Studio silver components map update and status semantics", () => {
   assert.match(frontendCss, /\.mantine-Tabs-tab:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--studio-primary-ink\)/s);
   assert.match(frontendCss, /\.status\.current,[\s\S]*\.status\.running\s*\{[^}]*color:\s*var\(--studio-primary-ink\)/s);
   assert.doesNotMatch(frontendCss, /#7b8492|#5d6674/i);
-  assert.match(integrationsSource, /<Tabs\.List grow aria-label=\{t\("environment"\)\}>/);
-  assert.match(integrationsSource, /defaultValue="skills"/);
+  assert.match(integrationsSource, /data-studio-section="agent-integrations-tools"/);
+  assert.doesNotMatch(integrationsSource, /<Tabs|defaultValue="skills"/);
   assert.doesNotMatch(integrationsSource, /commandStatusLabel|commandLine\.status/);
   assert.match(settingsAboutSource, /function commandLineStatusColor[\s\S]*state\.status === "error"\) return "red"/);
   assert.match(settingsAboutSource, /function desktopStatusColor[\s\S]*state\.status === "error"\) return "red"/);
@@ -2255,38 +2255,26 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(readOnlySettings, /运行时版本|当前入口/);
 
   const integrations = renderAgentIntegrationsPanel({ status: "ready", report: integrationsFixture() });
-  assert.match(integrations, /data-studio-section="agent-integrations-tabs"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-skill-tab"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-cli-tab"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-skill-panel"/);
-  assert.match(integrations, /data-studio-section="agent-integrations-cli-panel"/);
-  assert.doesNotMatch(integrations, /data-studio-section="agent-integrations-command-(?:tab|panel)"/);
-  assert.doesNotMatch(integrations, /命令行工具/);
-  assert.match(integrations, /Agent Skill/);
-  assert.match(integrations, /外部 CLI/);
-  assert.doesNotMatch(integrations, /CLI 检测/);
-  assert.doesNotMatch(integrations, /data-studio-action="refresh-command-line-tool"/);
-  assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"/);
-  assert.match(integrations, /data-studio-action="refresh-agent-skills"/);
-  assert.match(integrations, />刷新</);
-  assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"[\s\S]*>1\/2</);
-  assert.match(integrations, /OpenCode CLI/);
-  assert.match(integrations, /\.opencode\/bin\/opencode/);
-  assert.doesNotMatch(integrations, /update_available/);
-  assert.doesNotMatch(integrations, /更新命令行工具|0\.1\.9|0\.1\.10/);
-  assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
-  for (const label of ["Codex", "Cursor", "Antigravity", "OpenCode", "Claude Code"]) {
-    assert.match(integrations, new RegExp(`>${label}<`));
+  assert.match(integrations, /data-studio-section="agent-integrations-tools"/);
+  assert.match(integrations, /Agent 工具/);
+  assert.match(integrations, /CLI 可用后才需要安装 Agent Skill/);
+  assert.match(integrations, /data-studio-action="refresh-agent-integrations"/);
+  assert.doesNotMatch(integrations, /data-studio-action="refresh-agent-skills|refresh-cli-diagnostics"/);
+  assert.doesNotMatch(integrations, /agent-integrations-tabs|agent-integrations-skill-tab|agent-integrations-cli-tab/);
+  assert.match(integrations, />0 \/ 5</);
+  for (const tool of ["codex", "cursor", "antigravity", "opencode", "claude"]) {
+    assert.match(integrations, new RegExp(`data-studio-section="agent-tool-${tool}"`));
   }
-  assert.doesNotMatch(integrations, /刷新已有文件/);
-  assert.doesNotMatch(integrations, /安装选中的 Skill|已全部安装|已选/);
-  assert.match(integrations, />1 \/ 5</);
+  assert.match(integrations, /OpenCode/);
+  assert.match(integrations, /opencode-cli · opencode/);
+  assert.match(integrations, />已找到</);
+  assert.match(integrations, />未找到</);
   assert.match(integrations, />正常</);
   assert.match(integrations, />未安装</);
   assert.match(integrations, />安装</);
-  assert.doesNotMatch(integrations, /type="checkbox"/);
   assert.doesNotMatch(integrations, />ok</);
   assert.doesNotMatch(integrations, />studio-desktop</);
+
 
   const installedIntegrations = renderAgentIntegrationsPanel({
     status: "ready",
@@ -2299,6 +2287,19 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
           status: "ok" as const,
           ok: true,
           expected: true,
+        })),
+      },
+      provider_clis: {
+        tools: ["codex", "cursor", "antigravity", "opencode", "claude"].map((target) => ({
+          tool: target as AgentMeshSkillTarget,
+          label: target.charAt(0).toUpperCase() + target.slice(1),
+          adapter: `${target}-cli`,
+          command: target,
+          found: true,
+          source: "path" as const,
+          path: `/usr/local/bin/${target}`,
+          version: "1.0.0",
+          diagnostics: [],
         })),
       },
     },
@@ -2314,17 +2315,42 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
           { target: "claude", expected_path: "~/.claude/skills/agentmesh/SKILL.md", status: "unreadable", ok: false, expected: true, hint: "Check file permissions and parent directory ownership." },
         ],
       },
+      provider_clis: {
+        tools: [
+          { tool: "codex", label: "Codex", adapter: "codex-cli", command: "codex", found: true, source: "path" as const, path: "/usr/local/bin/codex", version: "1.0.0", diagnostics: [] },
+          { tool: "claude", label: "Claude Code", adapter: "claude-code-cli", command: "claude", found: true, source: "path" as const, path: "/usr/local/bin/claude", version: "1.0.0", diagnostics: [] },
+        ],
+      },
     },
   });
-  assert.match(mismatchedIntegrations, />内容不一致</);
-  assert.match(mismatchedIntegrations, />修复</);
   assert.match(mismatchedIntegrations, />无法读取</);
   assert.match(mismatchedIntegrations, /请检查文件与上级目录的权限/);
   assert.doesNotMatch(mismatchedIntegrations, /Re-run `agentmesh skill install|Check file permissions/);
   assert.match(mismatchedIntegrations, />0 \/ 5</);
-  assert.doesNotMatch(installedIntegrations, />安装</);
+  assert.doesNotMatch(installedIntegrations, />安装<|>修复</);
   assert.doesNotMatch(installedIntegrations, />未安装</);
-  assert.match(installedIntegrations, /agent-skill-target-claude"/);
+  assert.match(installedIntegrations, /agent-tool-claude"/);
+
+  const cliMissingIntegrations = renderAgentIntegrationsPanel({
+    status: "ready",
+    report: {
+      ...integrationsFixture(),
+      skills: {
+        targets: [
+          { target: "codex", expected_path: "~/.agents/skills/agentmesh/SKILL.md", status: "missing", ok: false, expected: true },
+        ],
+      },
+      provider_clis: {
+        tools: [
+          { tool: "codex", label: "Codex", adapter: "codex-cli", command: "codex", found: false, source: "path" as const, version: "", diagnostics: [] },
+        ],
+      },
+    },
+  });
+  assert.match(cliMissingIntegrations, />未找到</);
+  assert.match(cliMissingIntegrations, />未安装</);
+  assert.doesNotMatch(cliMissingIntegrations, />安装<|>修复</);
+  assert.match(cliMissingIntegrations, /未检测到该 CLI/);
 
   const settingsResources = renderSettingsView("resources");
   assert.match(settingsResources, /data-studio-section="studio-settings-view"/);
@@ -2476,7 +2502,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settingsEnvironment, /data-studio-section="settings-environment-workspace"/);
   assert.match(settingsEnvironment, /data-studio-section="agent-integrations"/);
   assert.match(settingsEnvironment, /Agent Skill/);
-  assert.match(settingsEnvironment, /外部 CLI/);
+  assert.match(settingsEnvironment, /Agent 工具/);
   assert.doesNotMatch(settingsEnvironment, /命令行工具|CLI 检测/);
   assert.doesNotMatch(settingsEnvironment, />studio-desktop</);
 
@@ -2746,8 +2772,8 @@ test("Studio write operations use shared toast feedback while preserving diagnos
   assert.match(sources.integrations, /async function refreshIntegrations\(\s*successTitle: string,\s*failureTitle: string/);
   assert.match(sources.integrations, /showStudioSuccess\(successTitle\)/);
   assert.match(sources.integrations, /showStudioError\(failureTitle/);
-  assert.match(sources.integrations, /"外部 CLI 状态已刷新"/);
-  assert.match(sources.integrations, /"外部 CLI 状态刷新失败"/);
+  assert.match(sources.integrations, /"环境状态已刷新"/);
+  assert.match(sources.integrations, /"环境状态刷新失败"/);
   assert.doesNotMatch(sources.integrations, /命令行工具状态已刷新|命令行工具状态刷新失败/);
   const refreshAgentIntegrationsSource = sources.app.slice(
     sources.app.indexOf("async function refreshAgentIntegrations"),

@@ -3,11 +3,10 @@ import {
   Badge,
   Button,
   Card,
-  Code,
+  Divider,
   Group,
   Paper,
   Stack,
-  Tabs,
   Text,
   Title,
 } from "@mantine/core";
@@ -42,6 +41,14 @@ export interface AgentIntegrationsPanelProps {
 }
 
 type SkillTargetRow = StudioIntegrationsReport["skills"]["targets"][number];
+
+/** One entry per supported agent tool; the CLI and its Skill file are two facets of the same tool. */
+interface IntegrationToolRow {
+  tool: AgentMeshSkillTarget;
+  label: string;
+  cli?: StudioProviderCliToolReport;
+  skill: SkillTargetRow & { target: AgentMeshSkillTarget };
+}
 
 const defaultTargets: AgentMeshSkillTarget[] = [
   "codex",
@@ -89,8 +96,8 @@ export function AgentIntegrationsPanel({
   }
 
   const report = state.report;
-  const providerCliRows = report.provider_clis.tools;
-  const installedCount = targetRows.filter((row) => row.status === "ok").length;
+  const toolRows = integrationToolRows(targetRows, report.provider_clis.tools);
+  const readyCount = toolRows.filter((row) => row.cli?.found && row.skill.status === "ok").length;
   async function refreshIntegrations(
     successTitle: string,
     failureTitle: string,
@@ -126,144 +133,114 @@ export function AgentIntegrationsPanel({
   return (
     <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
       <PanelHeader title={t("environment")} />
-      <Tabs
-        defaultValue="skills"
-        keepMounted
-        keepMountedMode="display-none"
-        mt="md"
-        data-studio-section="agent-integrations-tabs"
-      >
-        <Tabs.List grow aria-label={t("environment")}>
-          <Tabs.Tab value="skills" data-studio-section="agent-integrations-skill-tab">
-            {t("agentSkill")}
-          </Tabs.Tab>
-          <Tabs.Tab value="cli-diagnostics" data-studio-section="agent-integrations-cli-tab">
-            {t("cliDiagnostics")}
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="skills" pt="md" data-studio-section="agent-integrations-skill-panel">
-          <Card withBorder radius="md" p="md">
-            <Group justify="space-between" align="flex-start" mb="sm">
-              <Title order={3} size="h4">{t("agentSkill")}</Title>
-              <Group gap="xs" wrap="nowrap">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="light"
-                  loading={refreshBusy}
-                  disabled={refreshBusy || busyTarget !== null}
-                  leftSection={<RefreshIcon />}
-                  data-studio-action="refresh-agent-skills"
-                  onClick={() => void refreshIntegrations(
-                    "Agent Skill 状态已刷新",
-                    "Agent Skill 状态刷新失败",
-                  )}
-                >
-                  刷新
-                </Button>
-                <Badge color="green">{installedCount} / {targetRows.length}</Badge>
-              </Group>
-            </Group>
-            <Stack gap="xs">
-              {targetRows.map((row) => {
-                const isOk = row.status === "ok";
-                const isBusy = busyTarget === row.target;
-                const anyBusy = busyTarget !== null || refreshBusy;
-                return (
-                  <Paper
-                    key={row.target}
-                    withBorder
-                    radius="md"
-                    p="sm"
-                    data-studio-section={`agent-skill-target-${row.target}`}
-                  >
-                    <Group justify="space-between" align="center" gap="md" wrap="nowrap">
-                      <Stack gap={2} miw={0} style={{ flex: 1 }}>
-                        <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
-                        <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                          {row.expected_path || row.hint}
-                        </Text>
-                        {manualSkillHint(row.status) ? (
-                          <Text size="xs" c="red">{manualSkillHint(row.status)}</Text>
-                        ) : null}
-                      </Stack>
-                      {isOk ? (
-                        <Badge color="green">{skillTargetStatusLabel(row.status)}</Badge>
-                      ) : (
-                        <Group gap="xs" wrap="nowrap">
-                          <Badge color={skillTargetColorFor(row.status)}>
-                            {skillTargetStatusLabel(row.status)}
-                          </Badge>
-                          <Button
-                            size="xs"
-                            loading={isBusy}
-                            disabled={anyBusy}
-                            onClick={() => void installSkill(row.target)}
-                          >
-                            {row.status === "missing" ? "安装" : "修复"}
-                          </Button>
-                        </Group>
-                      )}
-                    </Group>
-                  </Paper>
-                );
-              })}
-            </Stack>
-          </Card>
-        </Tabs.Panel>
-        <Tabs.Panel value="cli-diagnostics" pt="md" data-studio-section="agent-integrations-cli-panel">
-          <Card withBorder radius="md" p="md">
-            <Group justify="space-between" align="flex-start" mb="sm">
-              <Title order={3} size="h4">{t("cliDiagnostics")}</Title>
-              <Group gap="xs" wrap="nowrap">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="light"
-                  loading={refreshBusy}
-                  disabled={refreshBusy}
-                  leftSection={<RefreshIcon />}
-                  data-studio-action="refresh-cli-diagnostics"
-                  onClick={() => void refreshIntegrations(
-                    "外部 CLI 状态已刷新",
-                    "外部 CLI 状态刷新失败",
-                  )}
-                >
-                  刷新
-                </Button>
-                <Badge>{providerCliRows.filter((tool) => tool.found).length}/{providerCliRows.length}</Badge>
-              </Group>
-            </Group>
-            <Stack gap="sm">
-              {providerCliRows.map((tool) => (
-                <Paper
-                  key={tool.tool}
-                  withBorder
-                  radius="md"
-                  p="sm"
-                  data-studio-section={`provider-cli-${tool.tool}`}
-                >
-                  <Group justify="space-between" align="flex-start" gap="md" mb="xs">
-                    <Stack gap={2} miw={0}>
-                      <Text size="sm" fw={800}>{tool.label}</Text>
-                      <Text size="xs" c="dimmed">{tool.adapter} · {tool.command}</Text>
-                    </Stack>
-                    <Badge color={tool.found ? "green" : "gray"}>
-                      {tool.found ? t("detected") : t("targetMissing")}
-                    </Badge>
-                  </Group>
-                  <Stack gap={2}>
-                    <Fact label={t("path")} value={tool.path ?? t("targetMissing")} />
-                    <Fact label={t("version")} value={tool.version} />
-                    <Fact label={t("source")} value={providerCliSourceText(tool, t)} />
-                    {tool.diagnostic ? <Text size="xs" c="dimmed">{tool.diagnostic}</Text> : null}
-                  </Stack>
-                </Paper>
-              ))}
-            </Stack>
-          </Card>
-        </Tabs.Panel>
-      </Tabs>
+      <Card withBorder radius="md" p="md" mt="md" data-studio-section="agent-integrations-tools">
+        <Group justify="space-between" align="flex-start" mb="sm">
+          <Stack gap={2}>
+            <Title order={3} size="h4">{t("agentTools")}</Title>
+            <Text size="xs" c="dimmed">CLI 可用后才需要安装 Agent Skill。</Text>
+          </Stack>
+          <Group gap="xs" wrap="nowrap">
+            <Button
+              type="button"
+              size="xs"
+              variant="light"
+              loading={refreshBusy}
+              disabled={refreshBusy || busyTarget !== null}
+              leftSection={<RefreshIcon />}
+              data-studio-action="refresh-agent-integrations"
+              onClick={() => void refreshIntegrations(
+                "环境状态已刷新",
+                "环境状态刷新失败",
+              )}
+            >
+              刷新
+            </Button>
+            <Badge color={readyCount === toolRows.length ? "green" : "gray"}>
+              {readyCount} / {toolRows.length}
+            </Badge>
+          </Group>
+        </Group>
+        <Stack gap="sm">
+          {toolRows.map((row) => (
+            <IntegrationToolCard
+              key={row.tool}
+              row={row}
+              busy={busyTarget === row.tool}
+              anyBusy={busyTarget !== null || refreshBusy}
+              onInstallSkill={() => void installSkill(row.tool)}
+              t={t}
+            />
+          ))}
+        </Stack>
+      </Card>
+    </Paper>
+  );
+}
+
+function IntegrationToolCard({
+  row,
+  busy,
+  anyBusy,
+  onInstallSkill,
+  t,
+}: {
+  row: IntegrationToolRow;
+  busy: boolean;
+  anyBusy: boolean;
+  onInstallSkill: () => void;
+  t: (key: StudioCopyKey) => string;
+}): ReactElement {
+  const cli = row.cli;
+  const cliFound = cli?.found === true;
+  const skillOk = row.skill.status === "ok";
+  return (
+    <Paper withBorder radius="md" p="sm" data-studio-section={`agent-tool-${row.tool}`}>
+      <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap" mb="xs">
+        <Stack gap={2} miw={0}>
+          <Text size="sm" fw={800}>{row.label}</Text>
+          {cli ? <Text size="xs" c="dimmed">{cli.adapter} · {cli.command}</Text> : null}
+        </Stack>
+        <Badge color={cliFound ? "green" : "gray"}>
+          {cliFound ? t("detected") : t("targetMissing")}
+        </Badge>
+      </Group>
+      {cliFound && cli ? (
+        <Stack gap={2}>
+          <Fact label={t("path")} value={cli.path ?? t("targetMissing")} />
+          <Fact label={t("version")} value={cli.version} />
+          <Fact label={t("source")} value={providerCliSourceText(cli, t)} />
+          {cli.diagnostic ? <Text size="xs" c="dimmed">{cli.diagnostic}</Text> : null}
+        </Stack>
+      ) : (
+        <Text size="xs" c="dimmed">
+          {cli?.diagnostic ?? "未检测到该 CLI，安装并确认它在 PATH 中可执行后再刷新。"}
+        </Text>
+      )}
+      <Divider my="xs" />
+      <Group justify="space-between" align="center" gap="md" wrap="nowrap">
+        <Stack gap={2} miw={0} style={{ flex: 1 }}>
+          <Text size="xs" fw={800} c={cliFound ? undefined : "dimmed"}>{t("agentSkill")}</Text>
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            {row.skill.expected_path || row.skill.hint}
+          </Text>
+          {cliFound && manualSkillHint(row.skill.status) ? (
+            <Text size="xs" c="red">{manualSkillHint(row.skill.status)}</Text>
+          ) : null}
+        </Stack>
+        <Group gap="xs" wrap="nowrap">
+          <Badge
+            color={cliFound ? skillTargetColorFor(row.skill.status) : "gray"}
+            variant={cliFound ? "filled" : "light"}
+          >
+            {skillTargetStatusLabel(row.skill.status)}
+          </Badge>
+          {cliFound && !skillOk ? (
+            <Button size="xs" loading={busy} disabled={anyBusy} onClick={onInstallSkill}>
+              {row.skill.status === "missing" ? "安装" : "修复"}
+            </Button>
+          ) : null}
+        </Group>
+      </Group>
     </Paper>
   );
 }
@@ -280,6 +257,20 @@ function RefreshIcon(): ReactElement {
       />
     </svg>
   );
+}
+
+/** Build a unified row per supported tool, matching skill target + its CLI provider if found. */
+function integrationToolRows(
+  skillTargets: SkillTargetRow[],
+  providerClis: StudioProviderCliToolReport[],
+): IntegrationToolRow[] {
+  const cliByTool = new Map(providerClis.map((cli) => [cli.tool, cli]));
+  return skillTargetRows(skillTargets).map((skill) => ({
+    tool: skill.target,
+    label: skillTargetLabels[skill.target] ?? skill.target,
+    cli: cliByTool.get(skill.target),
+    skill,
+  }));
 }
 
 /** Only surface a hint when the install button cannot resolve the problem by itself. */
