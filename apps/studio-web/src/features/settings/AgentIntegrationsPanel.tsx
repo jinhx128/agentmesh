@@ -44,18 +44,21 @@ export interface AgentIntegrationsPanelProps {
 
 type SkillTargetRow = StudioIntegrationsReport["skills"]["targets"][number];
 
-interface SkillTargetGroup {
-  id: string;
-  label: string;
-  targets: AgentMeshSkillTarget[];
-  row: SkillTargetRow;
-  installable: boolean;
-}
-
-const skillTargetGroups: Array<{ id: string; label: string; targets: AgentMeshSkillTarget[] }> = [
-  { id: "agents", label: "Codex / Cursor / Antigravity / OpenCode", targets: ["codex", "cursor", "antigravity", "opencode"] },
-  { id: "claude", label: "Claude Code", targets: ["claude"] },
+const defaultTargets: AgentMeshSkillTarget[] = [
+  "codex",
+  "cursor",
+  "antigravity",
+  "opencode",
+  "claude",
 ];
+
+const skillTargetLabels: Record<AgentMeshSkillTarget, string> = {
+  codex: "Codex",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
+  opencode: "OpenCode",
+  claude: "Claude Code",
+};
 
 export function AgentIntegrationsPanel({
   state,
@@ -66,12 +69,12 @@ export function AgentIntegrationsPanel({
   const refreshBusyRef = useRef(false);
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [skillBusy, setSkillBusy] = useState(false);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[] | null>(null);
-  const targetGroups = state.status === "ready" ? groupSkillTargets(state.report.skills.targets) : [];
-  const installableGroupIds = targetGroups.filter((group) => group.installable).map((group) => group.id);
-  const installableKey = installableGroupIds.join(",");
+  const [selectedTargetsState, setSelectedTargetsState] = useState<AgentMeshSkillTarget[] | null>(null);
+  const targetRows = state.status === "ready" ? skillTargetRows(state.report.skills.targets) : [];
+  const installableTargets = targetRows.filter((row) => row.status !== "ok").map((row) => row.target);
+  const installableKey = installableTargets.join(",");
   useEffect(() => {
-    setSelectedGroupIds(null);
+    setSelectedTargetsState(null);
   }, [installableKey]);
 
   if (state.status === "loading") {
@@ -94,14 +97,11 @@ export function AgentIntegrationsPanel({
 
   const report = state.report;
   const providerCliRows = report.provider_clis.tools;
-  const effectiveSelectedGroupIds = (selectedGroupIds ?? installableGroupIds)
-    .filter((id) => installableGroupIds.includes(id));
-  const selectedGroupSet = new Set(effectiveSelectedGroupIds);
-  const selectedTargets = targetGroups
-    .filter((group) => selectedGroupSet.has(group.id))
-    .flatMap((group) => group.targets);
-  const selectedCount = effectiveSelectedGroupIds.length;
-  const allInstalled = installableGroupIds.length === 0;
+  const selectedTargets = (selectedTargetsState ?? installableTargets)
+    .filter((target) => installableTargets.includes(target));
+  const selectedTargetSet = new Set(selectedTargets);
+  const selectedCount = selectedTargets.length;
+  const allInstalled = installableTargets.length === 0;
   async function refreshIntegrations(
     successTitle: string,
     failureTitle: string,
@@ -156,29 +156,46 @@ export function AgentIntegrationsPanel({
           <Card withBorder radius="md" p="md">
             <Group justify="space-between" align="flex-start" mb="sm">
               <Title order={3} size="h4">{t("agentSkill")}</Title>
-              <Badge>{selectedCount} {t("selectedCount")}</Badge>
+              <Group gap="xs" wrap="nowrap">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="light"
+                  loading={refreshBusy}
+                  disabled={refreshBusy || skillBusy}
+                  leftSection={<RefreshIcon />}
+                  data-studio-action="refresh-agent-skills"
+                  onClick={() => void refreshIntegrations(
+                    "Agent Skill 状态已刷新",
+                    "Agent Skill 状态刷新失败",
+                  )}
+                >
+                  刷新
+                </Button>
+                <Badge>{selectedCount} {t("selectedCount")}</Badge>
+              </Group>
             </Group>
             <Stack gap="xs">
-              {targetGroups.map((group) => (
+              {targetRows.map((row) => (
                 <Checkbox
-                  key={group.id}
-                  checked={selectedGroupSet.has(group.id)}
-                  disabled={!group.installable || skillBusy}
-                  data-studio-section={`agent-skill-target-${group.id}`}
+                  key={row.target}
+                  checked={selectedTargetSet.has(row.target)}
+                  disabled={row.status === "ok" || skillBusy}
+                  data-studio-section={`agent-skill-target-${row.target}`}
                   onChange={(event) => {
-                    setSelectedGroupIds(
+                    setSelectedTargetsState(
                       event.target.checked
-                        ? [...new Set([...effectiveSelectedGroupIds, group.id])]
-                        : effectiveSelectedGroupIds.filter((item) => item !== group.id),
+                        ? [...new Set([...selectedTargets, row.target])]
+                        : selectedTargets.filter((item) => item !== row.target),
                     );
                   }}
                   label={(
                     <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
                       <Stack gap={2} miw={0}>
-                        <Text size="sm" fw={800}>{group.label}</Text>
-                        <Text size="xs" c="dimmed">{group.row.hint ?? group.row.expected_path}</Text>
+                        <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
+                        <Text size="xs" c="dimmed">{row.hint ?? row.expected_path}</Text>
                       </Stack>
-                      <Code>{skillTargetStatusLabel(group.row.status)}</Code>
+                      <Code>{skillTargetStatusLabel(row.status)}</Code>
                     </Group>
                   )}
                 />
@@ -266,17 +283,12 @@ function RefreshIcon(): ReactElement {
   );
 }
 
-function groupSkillTargets(rows: SkillTargetRow[]): SkillTargetGroup[] {
-  return skillTargetGroups.map((group) => {
-    const groupRows = rows.filter((row) => group.targets.includes(row.target as AgentMeshSkillTarget));
-    const row = groupRows.find((item) => item.status !== "ok") ?? groupRows[0] ?? {
-      target: group.targets[0],
-      expected_path: "",
-      status: "missing" as const,
-      ok: false,
-      expected: true,
-    };
-    return { ...group, row, installable: row.status !== "ok" };
+function skillTargetRows(rows: SkillTargetRow[]): Array<SkillTargetRow & { target: AgentMeshSkillTarget }> {
+  return defaultTargets.map((target) => {
+    const row = rows.find((item) => item.target === target);
+    return row
+      ? { ...row, target }
+      : { target, expected_path: "", status: "missing" as const, ok: false, expected: true };
   });
 }
 

@@ -26,6 +26,7 @@ import {
   updateStudioAdvancedSettings,
   type StudioAdvancedSettingsPayload,
 } from "../apps/studio-web/src/api/advanced-settings.js";
+import type { AgentMeshSkillTarget } from "../apps/studio-web/src/api/integrations.js";
 import {
   submitStudioMutation,
   type StudioMutationResponse,
@@ -2260,6 +2261,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(integrations, /CLI 检测/);
   assert.doesNotMatch(integrations, /data-studio-action="refresh-command-line-tool"/);
   assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"/);
+  assert.match(integrations, /data-studio-action="refresh-agent-skills"/);
   assert.match(integrations, />刷新</);
   assert.match(integrations, /data-studio-action="refresh-cli-diagnostics"[\s\S]*>1\/2</);
   assert.match(integrations, /OpenCode CLI/);
@@ -2267,13 +2269,15 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(integrations, /update_available/);
   assert.doesNotMatch(integrations, /更新命令行工具|0\.1\.9|0\.1\.10/);
   assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
-  assert.match(integrations, /Codex \/ Cursor \/ Antigravity \/ OpenCode/);
-  assert.match(integrations, /Claude Code/);
+  for (const label of ["Codex", "Cursor", "Antigravity", "OpenCode", "Claude Code"]) {
+    assert.match(integrations, new RegExp(`>${label}<`));
+  }
   assert.doesNotMatch(integrations, /刷新已有文件/);
-  assert.match(integrations, /agent-skill-target-agents"[^>]*disabled=""/);
+  assert.match(integrations, /agent-skill-target-codex"[^>]*disabled=""/);
   assert.doesNotMatch(integrations, /agent-skill-target-claude"[^>]*disabled=""/);
   assert.match(integrations, /agent-skill-target-claude"[^>]*checked=""/);
-  assert.match(integrations, />1 已选</);
+  assert.match(integrations, /agent-skill-target-cursor"[^>]*checked=""/);
+  assert.match(integrations, />4 已选</);
   assert.match(integrations, /安装选中的 Skill/);
   assert.match(integrations, />正常</);
   assert.match(integrations, />未安装</);
@@ -2285,10 +2289,13 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     report: {
       ...integrationsFixture(),
       skills: {
-        targets: [
-          ...integrationsFixture().skills.targets,
-          { target: "claude", expected_path: "~/.claude/skills/agentmesh/SKILL.md", status: "ok", ok: true, expected: true },
-        ],
+        targets: ["codex", "cursor", "antigravity", "opencode", "claude"].map((target) => ({
+          target: target as AgentMeshSkillTarget,
+          expected_path: `~/skills/${target}/SKILL.md`,
+          status: "ok" as const,
+          ok: true,
+          expected: true,
+        })),
       },
     },
   });
