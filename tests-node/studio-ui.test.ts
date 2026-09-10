@@ -2218,21 +2218,26 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     compatibility: compatibilityFixture(),
     update: { status: "error", message: "update check failed: 403 rate limit exceeded" },
   });
-  assert.match(updateError, /暂时无法检查/);
   assert.match(updateError, /重新检查/);
   assert.match(updateError, /GitHub 更新检查请求受限/);
   assert.doesNotMatch(updateError, /检查失败|update check failed: 403/);
+  const networkUpdateError = renderSettingsAboutPanel({
+    status: "ready",
+    compatibility: compatibilityFixture(),
+    update: { status: "error", message: "error sending request for url (https://github.com/o/r/latest.json)" },
+  });
+  assert.match(networkUpdateError, /暂时连不上 GitHub/);
+  assert.doesNotMatch(networkUpdateError, /error sending request|https:\/\/github\.com/);
   const legacySettings = renderSettingsAboutPanel({
     status: "ready",
     compatibility: legacyCompatibilityFixture(),
     update: { status: "loading" },
   });
-  assert.match(legacySettings, /兼容性元数据/);
+  assert.doesNotMatch(legacySettings, /兼容性元数据|工作区兼容性|诊断说明/);
+  assert.doesNotMatch(legacySettings, /当前按旧工作区可读写处理/);
   assert.doesNotMatch(legacySettings, /元数据状态|Packet Schema 版本|最低读取版本/);
   assert.doesNotMatch(legacySettings, /运行时版本|当前入口|最低写入版本|最后更新时间/);
   assert.doesNotMatch(legacySettings, /最后写入方/);
-  assert.match(legacySettings, /诊断说明/);
-  assert.match(legacySettings, /当前按旧工作区可读写处理，下次成功写入后会自动补齐/);
   assert.doesNotMatch(legacySettings, /compatibility metadata is missing|legacy workspace|packet schema unknown|未知|未记录/);
 
   const readOnlySettings = renderSettingsAboutPanel({
@@ -2245,6 +2250,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     update: { status: "ready", report: updateFixture() },
   });
   assert.match(readOnlySettings, /升级 AgentMesh|写入前需要升级/);
+  assert.match(readOnlySettings, /工作区兼容性/);
   assert.match(readOnlySettings, /最低写入版本 0\.2\.0 高于当前运行时 0\.1\.8/);
   assert.doesNotMatch(readOnlySettings, /运行时版本|当前入口/);
 
@@ -2273,14 +2279,12 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     assert.match(integrations, new RegExp(`>${label}<`));
   }
   assert.doesNotMatch(integrations, /刷新已有文件/);
-  assert.match(integrations, /agent-skill-target-codex"[^>]*disabled=""/);
-  assert.doesNotMatch(integrations, /agent-skill-target-claude"[^>]*disabled=""/);
-  assert.match(integrations, /agent-skill-target-claude"[^>]*checked=""/);
-  assert.match(integrations, /agent-skill-target-cursor"[^>]*checked=""/);
-  assert.match(integrations, />4 已选</);
-  assert.match(integrations, /安装选中的 Skill/);
+  assert.doesNotMatch(integrations, /安装选中的 Skill|已全部安装|已选/);
+  assert.match(integrations, />1 \/ 5</);
   assert.match(integrations, />正常</);
   assert.match(integrations, />未安装</);
+  assert.match(integrations, />安装</);
+  assert.doesNotMatch(integrations, /type="checkbox"/);
   assert.doesNotMatch(integrations, />ok</);
   assert.doesNotMatch(integrations, />studio-desktop</);
 
@@ -2299,10 +2303,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
       },
     },
   });
-  assert.match(installedIntegrations, /已全部安装/);
-  assert.doesNotMatch(installedIntegrations, /安装选中的 Skill/);
-  assert.match(installedIntegrations, /agent-skill-target-claude"[^>]*disabled=""/);
-  assert.match(installedIntegrations, />0 已选</);
+  assert.match(installedIntegrations, />5 \/ 5</);
+  assert.doesNotMatch(installedIntegrations, />安装</);
+  assert.doesNotMatch(installedIntegrations, />未安装</);
+  assert.match(installedIntegrations, /agent-skill-target-claude"/);
 
   const settingsResources = renderSettingsView("resources");
   assert.match(settingsResources, /data-studio-section="studio-settings-view"/);

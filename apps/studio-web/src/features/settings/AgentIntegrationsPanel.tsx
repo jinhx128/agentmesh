@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   Code,
   Group,
   Paper,
@@ -12,7 +11,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { skillTargetStatusLabel } from "../../app/status-labels.js";
@@ -68,14 +67,8 @@ export function AgentIntegrationsPanel({
   const { t } = useStudioCopy();
   const refreshBusyRef = useRef(false);
   const [refreshBusy, setRefreshBusy] = useState(false);
-  const [skillBusy, setSkillBusy] = useState(false);
-  const [selectedTargetsState, setSelectedTargetsState] = useState<AgentMeshSkillTarget[] | null>(null);
+  const [busyTarget, setBusyTarget] = useState<AgentMeshSkillTarget | null>(null);
   const targetRows = state.status === "ready" ? skillTargetRows(state.report.skills.targets) : [];
-  const installableTargets = targetRows.filter((row) => row.status !== "ok").map((row) => row.target);
-  const installableKey = installableTargets.join(",");
-  useEffect(() => {
-    setSelectedTargetsState(null);
-  }, [installableKey]);
 
   if (state.status === "loading") {
     return (
@@ -97,11 +90,7 @@ export function AgentIntegrationsPanel({
 
   const report = state.report;
   const providerCliRows = report.provider_clis.tools;
-  const selectedTargets = (selectedTargetsState ?? installableTargets)
-    .filter((target) => installableTargets.includes(target));
-  const selectedTargetSet = new Set(selectedTargets);
-  const selectedCount = selectedTargets.length;
-  const allInstalled = installableTargets.length === 0;
+  const installedCount = targetRows.filter((row) => row.status === "ok").length;
   async function refreshIntegrations(
     successTitle: string,
     failureTitle: string,
@@ -122,15 +111,15 @@ export function AgentIntegrationsPanel({
     }
   }
 
-  async function installSkills(): Promise<void> {
-    setSkillBusy(true);
+  async function installSkill(target: AgentMeshSkillTarget): Promise<void> {
+    setBusyTarget(target);
     try {
-      await onInstallAgentSkills({ targets: selectedTargets, force: true });
-      showStudioSuccess("Agent Skill 安装成功", `已处理 ${selectedCount} 个目标`);
+      await onInstallAgentSkills({ targets: [target], force: true });
+      showStudioSuccess("Agent Skill 安装成功", skillTargetLabels[target] ?? target);
     } catch (error) {
       showStudioError("Agent Skill 安装失败", readableError(error, "请稍后重试"));
     } finally {
-      setSkillBusy(false);
+      setBusyTarget(null);
     }
   }
 
@@ -162,7 +151,7 @@ export function AgentIntegrationsPanel({
                   size="xs"
                   variant="light"
                   loading={refreshBusy}
-                  disabled={refreshBusy || skillBusy}
+                  disabled={refreshBusy || busyTarget !== null}
                   leftSection={<RefreshIcon />}
                   data-studio-action="refresh-agent-skills"
                   onClick={() => void refreshIntegrations(
@@ -172,44 +161,44 @@ export function AgentIntegrationsPanel({
                 >
                   刷新
                 </Button>
-                <Badge>{selectedCount} {t("selectedCount")}</Badge>
+                <Badge color="green">{installedCount} / {targetRows.length}</Badge>
               </Group>
             </Group>
             <Stack gap="xs">
-              {targetRows.map((row) => (
-                <Checkbox
-                  key={row.target}
-                  checked={selectedTargetSet.has(row.target)}
-                  disabled={row.status === "ok" || skillBusy}
-                  data-studio-section={`agent-skill-target-${row.target}`}
-                  onChange={(event) => {
-                    setSelectedTargetsState(
-                      event.target.checked
-                        ? [...new Set([...selectedTargets, row.target])]
-                        : selectedTargets.filter((item) => item !== row.target),
-                    );
-                  }}
-                  label={(
-                    <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
-                      <Stack gap={2} miw={0}>
-                        <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
-                        <Text size="xs" c="dimmed">{row.hint ?? row.expected_path}</Text>
-                      </Stack>
-                      <Code>{skillTargetStatusLabel(row.status)}</Code>
+              {targetRows.map((row) => {
+                const isOk = row.status === "ok";
+                const isBusy = busyTarget === row.target;
+                const anyBusy = busyTarget !== null || refreshBusy;
+                return (
+                  <Group
+                    key={row.target}
+                    justify="space-between"
+                    align="flex-start"
+                    gap="md"
+                    wrap="nowrap"
+                    data-studio-section={`agent-skill-target-${row.target}`}
+                  >
+                    <Stack gap={2} miw={0} style={{ flex: 1 }}>
+                      <Text size="sm" fw={800}>{skillTargetLabels[row.target] ?? row.target}</Text>
+                      <Text size="xs" c="dimmed">{row.hint ?? row.expected_path}</Text>
+                    </Stack>
+                    <Group gap="xs" wrap="nowrap">
+                      <Badge color={isOk ? "green" : "gray"}>{skillTargetStatusLabel(row.status)}</Badge>
+                      <Button
+                        size="xs"
+                        variant={isOk ? "light" : "filled"}
+                        color={isOk ? "gray" : undefined}
+                        loading={isBusy}
+                        disabled={isOk || anyBusy}
+                        onClick={() => void installSkill(row.target)}
+                      >
+                        {isOk ? "已安装" : row.status === "missing" ? "安装" : "更新"}
+                      </Button>
                     </Group>
-                  )}
-                />
-              ))}
+                  </Group>
+                );
+              })}
             </Stack>
-            <Button
-              mt="sm"
-              type="button"
-              loading={skillBusy}
-              disabled={allInstalled || selectedCount === 0 || skillBusy}
-              onClick={() => void installSkills()}
-            >
-              {allInstalled ? t("allSkillsInstalled") : t("installSelectedSkills")}
-            </Button>
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="cli-diagnostics" pt="md" data-studio-section="agent-integrations-cli-panel">

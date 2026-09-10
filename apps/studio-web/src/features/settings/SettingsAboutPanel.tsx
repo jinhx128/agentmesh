@@ -190,13 +190,14 @@ function VersionUpdateCard({
           <Title order={3} size="h4">版本与更新</Title>
           <UpdateRefreshButton onRefresh={onRefresh} busy={refreshBusy} />
         </Group>
-        {compatibilityWarning ? <Alert color="yellow" variant="light">{compatibilityWarning}</Alert> : null}
-        {reasonItems.length > 0 ? (
-          <Alert color="yellow" variant="light" title="兼容性元数据">
-            <Text size="sm" fw={700} mb={4}>诊断说明</Text>
-            <List size="sm">
-              {reasonItems.map((reason) => <List.Item key={reason}>{reason}</List.Item>)}
-            </List>
+        {compatibilityWarning ? (
+          <Alert color="yellow" variant="light" title="工作区兼容性">
+            <Text size="sm" mb={reasonItems.length > 0 ? 4 : 0}>{compatibilityWarning}</Text>
+            {reasonItems.length > 0 ? (
+              <List size="sm">
+                {reasonItems.map((reason) => <List.Item key={reason}>{reason}</List.Item>)}
+              </List>
+            ) : null}
           </Alert>
         ) : null}
         <CommandLineToolSection integration={commandLineTool} />
@@ -263,12 +264,12 @@ function CommandLineToolSection({
       {state.status === "ready" && report ? (
         <Stack gap="sm">
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-            <InfoItem label={t("installedVersion")} value={report.installed_version || t("targetMissing")} />
-            <InfoItem label={t("latestVersion")} value={report.latest_version || t("targetMissing")} />
+            <InfoItem label={t("installedVersion")} value={displayVersion(report.installed_version) || t("targetMissing")} />
+            <InfoItem label={t("latestVersion")} value={displayVersion(report.latest_version) || t("targetMissing")} />
             <InfoItem label={t("commandLinePath")} value={report.path ?? t("targetMissing")} />
           </SimpleGrid>
-          {state.refreshError ? <Alert color="yellow" variant="light">命令行工具状态刷新失败：{state.refreshError}</Alert> : null}
-          {report.diagnostics.map((diagnostic, index) => (
+          {state.refreshError ? <Alert color="yellow" variant="light">状态刷新失败：{state.refreshError}</Alert> : null}
+          {visibleDiagnostics(report.diagnostics).map((diagnostic, index) => (
             <Alert key={`${diagnostic}-${index}`} color="yellow" variant="light">{diagnostic}</Alert>
           ))}
           <Group justify="flex-end">
@@ -299,6 +300,17 @@ function DesktopUpdateSection({
     ? Math.min(100, Math.round((nativeState.downloadedBytes / nativeState.totalBytes) * 100))
     : undefined;
   const downloading = nativeState.status === "downloading" || nativeState.status === "restarting";
+  const updateIssue = update.status === "error"
+    ? updateErrorMessage(update.message)
+    : update.status === "ready" && update.refreshError
+      ? updateErrorMessage(update.refreshError)
+      : undefined;
+  const rawNativeIssue = nativeState.status === "error"
+    ? nativeState.message
+    : updater?.refreshError;
+  const nativeIssue = rawNativeIssue && updateErrorMessage(rawNativeIssue) !== updateIssue
+    ? updateErrorMessage(rawNativeIssue)
+    : undefined;
   return (
     <Box component="section" className="studio-version-component" data-studio-section="settings-desktop-app">
       <Group justify="space-between" align="flex-start" gap="md" mb="sm">
@@ -314,16 +326,14 @@ function DesktopUpdateSection({
           <InfoItem label="最新应用版本" value={latestVersion} />
         </SimpleGrid>
         {update.status === "loading" ? <Alert variant="light">正在检查发布版本。</Alert> : null}
-        {update.status === "error" ? <Alert color="red" variant="light" title="发布版本暂时无法检查">{updateErrorMessage(update.message)}</Alert> : null}
-        {update.status === "ready" && update.refreshError ? <Alert color="yellow" variant="light">发布版本刷新失败：{updateErrorMessage(update.refreshError)}</Alert> : null}
+        {updateIssue ? <Alert color="yellow" variant="light">{updateIssue}</Alert> : null}
         {nativeState.status === "update_available" && nativeState.notes ? <Text size="sm">{nativeState.notes}</Text> : null}
         {nativeState.status === "downloading" ? (
           <Text size="sm" role="status" aria-live="polite">已下载 {formatBytes(nativeState.downloadedBytes)}{nativeState.totalBytes
             ? ` / ${formatBytes(nativeState.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
             : ""}</Text>
         ) : null}
-        {nativeState.status === "error" ? <Alert color="red" variant="light" role="alert">{nativeState.message}</Alert> : null}
-        {updater?.refreshError ? <Alert color="yellow" variant="light">桌面应用状态刷新失败：{updater.refreshError}</Alert> : null}
+        {nativeIssue ? <Alert color="yellow" variant="light" role="alert">{nativeIssue}</Alert> : null}
         {autoUpdate ? <DesktopAutoUpdateSwitch {...autoUpdate} /> : null}
         {nativeState.status === "update_available" && updater ? (
           <Group justify="flex-end">
@@ -387,7 +397,23 @@ function updateErrorMessage(message: string): string {
   if (/403|429|rate limit/i.test(message)) {
     return "GitHub 更新检查请求受限，请稍后重新检查；本机 AgentMesh 可以继续使用。";
   }
+  if (/error sending request|ENOTFOUND|ETIMEDOUT|timeout|aborted|network/i.test(message)) {
+    return "暂时连不上 GitHub，无法检查新版本；本机 AgentMesh 可以继续使用。";
+  }
   return message;
+}
+
+/** Informational probe notes restate how detection worked; only real failures need a banner. */
+function visibleDiagnostics(diagnostics: string[]): string[] {
+  return diagnostics
+    .filter((entry) => !/^version probe used Node\.js runtime: /.test(entry))
+    .map((entry) => /^registry check failed: /.test(entry)
+      ? "暂时连不上 npm registry，无法查询最新版本；已安装版本不受影响。"
+      : entry);
+}
+
+function displayVersion(version: string): string {
+  return version === "unknown" ? "暂不可用" : version;
 }
 
 function updateTargetLabel(target: StudioUpdateTargetReport): string {
