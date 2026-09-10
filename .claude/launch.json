@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dist-node/apps/studio/src/main.js", "--port", "4777"],
+      "port": 4777
+    }
+  ]
+}

@@ -2267,10 +2267,35 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(integrations, /update_available/);
   assert.doesNotMatch(integrations, /更新命令行工具|0\.1\.9|0\.1\.10/);
   assert.doesNotMatch(integrations, /Bin 目录|确认替换或 PATH shadowing/);
+  assert.match(integrations, /Codex \/ Cursor \/ Antigravity \/ OpenCode/);
+  assert.match(integrations, /Claude Code/);
+  assert.doesNotMatch(integrations, /刷新已有文件/);
+  assert.match(integrations, /agent-skill-target-agents"[^>]*disabled=""/);
+  assert.doesNotMatch(integrations, /agent-skill-target-claude"[^>]*disabled=""/);
+  assert.match(integrations, /agent-skill-target-claude"[^>]*checked=""/);
+  assert.match(integrations, />1 已选</);
   assert.match(integrations, /安装选中的 Skill/);
   assert.match(integrations, />正常</);
+  assert.match(integrations, />未安装</);
   assert.doesNotMatch(integrations, />ok</);
   assert.doesNotMatch(integrations, />studio-desktop</);
+
+  const installedIntegrations = renderAgentIntegrationsPanel({
+    status: "ready",
+    report: {
+      ...integrationsFixture(),
+      skills: {
+        targets: [
+          ...integrationsFixture().skills.targets,
+          { target: "claude", expected_path: "~/.claude/skills/agentmesh/SKILL.md", status: "ok", ok: true, expected: true },
+        ],
+      },
+    },
+  });
+  assert.match(installedIntegrations, /已全部安装/);
+  assert.doesNotMatch(installedIntegrations, /安装选中的 Skill/);
+  assert.match(installedIntegrations, /agent-skill-target-claude"[^>]*disabled=""/);
+  assert.match(installedIntegrations, />0 已选</);
 
   const settingsResources = renderSettingsView("resources");
   assert.match(settingsResources, /data-studio-section="studio-settings-view"/);

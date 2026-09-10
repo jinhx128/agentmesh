@@ -12,7 +12,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import { skillTargetStatusLabel } from "../../app/status-labels.js";
@@ -42,12 +42,19 @@ export interface AgentIntegrationsPanelProps {
   }) => Promise<void>;
 }
 
-const defaultTargets: AgentMeshSkillTarget[] = [
-  "codex",
-  "cursor",
-  "antigravity",
-  "opencode",
-  "claude",
+type SkillTargetRow = StudioIntegrationsReport["skills"]["targets"][number];
+
+interface SkillTargetGroup {
+  id: string;
+  label: string;
+  targets: AgentMeshSkillTarget[];
+  row: SkillTargetRow;
+  installable: boolean;
+}
+
+const skillTargetGroups: Array<{ id: string; label: string; targets: AgentMeshSkillTarget[] }> = [
+  { id: "agents", label: "Codex / Cursor / Antigravity / OpenCode", targets: ["codex", "cursor", "antigravity", "opencode"] },
+  { id: "claude", label: "Claude Code", targets: ["claude"] },
 ];
 
 export function AgentIntegrationsPanel({
@@ -59,8 +66,13 @@ export function AgentIntegrationsPanel({
   const refreshBusyRef = useRef(false);
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [skillBusy, setSkillBusy] = useState(false);
-  const [forceSkill, setForceSkill] = useState(false);
-  const [selectedTargets, setSelectedTargets] = useState<AgentMeshSkillTarget[]>(["codex"]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[] | null>(null);
+  const targetGroups = state.status === "ready" ? groupSkillTargets(state.report.skills.targets) : [];
+  const installableGroupIds = targetGroups.filter((group) => group.installable).map((group) => group.id);
+  const installableKey = installableGroupIds.join(",");
+  useEffect(() => {
+    setSelectedGroupIds(null);
+  }, [installableKey]);
 
   if (state.status === "loading") {
     return (
@@ -82,17 +94,14 @@ export function AgentIntegrationsPanel({
 
   const report = state.report;
   const providerCliRows = report.provider_clis.tools;
-  const selectedTargetSet = new Set(selectedTargets);
-  const targetRows: StudioIntegrationsReport["skills"]["targets"] = report.skills.targets.length > 0
-    ? report.skills.targets
-    : defaultTargets.map((target) => ({
-      target,
-      expected_path: "",
-      status: "missing" as const,
-      ok: false,
-      expected: true,
-    }));
-  const selectedCount = selectedTargets.length;
+  const effectiveSelectedGroupIds = (selectedGroupIds ?? installableGroupIds)
+    .filter((id) => installableGroupIds.includes(id));
+  const selectedGroupSet = new Set(effectiveSelectedGroupIds);
+  const selectedTargets = targetGroups
+    .filter((group) => selectedGroupSet.has(group.id))
+    .flatMap((group) => group.targets);
+  const selectedCount = effectiveSelectedGroupIds.length;
+  const allInstalled = installableGroupIds.length === 0;
   async function refreshIntegrations(
     successTitle: string,
     failureTitle: string,
@@ -116,8 +125,8 @@ export function AgentIntegrationsPanel({
   async function installSkills(): Promise<void> {
     setSkillBusy(true);
     try {
-      await onInstallAgentSkills({ targets: selectedTargets, force: forceSkill });
-      showStudioSuccess("Agent Skill 安装成功", `已处理 ${selectedTargets.length} 个目标`);
+      await onInstallAgentSkills({ targets: selectedTargets, force: true });
+      showStudioSuccess("Agent Skill 安装成功", `已处理 ${selectedCount} 个目标`);
     } catch (error) {
       showStudioError("Agent Skill 安装失败", readableError(error, "请稍后重试"));
     } finally {
@@ -150,43 +159,39 @@ export function AgentIntegrationsPanel({
               <Badge>{selectedCount} {t("selectedCount")}</Badge>
             </Group>
             <Stack gap="xs">
-              {targetRows.map((target) => (
+              {targetGroups.map((group) => (
                 <Checkbox
-                  key={target.target}
-                  checked={selectedTargetSet.has(target.target)}
+                  key={group.id}
+                  checked={selectedGroupSet.has(group.id)}
+                  disabled={!group.installable || skillBusy}
+                  data-studio-section={`agent-skill-target-${group.id}`}
                   onChange={(event) => {
-                    setSelectedTargets((current) =>
+                    setSelectedGroupIds(
                       event.target.checked
-                        ? [...new Set([...current, target.target])]
-                        : current.filter((item) => item !== target.target),
+                        ? [...new Set([...effectiveSelectedGroupIds, group.id])]
+                        : effectiveSelectedGroupIds.filter((item) => item !== group.id),
                     );
                   }}
                   label={(
                     <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
                       <Stack gap={2} miw={0}>
-                        <Text size="sm" fw={800}>{target.target}</Text>
-                        <Text size="xs" c="dimmed">{target.hint ?? target.expected_path}</Text>
+                        <Text size="sm" fw={800}>{group.label}</Text>
+                        <Text size="xs" c="dimmed">{group.row.hint ?? group.row.expected_path}</Text>
                       </Stack>
-                      <Code>{skillTargetStatusLabel(target.status)}</Code>
+                      <Code>{skillTargetStatusLabel(group.row.status)}</Code>
                     </Group>
                   )}
                 />
               ))}
             </Stack>
-            <Checkbox
-              mt="sm"
-              checked={forceSkill}
-              label={t("refreshExistingFiles")}
-              onChange={(event) => setForceSkill(event.target.checked)}
-            />
             <Button
               mt="sm"
               type="button"
               loading={skillBusy}
-              disabled={selectedTargets.length === 0 || skillBusy}
+              disabled={allInstalled || selectedCount === 0 || skillBusy}
               onClick={() => void installSkills()}
             >
-              {t("installSelectedSkills")}
+              {allInstalled ? t("allSkillsInstalled") : t("installSelectedSkills")}
             </Button>
           </Card>
         </Tabs.Panel>
@@ -259,6 +264,20 @@ function RefreshIcon(): ReactElement {
       />
     </svg>
   );
+}
+
+function groupSkillTargets(rows: SkillTargetRow[]): SkillTargetGroup[] {
+  return skillTargetGroups.map((group) => {
+    const groupRows = rows.filter((row) => group.targets.includes(row.target as AgentMeshSkillTarget));
+    const row = groupRows.find((item) => item.status !== "ok") ?? groupRows[0] ?? {
+      target: group.targets[0],
+      expected_path: "",
+      status: "missing" as const,
+      ok: false,
+      expected: true,
+    };
+    return { ...group, row, installable: row.status !== "ok" };
+  });
 }
 
 function readableError(error: unknown, fallback: string): string {
