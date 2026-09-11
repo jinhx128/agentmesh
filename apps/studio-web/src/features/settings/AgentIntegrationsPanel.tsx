@@ -81,7 +81,7 @@ export function AgentIntegrationsPanel({
   if (state.status === "loading") {
     return (
       <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
-        <PanelHeader title={t("environment")} meta={t("running")} />
+        <PanelHeader title={t("agentTools")} meta={t("running")} />
         <Alert mt="md" variant="light">{t("loadingIntegrations")}</Alert>
       </Paper>
     );
@@ -90,7 +90,7 @@ export function AgentIntegrationsPanel({
   if (state.status === "error") {
     return (
       <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
-        <PanelHeader title={t("environment")} meta="Error" />
+        <PanelHeader title={t("agentTools")} meta="Error" />
         <Alert mt="md" color="red" title={t("noIntegrations")} variant="light">{state.message}</Alert>
       </Paper>
     );
@@ -133,8 +133,7 @@ export function AgentIntegrationsPanel({
 
   return (
     <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
-      <PanelHeader title={t("environment")} />
-      <Card withBorder radius="md" p="md" mt="md" data-studio-section="agent-integrations-tools">
+      <Card withBorder radius="md" p="md" data-studio-section="agent-integrations-tools">
         <Group justify="space-between" align="flex-start" mb="sm">
           <Stack gap={2}>
             <Title order={3} size="h4">{t("agentTools")}</Title>

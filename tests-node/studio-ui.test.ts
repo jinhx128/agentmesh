@@ -247,8 +247,8 @@ test("React app renders the one-shot Mantine shell semantics", () => {
   assert.doesNotMatch(app, />设置<\/button>/);
   assert.doesNotMatch(app, />手册<\/button>/);
   assert.match(app, />资源</);
-  assert.match(app, />环境</);
   assert.match(app, />关于</);
+  assert.doesNotMatch(app, />环境</);
   assert.doesNotMatch(app, /data-studio-section="navigator-data-switch"/);
   assert.doesNotMatch(app, /studio-data-switch/);
   assert.match(app, /aria-label="搜索活动"/);
@@ -2359,10 +2359,10 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settingsResources, /settings-section-tabs/);
   assert.match(settingsResources, />资源</);
   assert.match(settingsResources, />高级</);
-  assert.match(settingsResources, />环境</);
   assert.match(settingsResources, />关于</);
+  assert.doesNotMatch(settingsResources, />环境</);
   assert.ok(settingsResources.indexOf(">资源") < settingsResources.indexOf(">高级"));
-  assert.ok(settingsResources.indexOf(">高级") < settingsResources.indexOf(">环境"));
+  assert.ok(settingsResources.indexOf(">高级") < settingsResources.indexOf(">关于"));
   assert.match(settingsResources, /data-studio-section="settings-resource-workspace"/);
   assert.match(settingsResources, /data-studio-section="react-catalog-pilot"/);
 
@@ -2500,19 +2500,16 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(advancedSettingsSource, /setDefaultAgents\(settings\.user|setFallbackAgents\(settings\.user|SettingSummary/);
   assert.doesNotMatch(copySource, /当前生效/);
 
-  const settingsEnvironment = renderSettingsView("environment");
-  assert.match(settingsEnvironment, /data-studio-section="settings-environment-workspace"/);
-  assert.match(settingsEnvironment, /data-studio-section="agent-integrations"/);
-  assert.match(settingsEnvironment, /Agent Skill/);
-  assert.match(settingsEnvironment, /Agent 工具/);
-  assert.doesNotMatch(settingsEnvironment, /命令行工具|CLI 检测/);
-  assert.doesNotMatch(settingsEnvironment, />studio-desktop</);
-
   const settingsAbout = renderSettingsView("about");
   assert.match(settingsAbout, /data-studio-section="settings-about-workspace"/);
   assert.match(settingsAbout, /data-studio-section="settings-about"/);
   assert.match(settingsAbout, /版本与更新/);
   assert.match(settingsAbout, /data-studio-section="settings-version-update"/);
+  assert.match(settingsAbout, /data-studio-section="agent-integrations"/);
+  assert.match(settingsAbout, /Agent Skill/);
+  assert.match(settingsAbout, /Agent 工具/);
+  assert.doesNotMatch(settingsAbout, /CLI 检测/);
+  assert.doesNotMatch(settingsAbout, />studio-desktop</);
   assert.match(settingsAbout, /AgentMesh CLI/);
   assert.match(settingsAbout, /桌面应用/);
   assert.doesNotMatch(settingsAbout, /运行时版本/);
@@ -2666,8 +2663,9 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     setupCopy,
     /npm install -g agentmesh|agentmesh cli detect --json|agentmesh update check --json/,
   );
-  assert.match(setupCopy, /设置 \/ 环境 \/ 外部 CLI|设置 \/ 关于 \/ 版本与更新/);
-  assert.doesNotMatch(setupCopy, /设置 \/ 环境 \/ CLI 检测|只能手动替换 DMG/);
+  assert.match(setupCopy, /设置 \/ 关于 \/ Agent 工具/);
+  assert.match(setupCopy, /设置 \/ 关于 \/ 版本与更新/);
+  assert.doesNotMatch(setupCopy, /设置 \/ 环境|只能手动替换 DMG/);
   const quickstart = MANUAL_SECTIONS.find((section) => section.id === "quickstart");
   assert.ok(quickstart);
   assert.deepEqual(

@@ -1,4 +1,5 @@
 import {
+  Stack,
   Tabs,
 } from "@mantine/core";
 import { useState, type KeyboardEvent, type ReactElement } from "react";
@@ -20,7 +21,7 @@ import {
   type AdvancedSettingsPanelProps,
 } from "./AdvancedSettingsPanel.js";
 
-export type SettingsTabId = "resources" | "advanced" | "environment" | "about";
+export type SettingsTabId = "resources" | "advanced" | "about";
 
 export interface SettingsViewProps {
   resources: CatalogViewProps;
@@ -36,7 +37,6 @@ const SETTINGS_TABS: Array<{
 }> = [
   { id: "resources", labelKey: "resources" },
   { id: "advanced", labelKey: "advanced" },
-  { id: "environment", labelKey: "environment" },
   { id: "about", labelKey: "about" },
 ];
 
@@ -75,11 +75,11 @@ export function SettingsView({
       <Tabs.Panel value="advanced" pt="md" data-studio-section="settings-advanced-workspace">
         <AdvancedSettingsPanel {...advanced} />
       </Tabs.Panel>
-      <Tabs.Panel value="environment" pt="md" data-studio-section="settings-environment-workspace">
-        <AgentIntegrationsPanel {...environment} />
-      </Tabs.Panel>
       <Tabs.Panel value="about" pt="md" data-studio-section="settings-about-workspace">
-        <SettingsAboutPanel {...about} />
+        <Stack gap="md">
+          <SettingsAboutPanel {...about} />
+          <AgentIntegrationsPanel {...environment} />
+        </Stack>
       </Tabs.Panel>
     </Tabs>
   );

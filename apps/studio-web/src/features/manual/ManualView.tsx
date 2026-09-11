@@ -77,7 +77,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         title: "外部 CLI 与底层工具",
         body: "AgentMesh 支持的外部 AI CLI 需要各自安装和登录；AgentMesh 负责用统一 resolver 检测它们是否可用。",
         details: [
-          "命令行检测：agentmesh cli detect --json；桌面端在设置 / 环境 / 外部 CLI 展示同一份结果。",
+          "命令行检测：agentmesh cli detect --json；桌面端在设置 / 关于 / Agent 工具展示同一份结果。",
           "检测会查 PATH、app preference 和常见安装路径，不把某个人机器上的绝对路径写死到逻辑里。",
           "检测到 CLI 不等于已授权成功；模型列表、help/version、auth 状态仍以对应工具实际返回为准。",
         ],
@@ -112,7 +112,7 @@ export const MANUAL_SECTIONS: ManualSection[] = [
         body: "先确认 AgentMesh 自己可用，再确认外部 AI CLI、Agent Skill 和工作区兼容性。",
         details: [
           "agentmesh --version 确认当前 runtime 版本；agentmesh update check --json 确认是否有新版本。",
-          "agentmesh cli detect --json 或设置 / 环境 / 外部 CLI 确认 Codex、Claude、Cursor、Antigravity、OpenCode 的可见状态。",
+          "agentmesh cli detect --json 或设置 / 关于 / Agent 工具确认 Codex、Claude、Cursor、Antigravity、OpenCode 的可见状态。",
           "关于页确认当前工作区是可读写，旧工作区会在下一次成功写入后补齐兼容性元数据。",
         ],
       },
