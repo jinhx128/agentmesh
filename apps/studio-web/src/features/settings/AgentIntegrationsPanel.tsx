@@ -146,14 +146,14 @@ export function AgentIntegrationsPanel({
               variant="light"
               loading={refreshBusy}
               disabled={refreshBusy || busyTarget !== null}
-              leftSection={<RefreshIcon />}
               data-studio-action="refresh-agent-integrations"
               onClick={() => void refreshIntegrations(
                 "环境状态已刷新",
                 "环境状态刷新失败",
               )}
+              aria-label="刷新"
             >
-              刷新
+              <RefreshIcon />
             </Button>
             <Badge color={readyCount === toolRows.length ? "green" : "gray"}>
               {readyCount} / {toolRows.length}

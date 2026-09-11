@@ -2259,6 +2259,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(integrations, /Agent 工具/);
   assert.match(integrations, /CLI 可用后才需要安装 Agent Skill/);
   assert.match(integrations, /data-studio-action="refresh-agent-integrations"/);
+  assert.match(integrations, /aria-label="刷新"/);
+  assert.doesNotMatch(integrations, />刷新</);
   assert.doesNotMatch(integrations, /data-studio-action="refresh-agent-skills|refresh-cli-diagnostics"/);
   assert.doesNotMatch(integrations, /agent-integrations-tabs|agent-integrations-skill-tab|agent-integrations-cli-tab/);
   assert.match(integrations, />0 \/ 5</);
