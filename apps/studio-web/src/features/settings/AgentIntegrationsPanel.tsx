@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -140,9 +141,9 @@ export function AgentIntegrationsPanel({
             <Text size="xs" c="dimmed">CLI 可用后才需要安装 Agent Skill。</Text>
           </Stack>
           <Group gap="xs" wrap="nowrap">
-            <Button
+            <ActionIcon
               type="button"
-              size="xs"
+              size={30}
               variant="light"
               loading={refreshBusy}
               disabled={refreshBusy || busyTarget !== null}
@@ -151,10 +152,11 @@ export function AgentIntegrationsPanel({
                 "环境状态已刷新",
                 "环境状态刷新失败",
               )}
+              title="刷新"
               aria-label="刷新"
             >
               <RefreshIcon />
-            </Button>
+            </ActionIcon>
             <Badge color={readyCount === toolRows.length ? "green" : "gray"}>
               {readyCount} / {toolRows.length}
             </Badge>
