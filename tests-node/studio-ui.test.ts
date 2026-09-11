@@ -2267,7 +2267,6 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   }
   assert.match(integrations, /OpenCode/);
   assert.match(integrations, /opencode-cli · opencode/);
-  assert.match(integrations, />已找到</);
   assert.match(integrations, />未找到</);
   assert.match(integrations, />正常</);
   assert.match(integrations, />未安装</);
@@ -2305,6 +2304,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     },
   });
   assert.match(installedIntegrations, />5 \/ 5</);
+  assert.doesNotMatch(installedIntegrations, />已找到</);
   const mismatchedIntegrations = renderAgentIntegrationsPanel({
     status: "ready",
     report: {

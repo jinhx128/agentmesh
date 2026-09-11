@@ -200,9 +200,7 @@ function IntegrationToolCard({
           <Text size="sm" fw={800}>{row.label}</Text>
           {cli ? <Text size="xs" c="dimmed">{cli.adapter} · {cli.command}</Text> : null}
         </Stack>
-        <Badge color={cliFound ? "green" : "gray"}>
-          {cliFound ? t("detected") : t("targetMissing")}
-        </Badge>
+        {cliFound ? null : <Badge color="gray">{t("targetMissing")}</Badge>}
       </Group>
       {cliFound && cli ? (
         <Stack gap={2}>
