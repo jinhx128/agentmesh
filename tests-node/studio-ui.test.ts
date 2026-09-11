@@ -2171,7 +2171,6 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     onChange: async () => {},
   });
   assert.match(settings, /data-studio-section="settings-version-update"/);
-  assert.match(settings, /版本与更新/);
   assert.match(settings, /data-studio-section="settings-command-line-tool"/);
   assert.match(settings, /data-studio-section="settings-desktop-app"/);
   assert.match(settings, /AgentMesh CLI/);
@@ -2256,7 +2255,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
 
   const integrations = renderAgentIntegrationsPanel({ status: "ready", report: integrationsFixture() });
   assert.match(integrations, /data-studio-section="agent-integrations-tools"/);
-  assert.match(integrations, /Agent 工具/);
+  assert.doesNotMatch(integrations, /Agent 工具/);
   assert.match(integrations, /CLI 可用后才需要安装 Agent Skill/);
   assert.match(integrations, /data-studio-action="refresh-agent-integrations"/);
   assert.match(integrations, /aria-label="刷新"/);
@@ -2502,6 +2501,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
 
   const settingsAbout = renderSettingsView("about");
   assert.match(settingsAbout, /data-studio-section="settings-about-workspace"/);
+  assert.match(settingsAbout, /data-studio-section="settings-about-tabs"/);
   assert.match(settingsAbout, /data-studio-section="settings-about"/);
   assert.match(settingsAbout, /版本与更新/);
   assert.match(settingsAbout, /data-studio-section="settings-version-update"/);

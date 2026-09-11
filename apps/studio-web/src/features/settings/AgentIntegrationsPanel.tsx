@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Alert,
   Badge,
+  Box,
   Button,
   Card,
   Divider,
@@ -132,13 +133,10 @@ export function AgentIntegrationsPanel({
   }
 
   return (
-    <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
+    <Box component="section" data-studio-section="agent-integrations">
       <Card withBorder radius="md" p="md" data-studio-section="agent-integrations-tools">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <Stack gap={2}>
-            <Title order={3} size="h4">{t("agentTools")}</Title>
-            <Text size="xs" c="dimmed">CLI 可用后才需要安装 Agent Skill。</Text>
-          </Stack>
+        <Group justify="space-between" align="center" mb="sm">
+          <Text size="xs" c="dimmed">CLI 可用后才需要安装 Agent Skill。</Text>
           <Group gap="xs" wrap="nowrap">
             <ActionIcon
               type="button"
@@ -174,7 +172,7 @@ export function AgentIntegrationsPanel({
           ))}
         </Stack>
       </Card>
-    </Paper>
+    </Box>
   );
 }
 

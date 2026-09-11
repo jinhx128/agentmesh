@@ -303,6 +303,7 @@ const STUDIO_COPY = {
     requireUserGate: "需要用户确认",
     version: "版本",
     versionInfo: "版本信息",
+    versionUpdate: "版本与更新",
     viewNavigation: "页面视图",
     workflow: "Workflow",
     yes: "是",

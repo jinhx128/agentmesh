@@ -82,7 +82,7 @@ export function SettingsAboutPanel({
   if (state.status === "loading") {
     return (
       <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
-        <PanelHeader title={t("about")} meta={t("versionInfo")} />
+        <PanelHeader title={t("versionUpdate")} meta={t("versionInfo")} />
         <Alert mt="md" variant="light">{t("loadingWorkspaceStatus")}</Alert>
       </Paper>
     );
@@ -91,7 +91,7 @@ export function SettingsAboutPanel({
   if (state.status === "error") {
     return (
       <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
-        <PanelHeader title={t("about")} meta={t("versionInfo")} />
+        <PanelHeader title={t("versionUpdate")} meta={t("versionInfo")} />
         <Alert mt="md" color="red" title={t("workspaceStatusUnavailable")} variant="light">{state.message}</Alert>
       </Paper>
     );
@@ -100,8 +100,7 @@ export function SettingsAboutPanel({
   const compatibility = state.compatibility;
   const reasonItems = compatibility.reasons.map(localizeCompatibilityReason);
   return (
-    <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
-      <PanelHeader title={t("about")} meta={t("versionInfo")} />
+    <Box component="section" data-studio-section="settings-about">
       <VersionUpdateCard
         compatibility={compatibility}
         state={state.update ?? { status: "loading" }}
@@ -112,7 +111,7 @@ export function SettingsAboutPanel({
         desktopAutoUpdate={desktopAutoUpdate}
         reasonItems={reasonItems}
       />
-    </Paper>
+    </Box>
   );
 }
 
@@ -184,10 +183,9 @@ function VersionUpdateCard({
       : undefined;
 
   return (
-    <Card className="studio-subcard studio-update-card studio-version-update-card" mt="md" withBorder radius="md" p="md" data-studio-section="settings-version-update">
+    <Card className="studio-subcard studio-update-card studio-version-update-card" withBorder radius="md" p="md" data-studio-section="settings-version-update">
       <Stack gap="lg">
-        <Group justify="space-between" align="flex-start" gap="sm">
-          <Title order={3} size="h4">版本与更新</Title>
+        <Group justify="flex-end" align="flex-start" gap="sm">
           <UpdateRefreshButton onRefresh={onRefresh} busy={refreshBusy} />
         </Group>
         {compatibilityWarning ? (

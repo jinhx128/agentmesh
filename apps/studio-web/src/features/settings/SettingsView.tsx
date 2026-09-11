@@ -1,5 +1,4 @@
 import {
-  Stack,
   Tabs,
 } from "@mantine/core";
 import { useState, type KeyboardEvent, type ReactElement } from "react";
@@ -76,10 +75,23 @@ export function SettingsView({
         <AdvancedSettingsPanel {...advanced} />
       </Tabs.Panel>
       <Tabs.Panel value="about" pt="md" data-studio-section="settings-about-workspace">
-        <Stack gap="md">
-          <SettingsAboutPanel {...about} />
-          <AgentIntegrationsPanel {...environment} />
-        </Stack>
+        <Tabs
+          defaultValue="version-update"
+          keepMounted
+          keepMountedMode="display-none"
+          data-studio-section="settings-about-tabs"
+        >
+          <Tabs.List grow>
+            <Tabs.Tab value="version-update">{t("versionUpdate")}</Tabs.Tab>
+            <Tabs.Tab value="agent-tools">{t("agentTools")}</Tabs.Tab>
+          </Tabs.List>
+          <Tabs.Panel value="version-update" pt="md">
+            <SettingsAboutPanel {...about} />
+          </Tabs.Panel>
+          <Tabs.Panel value="agent-tools" pt="md">
+            <AgentIntegrationsPanel {...environment} />
+          </Tabs.Panel>
+        </Tabs>
       </Tabs.Panel>
     </Tabs>
   );
