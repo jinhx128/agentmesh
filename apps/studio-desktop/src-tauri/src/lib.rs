@@ -7,7 +7,7 @@ use std::{
 };
 use tauri::{
     webview::{cookie::SameSite, Cookie},
-    AppHandle, Manager, WebviewWindow,
+    AppHandle, Manager, RunEvent, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
@@ -49,8 +49,31 @@ pub fn run() {
             start_app_server_sidecar(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("failed to run AgentMesh desktop shell");
+        .on_window_event(|window, event| {
+            // macOS 约定：Cmd+W 只隐藏窗口，App 留在 Dock 里；退出走 Cmd+Q。
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if cfg!(target_os = "macos") {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("failed to build AgentMesh desktop shell")
+        .run(|app, event| match event {
+            // 没有可见窗口时不退出进程，等 Cmd+Q 或 Dock 菜单退出。
+            RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
+                api.prevent_exit();
+            }
+            // 点 Dock 图标重新唤出窗口。
+            RunEvent::Reopen { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
+        });
 }
 
 #[tauri::command]
