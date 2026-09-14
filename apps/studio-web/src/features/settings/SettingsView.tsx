@@ -1,5 +1,9 @@
 import {
+  Group,
+  Paper,
   Tabs,
+  Text,
+  Title,
 } from "@mantine/core";
 import { useState, type KeyboardEvent, type ReactElement } from "react";
 import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
@@ -75,23 +79,30 @@ export function SettingsView({
         <AdvancedSettingsPanel {...advanced} />
       </Tabs.Panel>
       <Tabs.Panel value="about" pt="md" data-studio-section="settings-about-workspace">
-        <Tabs
-          defaultValue="version-update"
-          keepMounted
-          keepMountedMode="display-none"
-          data-studio-section="settings-about-tabs"
-        >
-          <Tabs.List grow>
-            <Tabs.Tab value="version-update">{t("versionUpdate")}</Tabs.Tab>
-            <Tabs.Tab value="agent-tools">{t("agentTools")}</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel value="version-update" pt="md">
-            <SettingsAboutPanel {...about} />
-          </Tabs.Panel>
-          <Tabs.Panel value="agent-tools" pt="md">
-            <AgentIntegrationsPanel {...environment} />
-          </Tabs.Panel>
-        </Tabs>
+        <Paper component="section" className="studio-panel" withBorder radius="md" p="lg">
+          <Group justify="space-between" align="flex-start" gap="md">
+            <Title order={2} size="h3">{t("about")}</Title>
+            <Text size="sm" c="dimmed" fw={700}>{t("versionInfo")}</Text>
+          </Group>
+          <Tabs
+            mt="md"
+            defaultValue="version-update"
+            keepMounted
+            keepMountedMode="display-none"
+            data-studio-section="settings-about-tabs"
+          >
+            <Tabs.List grow>
+              <Tabs.Tab value="version-update">{t("versionUpdate")}</Tabs.Tab>
+              <Tabs.Tab value="agent-tools">{t("agentTools")}</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="version-update" pt="md">
+              <SettingsAboutPanel {...about} />
+            </Tabs.Panel>
+            <Tabs.Panel value="agent-tools" pt="md">
+              <AgentIntegrationsPanel {...environment} />
+            </Tabs.Panel>
+          </Tabs>
+        </Paper>
       </Tabs.Panel>
     </Tabs>
   );

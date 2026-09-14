@@ -81,19 +81,13 @@ export function AgentIntegrationsPanel({
 
   if (state.status === "loading") {
     return (
-      <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
-        <PanelHeader title={t("agentTools")} meta={t("running")} />
-        <Alert mt="md" variant="light">{t("loadingIntegrations")}</Alert>
-      </Paper>
+      <Alert variant="light">{t("loadingIntegrations")}</Alert>
     );
   }
 
   if (state.status === "error") {
     return (
-      <Paper component="section" className="studio-panel" data-studio-section="agent-integrations" withBorder radius="md" p="lg">
-        <PanelHeader title={t("agentTools")} meta="Error" />
-        <Alert mt="md" color="red" title={t("noIntegrations")} variant="light">{state.message}</Alert>
-      </Paper>
+      <Alert color="red" title={t("noIntegrations")} variant="light">{state.message}</Alert>
     );
   }
 
@@ -330,15 +324,6 @@ function providerCliSourceText(
     case "missing":
       return t("targetMissing");
   }
-}
-
-function PanelHeader({ title, meta }: { title: string; meta?: string }): ReactElement {
-  return (
-    <Group justify="space-between" align="flex-start" gap="md">
-      <Title order={2} size="h3">{title}</Title>
-      {meta ? <Text size="sm" c="dimmed" fw={700}>{meta}</Text> : null}
-    </Group>
-  );
 }
 
 function Fact({ label, value }: { label: string; value: string }): ReactElement {

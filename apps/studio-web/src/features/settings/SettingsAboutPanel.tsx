@@ -7,7 +7,6 @@ import {
   Divider,
   Group,
   List,
-  Paper,
   SimpleGrid,
   Stack,
   Switch,
@@ -81,19 +80,13 @@ export function SettingsAboutPanel({
   const { t } = useStudioCopy();
   if (state.status === "loading") {
     return (
-      <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
-        <PanelHeader title={t("versionUpdate")} meta={t("versionInfo")} />
-        <Alert mt="md" variant="light">{t("loadingWorkspaceStatus")}</Alert>
-      </Paper>
+      <Alert variant="light">{t("loadingWorkspaceStatus")}</Alert>
     );
   }
 
   if (state.status === "error") {
     return (
-      <Paper component="section" className="studio-panel" data-studio-section="settings-about" withBorder radius="md" p="lg">
-        <PanelHeader title={t("versionUpdate")} meta={t("versionInfo")} />
-        <Alert mt="md" color="red" title={t("workspaceStatusUnavailable")} variant="light">{state.message}</Alert>
-      </Paper>
+      <Alert color="red" title={t("workspaceStatusUnavailable")} variant="light">{state.message}</Alert>
     );
   }
 
@@ -460,22 +453,3 @@ function localizeCompatibilityReason(reason: string): string {
   return `原始诊断：${reason}`;
 }
 
-function PanelHeader({
-  title,
-  meta,
-  action,
-}: {
-  title: string;
-  meta: string;
-  action?: ReactElement | null;
-}): ReactElement {
-  return (
-    <Group justify="space-between" align="flex-start" gap="md">
-      <Title order={2} size="h3">{title}</Title>
-      <Group gap="xs" justify="flex-end">
-        {action}
-        <Text size="sm" c="dimmed" fw={700}>{meta}</Text>
-      </Group>
-    </Group>
-  );
-}
