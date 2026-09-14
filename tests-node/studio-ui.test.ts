@@ -2389,7 +2389,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settingsAdvanced, /保存高级设置/);
   assert.doesNotMatch(settingsAdvanced, /当前生效/);
   const advancedSettingsSource = readFileSync(path.resolve("apps/studio-web/src/features/settings/AdvancedSettingsPanel.tsx"), "utf-8");
-  assert.match(advancedSettingsSource, /<Tabs[\s\S]*defaultValue="user-defaults"[\s\S]*keepMounted[\s\S]*keepMountedMode="display-none"[\s\S]*data-studio-section="advanced-settings-tabs"/);
+  assert.match(advancedSettingsSource, /<Tabs[\s\S]*value=\{advancedTab\}[\s\S]*keepMounted[\s\S]*keepMountedMode="display-none"[\s\S]*data-studio-section="advanced-settings-tabs"/);
+  assert.match(advancedSettingsSource, /meta=\{t\(ADVANCED_TAB_META\[advancedTab\]\)\}/);
   assert.match(advancedSettingsSource, /<Tabs\.Tab value="stage-defaults">\{t\("stageDefaultAgents"\)\}<\/Tabs\.Tab>/);
   assert.match(advancedSettingsSource, /<Tabs\.Tab value="fallback">\{t\("fallbackSettings"\)\}<\/Tabs\.Tab>/);
   assert.match(advancedSettingsSource, /data-studio-section="advanced-default-agents-select"[\s\S]*maxValues=\{MAX_FANOUT_AGENTS\}/);

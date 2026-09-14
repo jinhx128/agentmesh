@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useEffect, useState, type ReactElement } from "react";
-import { useStudioCopy } from "../../app/copy.js";
+import { useStudioCopy, type StudioCopyKey } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
 import type {
   StudioAdvancedSettingsPayload,
@@ -35,6 +35,13 @@ const STAGE_TYPES: StudioStageType[] = ["plan", "execute", "verify", "review", "
 const ALLOW_AUTO_DISPATCH_HELP = "开启后，Studio 可以自动分发满足执行策略的阶段；关闭后需要手动触发分发。";
 const REQUIRE_USER_GATE_HELP = "开启后，推进关键步骤前需要用户确认；关闭后按当前执行策略继续运行。";
 type StageDefaultAgentFields = Record<StudioStageType, string[]>;
+type AdvancedTabId = "user-defaults" | "stage-defaults" | "fallback";
+
+const ADVANCED_TAB_META: Record<AdvancedTabId, StudioCopyKey> = {
+  "user-defaults": "advancedUserMeta",
+  "stage-defaults": "advancedStageMeta",
+  fallback: "advancedFallbackMeta",
+};
 
 export type AdvancedSettingsState =
   | { status: "loading" }
@@ -65,6 +72,7 @@ export function AdvancedSettingsPanel({
   const [adapterTimeout, setAdapterTimeout] = useState(() => numberText(initialFormSettings?.run_defaults.adapter_timeout_secs));
   const [allowAutoDispatch, setAllowAutoDispatch] = useState(() => initialFormSettings?.execution_policy.allow_auto_dispatch ?? false);
   const [requireUserGate, setRequireUserGate] = useState(() => initialFormSettings?.execution_policy.require_user_gate ?? false);
+  const [advancedTab, setAdvancedTab] = useState<AdvancedTabId>("user-defaults");
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const settings = state.status === "ready" ? state.settings : undefined;
@@ -161,7 +169,7 @@ export function AdvancedSettingsPanel({
   }
   return (
     <Paper component="section" className="studio-panel" data-studio-section="advanced-settings" withBorder radius="md" p="lg">
-      <PanelHeader title={t("advanced")} meta={t("userDefaults")} />
+      <PanelHeader title={t("advanced")} meta={t(ADVANCED_TAB_META[advancedTab])} />
       <Stack mt="md" gap="md">
         {state.settings.diagnostics.map((diagnostic) => (
           <Alert color="yellow" variant="light" key={diagnostic.message}>{diagnostic.message}</Alert>
@@ -174,7 +182,8 @@ export function AdvancedSettingsPanel({
           </Stack>
         </Card>
         <Tabs
-          defaultValue="user-defaults"
+          value={advancedTab}
+          onChange={(value) => setAdvancedTab(isAdvancedTab(value) ? value : "user-defaults")}
           keepMounted
           keepMountedMode="display-none"
           data-studio-section="advanced-settings-tabs"
@@ -186,7 +195,6 @@ export function AdvancedSettingsPanel({
           </Tabs.List>
           <Tabs.Panel value="user-defaults" pt="md">
             <Stack gap="sm" data-studio-section="advanced-user-defaults-tab">
-              <Title order={3} size="h4">{t("userDefaults")}</Title>
               <MultiSelect
                 data-studio-section="advanced-default-agents-select"
                 label={t("defaultAgents")}
@@ -236,7 +244,6 @@ export function AdvancedSettingsPanel({
           </Tabs.Panel>
           <Tabs.Panel value="stage-defaults" pt="md">
             <Stack gap="sm" data-studio-section="advanced-stage-defaults-tab">
-              <Title order={3} size="h4">{t("stageDefaultAgents")}</Title>
               <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
                 {STAGE_TYPES.map((stage) => (
                   <MultiSelect
@@ -259,7 +266,6 @@ export function AdvancedSettingsPanel({
           </Tabs.Panel>
           <Tabs.Panel value="fallback" pt="md">
             <Stack gap="sm" data-studio-section="advanced-fallback-tab">
-              <Title order={3} size="h4">{t("fallbackSettings")}</Title>
               <MultiSelect
                 data-studio-section="advanced-fallback-agents-select"
                 label={t("fallbackAgents")}
@@ -397,6 +403,10 @@ function stageTypeAgentLists(stageTypes: StudioDefaultStageAgentsConfig["stage_t
 
 function maxAgentsForStageDefaults(stage: StudioStageType): number {
   return stage === "execute" ? MAX_EXECUTE_AGENTS : MAX_FANOUT_AGENTS;
+}
+
+function isAdvancedTab(value: string | null): value is AdvancedTabId {
+  return value === "user-defaults" || value === "stage-defaults" || value === "fallback";
 }
 
 function limitSelection(values: string[], maxValues: number): string[] {
