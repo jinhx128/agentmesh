@@ -2,7 +2,6 @@ import {
   ActionIcon,
   Alert,
   Button,
-  Card,
   Group,
   MultiSelect,
   Paper,
@@ -175,12 +174,6 @@ export function AdvancedSettingsPanel({
           <Alert color="yellow" variant="light" key={diagnostic.message}>{diagnostic.message}</Alert>
         ))}
         {errorMessage ? <Alert color="red" variant="light">{errorMessage}</Alert> : null}
-        <Card withBorder radius="md" p="md">
-          <Stack gap={4}>
-            <Text size="sm" c="dimmed">{t("userConfig")}</Text>
-            <Text fw={800}>{state.settings.user_config_path}</Text>
-          </Stack>
-        </Card>
         <Tabs
           value={advancedTab}
           onChange={(value) => setAdvancedTab(isAdvancedTab(value) ? value : "user-defaults")}
@@ -300,7 +293,10 @@ export function AdvancedSettingsPanel({
             </Stack>
           </Tabs.Panel>
         </Tabs>
-        <Group justify="flex-end">
+        <Group justify="space-between" align="center" gap="md" wrap="nowrap">
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            {t("userConfig")}：{state.settings.user_config_path}
+          </Text>
           <Button type="button" disabled={busy} onClick={() => void save()}>
             {t("saveAdvancedSettings")}
           </Button>
