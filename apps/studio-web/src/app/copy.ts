@@ -17,6 +17,7 @@ const STUDIO_COPY = {
     agentName: "名称",
     agentSkill: "Agent Skill",
     agentTools: "Agent 工具",
+    agentToolsMeta: "工具状态",
     agents: "Agents",
     alreadyReviewed: "已处理",
     attach: "附加",

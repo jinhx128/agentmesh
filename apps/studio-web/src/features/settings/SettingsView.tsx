@@ -26,6 +26,13 @@ import {
 
 export type SettingsTabId = "resources" | "advanced" | "about";
 
+type AboutTabId = "version-update" | "agent-tools";
+
+const ABOUT_TAB_META: Record<AboutTabId, StudioCopyKey> = {
+  "version-update": "versionInfo",
+  "agent-tools": "agentToolsMeta",
+};
+
 export interface SettingsViewProps {
   resources: CatalogViewProps;
   advanced: AdvancedSettingsPanelProps;
@@ -52,6 +59,7 @@ export function SettingsView({
 }: SettingsViewProps): ReactElement {
   const { t } = useStudioCopy();
   const [selectedTab, setSelectedTab] = useState<SettingsTabId>(initialTab);
+  const [aboutTab, setAboutTab] = useState<AboutTabId>("version-update");
 
   return (
     <Tabs
@@ -82,11 +90,12 @@ export function SettingsView({
         <Paper component="section" className="studio-panel" withBorder radius="md" p="lg">
           <Group justify="space-between" align="flex-start" gap="md">
             <Title order={2} size="h3">{t("about")}</Title>
-            <Text size="sm" c="dimmed" fw={700}>{t("versionInfo")}</Text>
+            <Text size="sm" c="dimmed" fw={700}>{t(ABOUT_TAB_META[aboutTab])}</Text>
           </Group>
           <Tabs
             mt="md"
-            defaultValue="version-update"
+            value={aboutTab}
+            onChange={(value) => setAboutTab((value === "version-update" || value === "agent-tools") ? value : "version-update")}
             keepMounted
             keepMountedMode="display-none"
             data-studio-section="settings-about-tabs"
