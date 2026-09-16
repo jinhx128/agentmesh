@@ -2175,7 +2175,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(settings, /data-studio-section="settings-desktop-app"/);
   assert.match(settings, /AgentMesh CLI/);
   assert.match(settings, /桌面应用/);
-  assert.equal((settings.match(/重新检查/g) ?? []).length, 1);
+  assert.equal((settings.match(/data-studio-action="refresh-version-update"/g) ?? []).length, 1);
   assert.equal((settings.match(/aria-live="polite"/g) ?? []).length, 0);
   assert.doesNotMatch(settings, /运行时版本|当前入口|最低写入版本|最后更新时间/);
   assert.doesNotMatch(settings, /studio-compatibility-card|data-studio-section="settings-update"|data-studio-section="desktop-app-updater"/);

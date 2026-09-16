@@ -1,17 +1,16 @@
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
   Button,
   Card,
-  Divider,
   Group,
   List,
   SimpleGrid,
   Stack,
   Switch,
   Text,
-  Title,
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy } from "../../app/copy.js";
@@ -176,9 +175,10 @@ function VersionUpdateCard({
       : undefined;
 
   return (
-    <Card className="studio-subcard studio-update-card studio-version-update-card" withBorder radius="md" p="md" data-studio-section="settings-version-update">
+    <Card withBorder radius="md" p="md" className="studio-update-card" data-studio-section="settings-version-update">
       <Stack gap="lg">
-        <Group justify="flex-end" align="flex-start" gap="sm">
+        <Group justify="space-between" align="center">
+          <Text size="xs" c="dimmed">桌面应用与命令行工具各自独立升级。</Text>
           <UpdateRefreshButton onRefresh={onRefresh} busy={refreshBusy} />
         </Group>
         {compatibilityWarning ? (
@@ -191,13 +191,14 @@ function VersionUpdateCard({
             ) : null}
           </Alert>
         ) : null}
-        <CommandLineToolSection integration={commandLineTool} />
-        <Divider />
-        <DesktopUpdateSection
-          update={state}
-          updater={desktopUpdater}
-          autoUpdate={desktopAutoUpdate}
-        />
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+          <DesktopUpdateSection
+            update={state}
+            updater={desktopUpdater}
+            autoUpdate={desktopAutoUpdate}
+          />
+          <CommandLineToolSection integration={commandLineTool} />
+        </SimpleGrid>
       </Stack>
     </Card>
   );
@@ -214,9 +215,33 @@ function UpdateRefreshButton({
     return null;
   }
   return (
-    <Button size="xs" variant="light" onClick={() => void onRefresh()} loading={busy} disabled={busy}>
-      {busy ? "检查中" : "重新检查"}
-    </Button>
+    <ActionIcon
+      type="button"
+      size={30}
+      variant="light"
+      loading={busy}
+      disabled={busy}
+      data-studio-action="refresh-version-update"
+      onClick={() => void onRefresh()}
+      title="重新检查"
+      aria-label="重新检查"
+    >
+      <RefreshIcon />
+    </ActionIcon>
+  );
+}
+
+function RefreshIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 18 18" width="14" height="14" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M14.5 5.5V2.75m0 0h-2.75m2.75 0-2.1 2.1A5.75 5.75 0 1 0 14.1 11"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -242,7 +267,7 @@ function CommandLineToolSection({
     }
   }
   return (
-    <Box component="section" className="studio-version-component" data-studio-section="settings-command-line-tool">
+    <Card component="section" className="studio-subcard studio-version-component" withBorder radius="md" p="md" data-studio-section="settings-command-line-tool">
       <Group justify="space-between" align="flex-start" gap="md" mb="sm">
         <Box>
           <Text fw={800}>AgentMesh CLI</Text>
@@ -254,11 +279,11 @@ function CommandLineToolSection({
       {state.status === "error" ? <Alert color="red" variant="light">{state.message}</Alert> : null}
       {state.status === "ready" && report ? (
         <Stack gap="sm">
-          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+          <Stack gap="xs">
             <InfoItem label={t("installedVersion")} value={displayVersion(report.installed_version) || t("targetMissing")} />
             <InfoItem label={t("latestVersion")} value={displayVersion(report.latest_version) || t("targetMissing")} />
             <InfoItem label={t("commandLinePath")} value={report.path ?? t("targetMissing")} />
-          </SimpleGrid>
+          </Stack>
           {state.refreshError ? <Alert color="yellow" variant="light">状态刷新失败：{state.refreshError}</Alert> : null}
           {visibleDiagnostics(report.diagnostics).map((diagnostic, index) => (
             <Alert key={`${diagnostic}-${index}`} color="yellow" variant="light">{diagnostic}</Alert>
@@ -270,7 +295,7 @@ function CommandLineToolSection({
           </Group>
         </Stack>
       ) : null}
-    </Box>
+    </Card>
   );
 }
 
@@ -303,7 +328,7 @@ function DesktopUpdateSection({
     ? updateErrorMessage(rawNativeIssue)
     : undefined;
   return (
-    <Box component="section" className="studio-version-component" data-studio-section="settings-desktop-app">
+    <Card component="section" className="studio-subcard studio-version-component" withBorder radius="md" p="md" data-studio-section="settings-desktop-app">
       <Group justify="space-between" align="flex-start" gap="md" mb="sm">
         <Box>
           <Text fw={800}>桌面应用</Text>
@@ -312,10 +337,10 @@ function DesktopUpdateSection({
         <Badge color={desktopStatusColor(nativeState, report)}>{desktopStatusLabel(nativeState, report)}</Badge>
       </Group>
       <Stack gap="sm">
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+        <Stack gap="xs">
           <InfoItem label="当前应用版本" value={currentVersion} />
           <InfoItem label="最新应用版本" value={latestVersion} />
-        </SimpleGrid>
+        </Stack>
         {update.status === "loading" ? <Alert variant="light">正在检查发布版本。</Alert> : null}
         {updateIssue ? <Alert color="yellow" variant="light">{updateIssue}</Alert> : null}
         {nativeState.status === "update_available" && nativeState.notes ? <Text size="sm">{nativeState.notes}</Text> : null}
@@ -332,7 +357,7 @@ function DesktopUpdateSection({
           </Group>
         ) : null}
       </Stack>
-    </Box>
+    </Card>
   );
 }
 
@@ -422,10 +447,10 @@ function updateTargetLabel(target: StudioUpdateTargetReport): string {
 
 function InfoItem({ label, value }: { label: string; value: string | number }): ReactElement {
   return (
-    <Stack className="studio-info-item" gap={2}>
-      <Text size="xs" c="dimmed" fw={800}>{label}</Text>
-      <Text size="sm" fw={700} style={{ overflowWrap: "anywhere" }}>{value}</Text>
-    </Stack>
+    <Group className="studio-info-item" justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+      <Text size="xs" c="dimmed" fw={800} style={{ flex: "0 0 auto" }}>{label}</Text>
+      <Text size="sm" fw={700} ta="right" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{value}</Text>
+    </Group>
   );
 }
 
