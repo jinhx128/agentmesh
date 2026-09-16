@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
@@ -10,6 +11,18 @@ use tauri::{
     AppHandle, Manager, RunEvent, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+
+/// Proxy variables that decide whether the launching environment already configured a proxy.
+const PROXY_URL_ENV_KEYS: &[&str] = &["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"];
+/// Every proxy variable forwarded to the sidecar, including the bypass list.
+const PROXY_ENV_KEYS: &[&str] = &[
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
 
 #[derive(Deserialize)]
 struct StudioReadyEvent {
@@ -37,6 +50,9 @@ fn default_auto_check_updates() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The updater's HTTP client only honours proxies from this process' own environment, and a
+    // GUI launch inherits none, so publish the macOS system proxy before any request runs.
+    apply_proxy_env_to_current_process();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -145,7 +161,13 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
     tauri::async_runtime::spawn(async move {
         let command = match app_handle.shell().sidecar("agentmesh-studio-sidecar") {
             Ok(command) => {
-                command.args(sidecar_config.args)
+                let command = command.args(sidecar_config.args);
+                // Node's global fetch ignores system/env proxies unless NODE_USE_ENV_PROXY is set
+                // before the process starts, so pass the macOS system proxy through here.
+                match sidecar_proxy_envs() {
+                    Some(envs) => command.envs(envs),
+                    None => command,
+                }
             }
             Err(error) => {
                 eprintln!("failed to create AgentMesh sidecar command: {error}");
@@ -201,6 +223,122 @@ fn start_app_server_sidecar(app: &mut tauri::App) -> Result<(), Box<dyn std::err
 
 struct SidecarLaunchConfig {
     args: Vec<String>,
+}
+
+/// Publishes the macOS system proxy into this process so the updater's HTTP client can use it.
+/// A proxy already present in the launching environment wins.
+fn apply_proxy_env_to_current_process() {
+    let Some(envs) = mac_system_proxy_env() else {
+        return;
+    };
+    for (key, value) in envs {
+        std::env::set_var(key, value);
+    }
+}
+
+/// Reads the macOS system proxy as environment variables. Returns None when no proxy is
+/// configured, or when the launching environment already set one.
+fn mac_system_proxy_env() -> Option<HashMap<String, String>> {
+    if PROXY_URL_ENV_KEYS
+        .iter()
+        .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
+    {
+        return None;
+    }
+    let settings = mac_system_proxy_settings()?;
+    let mut envs = HashMap::new();
+    if let Some(http_proxy) = mac_proxy_url(&settings, "HTTP") {
+        envs.insert("HTTP_PROXY".to_string(), http_proxy.clone());
+        envs.insert("http_proxy".to_string(), http_proxy);
+    }
+    if let Some(https_proxy) = mac_proxy_url(&settings, "HTTPS") {
+        envs.insert("HTTPS_PROXY".to_string(), https_proxy.clone());
+        envs.insert("https_proxy".to_string(), https_proxy);
+    }
+    if envs.is_empty() {
+        return None;
+    }
+    if let Some(exceptions) = settings.get("__exceptions__") {
+        envs.insert("NO_PROXY".to_string(), exceptions.clone());
+        envs.insert("no_proxy".to_string(), exceptions.clone());
+    }
+    Some(envs)
+}
+
+/// Forwards this process' proxy settings to the sidecar. Node's global fetch ignores them
+/// unless NODE_USE_ENV_PROXY is set before the process starts, so it is added here.
+fn sidecar_proxy_envs() -> Option<HashMap<String, String>> {
+    let mut envs: HashMap<String, String> = PROXY_ENV_KEYS
+        .iter()
+        .filter_map(|key| {
+            let value = std::env::var(key).ok()?;
+            (!value.is_empty()).then(|| ((*key).to_string(), value))
+        })
+        .collect();
+    if envs.is_empty() {
+        return None;
+    }
+    envs.insert("NODE_USE_ENV_PROXY".to_string(), "1".to_string());
+    Some(envs)
+}
+
+#[cfg(target_os = "macos")]
+fn mac_system_proxy_settings() -> Option<HashMap<String, String>> {
+    let output = std::process::Command::new("scutil").arg("--proxy").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(parse_mac_system_proxy(&String::from_utf8_lossy(&output.stdout)))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn mac_system_proxy_settings() -> Option<HashMap<String, String>> {
+    None
+}
+
+/// Parses `scutil --proxy` output; exception hosts are collected under `__exceptions__`.
+fn parse_mac_system_proxy(output: &str) -> HashMap<String, String> {
+    let mut settings = HashMap::new();
+    let mut exceptions: Vec<String> = Vec::new();
+    let mut in_exceptions = false;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if in_exceptions {
+            if trimmed.starts_with('}') {
+                in_exceptions = false;
+            } else if let Some((_, host)) = trimmed.split_once(" : ") {
+                let host = host.trim();
+                if !host.is_empty() {
+                    exceptions.push(host.to_string());
+                }
+            }
+            continue;
+        }
+        if trimmed.starts_with("ExceptionsList") {
+            in_exceptions = true;
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once(" : ") {
+            settings.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    if !exceptions.is_empty() {
+        settings.insert("__exceptions__".to_string(), exceptions.join(","));
+    }
+    settings
+}
+
+/// SOCKS is skipped on purpose: Node's env proxy support only understands HTTP proxies.
+fn mac_proxy_url(settings: &HashMap<String, String>, scheme: &str) -> Option<String> {
+    if settings.get(&format!("{scheme}Enable")).map(String::as_str) != Some("1") {
+        return None;
+    }
+    let host = settings.get(&format!("{scheme}Proxy"))?.trim();
+    let port = settings.get(&format!("{scheme}Port"))?.trim();
+    if host.is_empty() || port.is_empty() {
+        return None;
+    }
+    Some(format!("http://{host}:{port}"))
 }
 
 fn sidecar_launch_config_from_args(
