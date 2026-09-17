@@ -289,10 +289,12 @@ function handleStudioRequest(
     if (!requireMethod(request, response, "GET")) {
       return;
     }
+    const checkCli = url.searchParams.get("checkCli") !== "false";
     return readStudioIntegrations({
       cwd,
       entrypoint: options.entrypoint,
       integrations: options.integrations,
+      checkCliRegistry: checkCli,
     }).then((report) => {
       sendJson(response, 200, report);
     }).catch((error) => {

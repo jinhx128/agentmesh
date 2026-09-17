@@ -1,5 +1,6 @@
 export interface DesktopPreferences {
   auto_check_updates: boolean;
+  auto_check_cli: boolean;
 }
 
 export function isDesktopPreferencesAvailable(): boolean {
@@ -15,11 +16,22 @@ export async function loadDesktopPreferences(): Promise<DesktopPreferences> {
 export async function saveDesktopAutoUpdatePreference(
   enabled: boolean,
 ): Promise<DesktopPreferences> {
+  return saveDesktopPreferences({ autoCheckUpdates: enabled });
+}
+
+export async function saveCliAutoCheckPreference(
+  enabled: boolean,
+): Promise<DesktopPreferences> {
+  return saveDesktopPreferences({ autoCheckCli: enabled });
+}
+
+/** Only the provided toggles are written; the rest keep their stored values. */
+async function saveDesktopPreferences(
+  patch: { autoCheckUpdates?: boolean; autoCheckCli?: boolean },
+): Promise<DesktopPreferences> {
   requireDesktopPreferences();
   const { invoke } = await import("@tauri-apps/api/core");
-  return validateDesktopPreferences(await invoke<unknown>("set_desktop_preferences", {
-    autoCheckUpdates: enabled,
-  }));
+  return validateDesktopPreferences(await invoke<unknown>("set_desktop_preferences", patch));
 }
 
 export function normalizeDesktopPreferenceError(error: unknown): string {
@@ -42,6 +54,7 @@ function validateDesktopPreferences(value: unknown): DesktopPreferences {
     typeof value !== "object"
     || value === null
     || typeof (value as { auto_check_updates?: unknown }).auto_check_updates !== "boolean"
+    || typeof (value as { auto_check_cli?: unknown }).auto_check_cli !== "boolean"
   ) {
     throw new Error("Desktop preferences response is invalid.");
   }

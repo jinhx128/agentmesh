@@ -81,8 +81,15 @@ export interface InstallAgentSkillsRequest {
   force: boolean;
 }
 
-export function loadStudioIntegrations(client: StudioApiClient): Promise<StudioIntegrationsReport> {
-  return client.getJson<StudioIntegrationsReport>("/api/desktop/integrations");
+/** Pass checkCli=false to skip the npm registry lookup for the CLI's latest version. */
+export function loadStudioIntegrations(
+  client: StudioApiClient,
+  options: { checkCli?: boolean } = {},
+): Promise<StudioIntegrationsReport> {
+  const path = options.checkCli === false
+    ? "/api/desktop/integrations?checkCli=false"
+    : "/api/desktop/integrations";
+  return client.getJson<StudioIntegrationsReport>(path);
 }
 
 export function installCommandLineTool(

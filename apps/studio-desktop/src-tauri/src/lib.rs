@@ -34,17 +34,24 @@ struct StudioReadyEvent {
 struct DesktopPreferences {
     #[serde(default = "default_auto_check_updates")]
     auto_check_updates: bool,
+    #[serde(default = "default_auto_check_cli")]
+    auto_check_cli: bool,
 }
 
 impl Default for DesktopPreferences {
     fn default() -> Self {
         Self {
             auto_check_updates: true,
+            auto_check_cli: true,
         }
     }
 }
 
 fn default_auto_check_updates() -> bool {
+    true
+}
+
+fn default_auto_check_cli() -> bool {
     true
 }
 
@@ -100,9 +107,16 @@ fn get_desktop_preferences(app: AppHandle) -> Result<DesktopPreferences, String>
 #[tauri::command]
 fn set_desktop_preferences(
     app: AppHandle,
-    auto_check_updates: bool,
+    auto_check_updates: Option<bool>,
+    auto_check_cli: Option<bool>,
 ) -> Result<DesktopPreferences, String> {
-    let preferences = DesktopPreferences { auto_check_updates };
+    let mut preferences = read_desktop_preferences(&desktop_preferences_path(&app)?)?;
+    if let Some(value) = auto_check_updates {
+        preferences.auto_check_updates = value;
+    }
+    if let Some(value) = auto_check_cli {
+        preferences.auto_check_cli = value;
+    }
     write_desktop_preferences(&desktop_preferences_path(&app)?, &preferences)?;
     Ok(preferences)
 }

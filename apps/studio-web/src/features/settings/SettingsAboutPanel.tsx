@@ -51,6 +51,10 @@ export interface SettingsAboutPanelProps {
     state: DesktopAutoUpdatePreferenceState;
     onChange: (enabled: boolean) => Promise<void>;
   };
+  cliAutoCheck?: {
+    state: DesktopAutoUpdatePreferenceState;
+    onChange: (enabled: boolean) => Promise<void>;
+  };
 }
 
 export type SettingsCommandLineToolState =
@@ -75,6 +79,7 @@ export function SettingsAboutPanel({
   commandLineTool,
   desktopUpdater,
   desktopAutoUpdate,
+  cliAutoCheck,
 }: SettingsAboutPanelProps): ReactElement {
   const { t } = useStudioCopy();
   if (state.status === "loading") {
@@ -101,30 +106,38 @@ export function SettingsAboutPanel({
         commandLineTool={commandLineTool}
         desktopUpdater={desktopUpdater}
         desktopAutoUpdate={desktopAutoUpdate}
+        cliAutoCheck={cliAutoCheck}
         reasonItems={reasonItems}
       />
     </Box>
   );
 }
 
-function DesktopAutoUpdateSwitch({
+function AutoCheckSwitch({
   state,
   onChange,
-}: NonNullable<SettingsAboutPanelProps["desktopAutoUpdate"]>): ReactElement {
+  label,
+  description,
+  errorPrefix,
+}: NonNullable<SettingsAboutPanelProps["desktopAutoUpdate"]> & {
+  label: string;
+  description: string;
+  errorPrefix: string;
+}): ReactElement {
   const enabled = state.status === "loading" ? true : state.enabled;
   const busy = state.status === "loading" || state.status === "saving";
   return (
     <Stack gap={4}>
       <Switch
         size="sm"
-        label="自动检测桌面端更新"
-        description="启动桌面应用时自动检查一次；手动检查始终可用。"
+        label={label}
+        description={description}
         checked={enabled}
         disabled={busy}
         onChange={(event) => void onChange(event.currentTarget.checked)}
       />
       {state.status === "error" ? (
-        <Alert color="red" variant="light" role="alert">桌面更新偏好读取或保存失败：{state.message}</Alert>
+        <Alert color="red" variant="light" role="alert">{errorPrefix}：{state.message}</Alert>
       ) : null}
     </Stack>
   );
@@ -157,6 +170,7 @@ function VersionUpdateCard({
   commandLineTool,
   desktopUpdater,
   desktopAutoUpdate,
+  cliAutoCheck,
   reasonItems,
 }: {
   compatibility: StudioCompatibilityDiagnostics;
@@ -166,6 +180,7 @@ function VersionUpdateCard({
   commandLineTool?: SettingsAboutPanelProps["commandLineTool"];
   desktopUpdater?: SettingsAboutPanelProps["desktopUpdater"];
   desktopAutoUpdate?: SettingsAboutPanelProps["desktopAutoUpdate"];
+  cliAutoCheck?: SettingsAboutPanelProps["cliAutoCheck"];
   reasonItems: string[];
 }): ReactElement {
   const compatibilityWarning = compatibility.decision === "read_only"
@@ -197,7 +212,7 @@ function VersionUpdateCard({
             updater={desktopUpdater}
             autoUpdate={desktopAutoUpdate}
           />
-          <CommandLineToolSection integration={commandLineTool} />
+          <CommandLineToolSection integration={commandLineTool} autoCheck={cliAutoCheck} />
         </SimpleGrid>
       </Stack>
     </Card>
@@ -247,8 +262,10 @@ function RefreshIcon(): ReactElement {
 
 function CommandLineToolSection({
   integration,
+  autoCheck,
 }: {
   integration?: SettingsAboutPanelProps["commandLineTool"];
+  autoCheck?: SettingsAboutPanelProps["cliAutoCheck"];
 }): ReactElement {
   const { t } = useStudioCopy();
   const [busy, setBusy] = useState(false);
@@ -288,6 +305,14 @@ function CommandLineToolSection({
           {visibleDiagnostics(report.diagnostics).map((diagnostic, index) => (
             <Alert key={`${diagnostic}-${index}`} color="yellow" variant="light">{diagnostic}</Alert>
           ))}
+          {autoCheck ? (
+            <AutoCheckSwitch
+              {...autoCheck}
+              label="自动检测命令行工具更新"
+              description="启动桌面应用时自动检查一次；手动检查始终可用。"
+              errorPrefix="命令行工具更新偏好读取或保存失败"
+            />
+          ) : null}
           <Group justify="flex-end">
             <Button size="xs" loading={busy} disabled={!report.supported || busy} onClick={() => void install()}>
               {commandLineActionLabel(report.status)}
@@ -350,7 +375,14 @@ function DesktopUpdateSection({
             : ""}</Text>
         ) : null}
         {nativeIssue ? <Alert color="yellow" variant="light" role="alert">{nativeIssue}</Alert> : null}
-        {autoUpdate ? <DesktopAutoUpdateSwitch {...autoUpdate} /> : null}
+        {autoUpdate ? (
+          <AutoCheckSwitch
+            {...autoUpdate}
+            label="自动检测桌面端更新"
+            description="启动桌面应用时自动检查一次；手动检查始终可用。"
+            errorPrefix="桌面更新偏好读取或保存失败"
+          />
+        ) : null}
         {nativeState.status === "update_available" && updater ? (
           <Group justify="flex-end">
             <Button size="xs" disabled={downloading} onClick={() => void updater.onInstall()}>安装并重启</Button>

@@ -78,11 +78,12 @@ export async function readStudioIntegrations(options: {
   cwd: string;
   entrypoint: string;
   integrations?: StudioIntegrationOptions;
+  checkCliRegistry?: boolean;
 }): Promise<StudioIntegrationsReport> {
   const commandLineTool = await detectAgentMeshCli({
     workspace: options.cwd,
     ...options.integrations,
-    checkRegistry: options.entrypoint === "desktop",
+    checkRegistry: options.checkCliRegistry ?? (options.entrypoint === "desktop"),
   });
   return studioIntegrationsReport(options, commandLineTool);
 }

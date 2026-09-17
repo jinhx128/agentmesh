@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Group,
+  Indicator,
   Paper,
   Stack,
   Tabs,
@@ -131,6 +132,7 @@ import {
   loadDesktopPreferences,
   normalizeDesktopPreferenceError,
   saveDesktopAutoUpdatePreference,
+  saveCliAutoCheckPreference,
 } from "../api/desktop-preferences.js";
 import {
   type AgentIntegrationsState,
@@ -206,6 +208,9 @@ export function App(): ReactElement {
   const [desktopAutoUpdateState, setDesktopAutoUpdateState] = useState<DesktopAutoUpdatePreferenceState>({
     status: "loading",
   });
+  const [cliAutoCheckState, setCliAutoCheckState] = useState<DesktopAutoUpdatePreferenceState>({
+    status: "loading",
+  });
   const [advancedSettingsState, setAdvancedSettingsState] = useState<AdvancedSettingsState>({ status: "loading" });
   const [agentIntegrationsState, setAgentIntegrationsState] = useState<AgentIntegrationsState>({ status: "loading" });
   const [agentLifecycleState, setAgentLifecycleState] = useState<AgentLifecycleState>({ status: "loading" });
@@ -226,6 +231,7 @@ export function App(): ReactElement {
   const [runDetailReloadKey, setRunDetailReloadKey] = useState(0);
   const previousSelectedRunKeyRef = useRef<string | undefined>(undefined);
   const desktopStartupCheckStartedRef = useRef(false);
+  const cliStartupCheckStartedRef = useRef(false);
   const versionRefreshBusyRef = useRef(false);
   const [versionRefreshBusy, setVersionRefreshBusy] = useState(false);
   const activityLoadGenerationRef = useRef(createActivityLoadGeneration());
@@ -387,6 +393,26 @@ export function App(): ReactElement {
     }
   }
 
+  async function saveCliAutoCheck(enabled: boolean): Promise<void> {
+    const previousEnabled = cliAutoCheckState.status === "loading"
+      ? true
+      : cliAutoCheckState.enabled;
+    setCliAutoCheckState({ status: "saving", enabled });
+    try {
+      const saved = await saveCliAutoCheckPreference(enabled);
+      setCliAutoCheckState({ status: "ready", enabled: saved.auto_check_cli });
+      showStudioSuccess("命令行工具更新设置已保存", saved.auto_check_cli ? "已开启自动检测" : "已关闭自动检测");
+    } catch (error) {
+      const message = normalizeDesktopPreferenceError(error);
+      setCliAutoCheckState({
+        status: "error",
+        enabled: previousEnabled,
+        message,
+      });
+      showStudioError("命令行工具更新设置保存失败", message);
+    }
+  }
+
   async function deleteActivity(item: StudioActivityItem): Promise<void> {
     if (!apiClient) {
       throw new Error("AgentMesh API 尚未就绪，请稍后重试。");
@@ -444,9 +470,9 @@ export function App(): ReactElement {
     loadActivitiesWithClient(apiClient, { showLoading: false });
   }
 
-  function loadAgentIntegrationsWithClient(client: StudioApiClient): void {
+  function loadAgentIntegrationsWithClient(client: StudioApiClient, checkCli?: boolean): void {
     setAgentIntegrationsState({ status: "loading" });
-    void loadStudioIntegrations(client)
+    void loadStudioIntegrations(client, { checkCli })
       .then((report) => {
         setAgentIntegrationsState({ status: "ready", report });
       })
@@ -477,6 +503,7 @@ export function App(): ReactElement {
           return;
         }
         setDesktopAutoUpdateState({ status: "ready", enabled: preferences.auto_check_updates });
+        setCliAutoCheckState({ status: "ready", enabled: preferences.auto_check_cli });
         if (preferences.auto_check_updates && !desktopStartupCheckStartedRef.current) {
           desktopStartupCheckStartedRef.current = true;
           void checkDesktopUpdater();
@@ -484,17 +511,28 @@ export function App(): ReactElement {
       })
       .catch((error: unknown) => {
         if (active) {
-          setDesktopAutoUpdateState({
-            status: "error",
-            enabled: true,
-            message: normalizeDesktopPreferenceError(error),
-          });
+          const message = normalizeDesktopPreferenceError(error);
+          setDesktopAutoUpdateState({ status: "error", enabled: true, message });
+          setCliAutoCheckState({ status: "error", enabled: true, message });
         }
       });
     return () => {
       active = false;
     };
   }, []);
+
+  // The startup load skips the registry, so run one lookup once both the client and the
+  // stored preference are ready. Leaving the toggle off keeps startup fully offline.
+  useEffect(() => {
+    if (!apiClient || cliStartupCheckStartedRef.current) {
+      return;
+    }
+    if (cliAutoCheckState.status !== "ready" || !cliAutoCheckState.enabled) {
+      return;
+    }
+    cliStartupCheckStartedRef.current = true;
+    loadAgentIntegrationsWithClient(apiClient, true);
+  }, [apiClient, cliAutoCheckState]);
 
   useEffect(() => {
     let active = true;
@@ -507,7 +545,8 @@ export function App(): ReactElement {
           loadAgentLifecycleWithClient(client);
           loadCompatibilityWithClient(client);
           loadAdvancedSettingsWithClient(client);
-          loadAgentIntegrationsWithClient(client);
+          // Skip the registry lookup here; the stored preference decides whether to check below.
+          loadAgentIntegrationsWithClient(client, false);
         }
         return loadStudioCatalog(client);
       })
@@ -688,6 +727,9 @@ export function App(): ReactElement {
     : agentIntegrationsState.status === "error"
       ? { status: "error", message: agentIntegrationsState.message }
       : { status: "loading" };
+  const updateAvailable = desktopUpdaterState.status === "update_available"
+    || (agentIntegrationsState.status === "ready"
+      && agentIntegrationsState.report.command_line_tool.status === "update_available");
 
   async function submitSafeAction(request: StudioMutationRequest): Promise<StudioMutationResponse> {
     if (!apiClient) {
@@ -739,7 +781,8 @@ export function App(): ReactElement {
           });
           throw new Error(`发布版本：${message}`);
         }),
-      loadStudioIntegrations(apiClient)
+      // Manual refresh always checks, regardless of the auto-check preference.
+      loadStudioIntegrations(apiClient, { checkCli: true })
         .then((report) => {
           setAgentIntegrationsState({ status: "ready", report });
         })
@@ -1030,20 +1073,29 @@ export function App(): ReactElement {
                 component="nav"
                 aria-label={t("viewNavigation")}
               >
-                <ActionIcon
-                  className="studio-brand-action studio-brand-settings-action"
-                  variant="light"
-                  size={30}
-                  title={t("settings")}
-                  aria-label={t("settings")}
-                  aria-pressed={workspaceView === "settings"}
-                  onClick={() => setWorkspaceView("settings")}
+                <Indicator
+                  color="red"
+                  size={8}
+                  offset={4}
+                  disabled={!updateAvailable}
+                  aria-label={updateAvailable ? "有可用更新" : undefined}
+                  data-studio-section="settings-update-indicator"
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04-2.86 2.86-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.06A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.04.04-2.86-2.86.04-.04A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H1V9.6h.9A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.04-.04 2.86-2.86.04.04A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V1h4v.9A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.04-.04 2.86 2.86-.04.04A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.9v4h-.9A1.7 1.7 0 0 0 19.4 15Z" />
-                  </svg>
-                </ActionIcon>
+                  <ActionIcon
+                    className="studio-brand-action studio-brand-settings-action"
+                    variant="light"
+                    size={30}
+                    title={updateAvailable ? `${t("settings")}（有可用更新）` : t("settings")}
+                    aria-label={t("settings")}
+                    aria-pressed={workspaceView === "settings"}
+                    onClick={() => setWorkspaceView("settings")}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04-2.86 2.86-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.06A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.04.04-2.86-2.86.04-.04A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H1V9.6h.9A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.04-.04 2.86-2.86.04.04A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V1h4v.9A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.04-.04 2.86 2.86-.04.04A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.9v4h-.9A1.7 1.7 0 0 0 19.4 15Z" />
+                    </svg>
+                  </ActionIcon>
+                </Indicator>
                 <ActionIcon
                   className="studio-brand-action studio-brand-manual-action"
                   variant="light"
@@ -1232,6 +1284,10 @@ export function App(): ReactElement {
                   desktopAutoUpdate: isDesktopPreferencesAvailable() ? {
                     state: desktopAutoUpdateState,
                     onChange: saveDesktopAutoUpdate,
+                  } : undefined,
+                  cliAutoCheck: isDesktopPreferencesAvailable() ? {
+                    state: cliAutoCheckState,
+                    onChange: saveCliAutoCheck,
                   } : undefined,
                   onRefreshUpdate: refreshVersionAndUpdates,
                 }}
