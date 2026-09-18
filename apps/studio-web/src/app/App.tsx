@@ -1244,6 +1244,7 @@ export function App(): ReactElement {
 
             <Stack data-studio-section="settings-workspace" hidden={workspaceView !== "settings"} gap="md">
               <SettingsView
+                updateAvailable={updateAvailable}
                 resources={{
                   state: catalogState,
                   agentLifecycle: {

@@ -77,6 +77,7 @@ export function AgentIntegrationsPanel({
   const refreshBusyRef = useRef(false);
   const [refreshBusy, setRefreshBusy] = useState(false);
   const [busyTarget, setBusyTarget] = useState<AgentMeshSkillTarget | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const targetRows = state.status === "ready" ? skillTargetRows(state.report.skills.targets) : [];
 
   if (state.status === "loading") {
@@ -94,6 +95,11 @@ export function AgentIntegrationsPanel({
   const report = state.report;
   const toolRows = integrationToolRows(targetRows, report.provider_clis.tools);
   const readyCount = toolRows.filter((row) => row.cli?.found && row.skill.status === "ok").length;
+  // Only tools whose CLI was found can have their Skill written, so they define the bulk action.
+  const actionableRows = toolRows.filter((row) => row.cli?.found && row.skill.status !== "ok");
+  const bulkLabel = actionableRows.every((row) => row.skill.status === "missing")
+    ? "一键安装"
+    : "一键修复";
   async function refreshIntegrations(
     successTitle: string,
     failureTitle: string,
@@ -126,6 +132,22 @@ export function AgentIntegrationsPanel({
     }
   }
 
+  async function installAllSkills(): Promise<void> {
+    const targets = actionableRows.map((row) => row.tool);
+    if (targets.length === 0) {
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      await onInstallAgentSkills({ targets, force: true });
+      showStudioSuccess("Agent Skill 安装成功", targets.map((target) => skillTargetLabels[target] ?? target).join("、"));
+    } catch (error) {
+      showStudioError("Agent Skill 安装失败", readableError(error, "请稍后重试"));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   return (
     <Box component="section" data-studio-section="agent-integrations">
       <Card withBorder radius="md" p="md" data-studio-section="agent-integrations-tools">
@@ -137,7 +159,7 @@ export function AgentIntegrationsPanel({
               size={30}
               variant="light"
               loading={refreshBusy}
-              disabled={refreshBusy || busyTarget !== null}
+              disabled={refreshBusy || busyTarget !== null || bulkBusy}
               data-studio-action="refresh-agent-integrations"
               onClick={() => void refreshIntegrations(
                 "环境状态已刷新",
@@ -151,6 +173,17 @@ export function AgentIntegrationsPanel({
             <Badge color={readyCount === toolRows.length ? "green" : "gray"}>
               {readyCount} / {toolRows.length}
             </Badge>
+            {actionableRows.length > 0 ? (
+              <Button
+                size="compact-xs"
+                loading={bulkBusy}
+                disabled={refreshBusy || busyTarget !== null || bulkBusy}
+                data-studio-action="install-all-agent-skills"
+                onClick={() => void installAllSkills()}
+              >
+                {bulkLabel}
+              </Button>
+            ) : null}
           </Group>
         </Group>
         <Stack gap="sm">
@@ -159,7 +192,7 @@ export function AgentIntegrationsPanel({
               key={row.tool}
               row={row}
               busy={busyTarget === row.tool}
-              anyBusy={busyTarget !== null || refreshBusy}
+              anyBusy={busyTarget !== null || refreshBusy || bulkBusy}
               onInstallSkill={() => void installSkill(row.tool)}
               t={t}
             />
@@ -226,7 +259,7 @@ function IntegrationToolCard({
             {skillTargetStatusLabel(row.skill.status)}
           </Badge>
           {cliFound && !skillOk ? (
-            <Button size="xs" loading={busy} disabled={anyBusy} onClick={onInstallSkill}>
+            <Button size="compact-xs" loading={busy} disabled={anyBusy} onClick={onInstallSkill}>
               {row.skill.status === "missing" ? "安装" : "修复"}
             </Button>
           ) : null}

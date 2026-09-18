@@ -1,5 +1,6 @@
 import {
   Group,
+  Indicator,
   Paper,
   Tabs,
   Text,
@@ -39,6 +40,8 @@ export interface SettingsViewProps {
   environment: AgentIntegrationsPanelProps;
   about: SettingsAboutPanelProps;
   initialTab?: SettingsTabId;
+  /** Marks the About tab and its version sub-tab when an update is available. */
+  updateAvailable?: boolean;
 }
 
 const SETTINGS_TABS: Array<{
@@ -56,6 +59,7 @@ export function SettingsView({
   environment,
   about,
   initialTab = "resources",
+  updateAvailable = false,
 }: SettingsViewProps): ReactElement {
   const { t } = useStudioCopy();
   const [selectedTab, setSelectedTab] = useState<SettingsTabId>(initialTab);
@@ -76,7 +80,11 @@ export function SettingsView({
             key={tab.id}
             onKeyDown={(event) => selectRelativeSettingsTab(event, tab.id, setSelectedTab)}
           >
-            {t(tab.labelKey)}
+            {tab.id === "about" && updateAvailable ? (
+              <Indicator color="red" size={7} offset={-4} position="top-end">
+                {t(tab.labelKey)}
+              </Indicator>
+            ) : t(tab.labelKey)}
           </Tabs.Tab>
         ))}
       </Tabs.List>
@@ -101,7 +109,13 @@ export function SettingsView({
             data-studio-section="settings-about-tabs"
           >
             <Tabs.List grow>
-              <Tabs.Tab value="version-update">{t("versionUpdate")}</Tabs.Tab>
+              <Tabs.Tab value="version-update">
+                {updateAvailable ? (
+                  <Indicator color="red" size={7} offset={-4} position="top-end">
+                    {t("versionUpdate")}
+                  </Indicator>
+                ) : t("versionUpdate")}
+              </Tabs.Tab>
               <Tabs.Tab value="agent-tools">{t("agentTools")}</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="version-update" pt="md">

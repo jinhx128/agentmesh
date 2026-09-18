@@ -7,14 +7,18 @@ import {
   Card,
   Group,
   List,
+  Modal,
+  ScrollArea,
   SimpleGrid,
   Stack,
   Switch,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { useState, type ReactElement } from "react";
 import { useStudioCopy } from "../../app/copy.js";
 import { showStudioError, showStudioSuccess } from "../../app/mutation-feedback.js";
+import { renderMarkdownBlocks } from "../artifacts/ArtifactPreviewPanel.js";
 import type { StudioCompatibilityDiagnostics } from "../../api/compatibility.js";
 import type { DesktopAppUpdaterState } from "../../api/desktop-updater.js";
 import type { StudioIntegrationsReport } from "../../api/integrations.js";
@@ -128,18 +132,59 @@ function AutoCheckSwitch({
   const busy = state.status === "loading" || state.status === "saving";
   return (
     <Stack gap={4}>
-      <Switch
-        size="sm"
-        label={label}
-        description={description}
-        checked={enabled}
-        disabled={busy}
-        onChange={(event) => void onChange(event.currentTarget.checked)}
-      />
+      <Group gap="sm" align="center" wrap="nowrap">
+        <Switch
+          size="sm"
+          aria-label={label}
+          checked={enabled}
+          disabled={busy}
+          onChange={(event) => void onChange(event.currentTarget.checked)}
+        />
+        <Group gap={6} align="center" wrap="nowrap">
+          <Text size="sm">{label}</Text>
+          <HintIcon label={label} help={description} />
+        </Group>
+      </Group>
       {state.status === "error" ? (
         <Alert color="red" variant="light" role="alert">{errorPrefix}：{state.message}</Alert>
       ) : null}
     </Stack>
+  );
+}
+
+/** Small "?" affordance shared by section titles and switch labels. */
+function HintIcon({ label, help }: { label: string; help: string }): ReactElement {
+  return (
+    <Tooltip
+      label={help}
+      withArrow
+      multiline
+      w={260}
+      position="right"
+      events={{ hover: true, focus: true, touch: false }}
+    >
+      <ActionIcon
+        aria-label={`${label}说明`}
+        color="gray"
+        radius="xl"
+        size={14}
+        type="button"
+        variant="outline"
+        style={{ fontSize: 9, lineHeight: 1 }}
+      >
+        ?
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
+/** Section captions live behind a hint icon so the cards stay scannable. */
+function SectionTitle({ title, help }: { title: string; help: string }): ReactElement {
+  return (
+    <Group gap={6} align="center" wrap="nowrap">
+      <Text fw={800}>{title}</Text>
+      <HintIcon label={title} help={help} />
+    </Group>
   );
 }
 
@@ -286,38 +331,42 @@ function CommandLineToolSection({
   return (
     <Card component="section" className="studio-subcard studio-version-component" withBorder radius="md" p="md" data-studio-section="settings-command-line-tool">
       <Group justify="space-between" align="flex-start" gap="md" mb="sm">
-        <Box>
-          <Text fw={800}>AgentMesh CLI</Text>
-          <Text size="xs" c="dimmed">终端中的 AgentMesh 命令行工具</Text>
-        </Box>
-        <Badge color={commandLineStatusColor(state)}>{commandLineStateLabel(state)}</Badge>
+        <SectionTitle title="AgentMesh CLI" help="终端中的 AgentMesh 命令行工具" />
+        <Group gap="xs" align="center" wrap="nowrap">
+          <Badge color={commandLineStatusColor(state)}>{commandLineStateLabel(state)}</Badge>
+          {report ? (
+            <Button
+              size="compact-xs"
+              loading={busy}
+              disabled={!report.supported || busy}
+              onClick={() => void install()}
+            >
+              {commandLineActionLabel(report.status)}
+            </Button>
+          ) : null}
+        </Group>
       </Group>
       {state.status === "loading" ? <Alert variant="light">正在检测命令行工具。</Alert> : null}
       {state.status === "error" ? <Alert color="red" variant="light">{state.message}</Alert> : null}
       {state.status === "ready" && report ? (
         <Stack gap="sm">
+          {autoCheck ? (
+            <AutoCheckSwitch
+              {...autoCheck}
+              label="自动检测更新"
+              description="启动桌面应用时自动检查一次；手动检查始终可用。"
+              errorPrefix="命令行工具更新偏好读取或保存失败"
+            />
+          ) : null}
           <Stack gap="xs">
             <InfoItem label={t("installedVersion")} value={displayVersion(report.installed_version) || t("targetMissing")} />
             <InfoItem label={t("latestVersion")} value={displayVersion(report.latest_version) || t("targetMissing")} />
-            <InfoItem label={t("commandLinePath")} value={report.path ?? t("targetMissing")} />
+            <InfoItem label={t("commandLinePath")} value={report.path ?? t("targetMissing")} valueSize="xs" />
           </Stack>
           {state.refreshError ? <Alert color="yellow" variant="light">状态刷新失败：{state.refreshError}</Alert> : null}
           {visibleDiagnostics(report.diagnostics).map((diagnostic, index) => (
             <Alert key={`${diagnostic}-${index}`} color="yellow" variant="light">{diagnostic}</Alert>
           ))}
-          {autoCheck ? (
-            <AutoCheckSwitch
-              {...autoCheck}
-              label="自动检测命令行工具更新"
-              description="启动桌面应用时自动检查一次；手动检查始终可用。"
-              errorPrefix="命令行工具更新偏好读取或保存失败"
-            />
-          ) : null}
-          <Group justify="flex-end">
-            <Button size="xs" loading={busy} disabled={!report.supported || busy} onClick={() => void install()}>
-              {commandLineActionLabel(report.status)}
-            </Button>
-          </Group>
         </Stack>
       ) : null}
     </Card>
@@ -355,52 +404,103 @@ function DesktopUpdateSection({
   return (
     <Card component="section" className="studio-subcard studio-version-component" withBorder radius="md" p="md" data-studio-section="settings-desktop-app">
       <Group justify="space-between" align="flex-start" gap="md" mb="sm">
-        <Box>
-          <Text fw={800}>桌面应用</Text>
-          <Text size="xs" c="dimmed">AgentMesh.app 与原生更新</Text>
-        </Box>
-        <Badge color={desktopStatusColor(nativeState, report)}>{desktopStatusLabel(nativeState, report)}</Badge>
+        <SectionTitle title="桌面应用" help="AgentMesh.app 与原生更新" />
+        <Group gap="xs" align="center" wrap="nowrap">
+          <Badge color={desktopStatusColor(nativeState, report)}>{desktopStatusLabel(nativeState, report)}</Badge>
+          {nativeState.status === "update_available" && updater ? (
+            <Button size="compact-xs" disabled={downloading} onClick={() => void updater.onInstall()}>安装并重启</Button>
+          ) : null}
+        </Group>
       </Group>
       <Stack gap="sm">
+        {autoUpdate ? (
+          <AutoCheckSwitch
+            {...autoUpdate}
+            label="自动检测更新"
+            description="启动桌面应用时自动检查一次；手动检查始终可用。"
+            errorPrefix="桌面更新偏好读取或保存失败"
+          />
+        ) : null}
         <Stack gap="xs">
-          <InfoItem label="当前应用版本" value={currentVersion} />
-          <InfoItem label="最新应用版本" value={latestVersion} />
+          <InfoItem label="当前版本" value={currentVersion} />
+          <InfoItem label="最新版本" value={latestVersion} />
         </Stack>
         {update.status === "loading" ? <Alert variant="light">正在检查发布版本。</Alert> : null}
         {updateIssue ? <Alert color="yellow" variant="light">{updateIssue}</Alert> : null}
-        {nativeState.status === "update_available" && nativeState.notes ? <Text size="sm">{nativeState.notes}</Text> : null}
         {nativeState.status === "downloading" ? (
           <Text size="sm" role="status" aria-live="polite">已下载 {formatBytes(nativeState.downloadedBytes)}{nativeState.totalBytes
             ? ` / ${formatBytes(nativeState.totalBytes)}${progress === undefined ? "" : ` (${progress}%)`}`
             : ""}</Text>
         ) : null}
         {nativeIssue ? <Alert color="yellow" variant="light" role="alert">{nativeIssue}</Alert> : null}
-        {autoUpdate ? (
-          <AutoCheckSwitch
-            {...autoUpdate}
-            label="自动检测桌面端更新"
-            description="启动桌面应用时自动检查一次；手动检查始终可用。"
-            errorPrefix="桌面更新偏好读取或保存失败"
-          />
-        ) : null}
-        {nativeState.status === "update_available" && updater ? (
-          <Group justify="flex-end">
-            <Button size="xs" disabled={downloading} onClick={() => void updater.onInstall()}>安装并重启</Button>
-          </Group>
+        {nativeState.status === "update_available" && nativeState.notes ? (
+          <ReleaseNotes notes={nativeState.notes} version={latestVersion} />
         ) : null}
       </Stack>
     </Card>
   );
 }
 
+/** Release notes are full markdown documents, so keep the card short and defer the rest to a modal. */
+function ReleaseNotes({ notes, version }: { notes: string; version: string }): ReactElement {
+  const [opened, setOpened] = useState(false);
+  const trimmed = notes.trim();
+  const summary = releaseNotesSummary(trimmed);
+  const truncated = summary.length < trimmed.length;
+  return (
+    <Stack gap="xs" data-studio-section="settings-release-notes">
+      <Group justify="space-between" align="center" gap="sm" wrap="nowrap">
+        <Text size="xs" c="dimmed" fw={800}>更新说明</Text>
+        {truncated ? (
+          <Button size="compact-xs" variant="subtle" onClick={() => setOpened(true)}>详情</Button>
+        ) : null}
+      </Group>
+      <Box className="artifact-markdown studio-release-notes-summary">
+        {renderMarkdownBlocks(summary)}
+      </Box>
+      <Modal
+        opened={opened}
+        onClose={() => setOpened(false)}
+        title={`AgentMesh ${version} 更新说明`}
+        size="lg"
+        scrollAreaComponent={ScrollArea.Autosize}
+        data-studio-section="settings-release-notes-modal"
+      >
+        <Box className="artifact-markdown">
+          {renderMarkdownBlocks(trimmed)}
+        </Box>
+      </Modal>
+    </Stack>
+  );
+}
+
+/** Keeps whole lines so markdown blocks stay parseable after truncation. */
+function releaseNotesSummary(notes: string, maxLength = 240): string {
+  if (notes.length <= maxLength) {
+    return notes;
+  }
+  const lines = notes.split("\n");
+  const kept: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    if (kept.length > 0 && length + line.length > maxLength) {
+      break;
+    }
+    kept.push(line);
+    length += line.length + 1;
+  }
+  return kept.join("\n").trimEnd();
+}
+
 function readableError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
+/** Short labels because the button sits beside the status badge in the card header. */
 function commandLineActionLabel(status: StudioIntegrationsReport["command_line_tool"]["status"]): string {
-  if (status === "missing") return "安装命令行工具";
-  if (status === "update_available") return "更新命令行工具";
-  return "重新安装命令行工具";
+  if (status === "missing") return "安装";
+  if (status === "update_available") return "更新";
+  return "重装";
 }
 
 function commandLineStateLabel(state: SettingsCommandLineToolState): string {
@@ -477,11 +577,16 @@ function updateTargetLabel(target: StudioUpdateTargetReport): string {
   return target.reason ?? "发布资产缺失";
 }
 
-function InfoItem({ label, value }: { label: string; value: string | number }): ReactElement {
+/** Long values like filesystem paths pass valueSize="xs" so they stay readable when wrapped. */
+function InfoItem({ label, value, valueSize = "sm" }: {
+  label: string;
+  value: string | number;
+  valueSize?: "xs" | "sm";
+}): ReactElement {
   return (
     <Group className="studio-info-item" justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
       <Text size="xs" c="dimmed" fw={800} style={{ flex: "0 0 auto" }}>{label}</Text>
-      <Text size="sm" fw={700} ta="right" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{value}</Text>
+      <Text size={valueSize} fw={700} ta="right" style={{ overflowWrap: "anywhere", minWidth: 0 }}>{value}</Text>
     </Group>
   );
 }

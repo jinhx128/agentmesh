@@ -2184,14 +2184,18 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(settings, /Packet Schema 版本/);
   assert.doesNotMatch(settings, /最低读取版本/);
   assert.doesNotMatch(settings, /最后写入方|Codex（codex） · 运行时 0\.1\.8/);
-  assert.match(settings, /已安装版本/);
-  assert.match(settings, /npm 最新版本/);
+  assert.match(settings, /当前版本/);
+  assert.match(settings, /最新版本/);
   assert.match(settings, /安装路径/);
   assert.match(settings, /\/usr\/local\/bin\/agentmesh/);
-  assert.match(settings, /更新命令行工具/);
+  // The action moved beside the status badge, so the label is short.
+  assert.match(settings, /mantine-Button-label">更新</);
+  assert.doesNotMatch(settings, /更新命令行工具|重新安装命令行工具/);
   assert.doesNotMatch(settings, /npm install -g|agentmesh-0\.1\.9\.tgz|AgentMesh_0\.1\.9_aarch64\.dmg|桌面端下载/);
-  assert.match(settings, /自动检测桌面端更新/);
-  assert.match(settings, /启动桌面应用时自动检查一次/);
+  assert.match(settings, /自动检测更新/);
+  // The caption moved into a hover tooltip, so only its trigger stays in the markup.
+  assert.match(settings, /aria-label="自动检测更新说明"/);
+  assert.doesNotMatch(settings, /启动桌面应用时自动检查一次/);
   assert.match(settings, /type="checkbox"[^>]*checked/);
   assert.match(settings, /安装并重启/);
   assert.match(settings, /0\.1\.10/);
@@ -2263,6 +2267,9 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.doesNotMatch(integrations, /data-studio-action="refresh-agent-skills|refresh-cli-diagnostics"/);
   assert.doesNotMatch(integrations, /agent-integrations-tabs|agent-integrations-skill-tab|agent-integrations-cli-tab/);
   assert.match(integrations, />0 \/ 5</);
+  // Only opencode has a found CLI with a missing Skill, so the bulk action installs rather than repairs.
+  assert.match(integrations, /data-studio-action="install-all-agent-skills"/);
+  assert.match(integrations, /mantine-Button-label">一键安装</);
   for (const tool of ["codex", "cursor", "antigravity", "opencode", "claude"]) {
     assert.match(integrations, new RegExp(`data-studio-section="agent-tool-${tool}"`));
   }
@@ -2306,6 +2313,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   });
   assert.match(installedIntegrations, />5 \/ 5</);
   assert.doesNotMatch(installedIntegrations, />已找到</);
+  // Nothing is actionable once every Skill is ok, so the bulk action disappears.
+  assert.doesNotMatch(installedIntegrations, /install-all-agent-skills|一键安装|一键修复/);
   const mismatchedIntegrations = renderAgentIntegrationsPanel({
     status: "ready",
     report: {
@@ -2328,6 +2337,8 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
   assert.match(mismatchedIntegrations, /请检查文件与上级目录的权限/);
   assert.doesNotMatch(mismatchedIntegrations, /Re-run `agentmesh skill install|Check file permissions/);
   assert.match(mismatchedIntegrations, />0 \/ 5</);
+  // A mismatch/unreadable mix is a repair, not a fresh install.
+  assert.match(mismatchedIntegrations, /mantine-Button-label">一键修复</);
   assert.doesNotMatch(installedIntegrations, />安装<|>修复</);
   assert.doesNotMatch(installedIntegrations, />未安装</);
   assert.match(installedIntegrations, /agent-tool-claude"/);

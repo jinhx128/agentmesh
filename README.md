@@ -9,7 +9,7 @@ shell command 注册成可复用的 agents，再用统一的 workflow、packet�
 同一套本地协议里，让 plan、execute、verify、review、decide 这些步骤可以被追踪、
 重试、交接和复盘。
 
-## v0.3.0 发布资产
+## v0.3.1 发布资产
 
 GitHub 仓库：
 
@@ -17,28 +17,28 @@ GitHub 仓库：
 https://github.com/jinhx128/agentmesh
 ```
 
-v0.3.0 Release：
+v0.3.1 Release：
 
 ```text
-https://github.com/jinhx128/agentmesh/releases/tag/v0.3.0
+https://github.com/jinhx128/agentmesh/releases/tag/v0.3.1
 ```
 
 Release 资产：
 
-- `agentmesh-0.3.0.tgz`：CLI npm tarball，可用 `npm install -g` 安装。
-- `AgentMesh_0.3.0_aarch64.dmg`：macOS Apple Silicon Desktop Studio，未签名、未 notarize。
-- `AgentMesh_0.3.0_aarch64.app.tar.gz`：Tauri 应用内更新归档。
-- `AgentMesh_0.3.0_aarch64.app.tar.gz.sig`：更新归档签名。
-- `latest.json`：stable updater 元数据，使用不可变 `v0.3.0` 资产 URL。
-- `agentmesh-skill-0.3.0.md`：单独下载的 AgentMesh Skill markdown。
+- `agentmesh-0.3.1.tgz`：CLI npm tarball，可用 `npm install -g` 安装。
+- `AgentMesh_0.3.1_aarch64.dmg`：macOS Apple Silicon Desktop Studio，未签名、未 notarize。
+- `AgentMesh_0.3.1_aarch64.app.tar.gz`：Tauri 应用内更新归档。
+- `AgentMesh_0.3.1_aarch64.app.tar.gz.sig`：更新归档签名。
+- `latest.json`：stable updater 元数据，使用不可变 `v0.3.1` 资产 URL。
+- `agentmesh-skill-0.3.1.md`：单独下载的 AgentMesh Skill markdown。
 - `SHA256SUMS`：发布文件校验值。
 
-v0.3.0 把 AgentMesh Skill 的安装位置从项目目录改为用户主目录，一次安装对所有项目生效；
-桌面端的更新检查会复用 macOS 系统代理，`Cmd+W` 只隐藏窗口、退出改由 `Cmd+Q` 负责；
-命令行工具新增独立的自动检测开关，关闭后启动不再查询 npm registry，手动检查始终可用；
-桌面应用或 CLI 存在可用更新时，Studio 的设置入口会显示红点。
+v0.3.1 只调整 Studio 设置页的界面表现：提示图标与操作按钮统一收敛尺寸，
+版本信息标签简化为「当前版本」「最新版本」，操作按钮移到状态徽标旁并按状态切换文案，
+「Agent 工具」新增「一键安装 / 一键修复」批量入口。
 
-本版本不改变 Packet schema。CLI 与 Desktop 继续是两个独立安装渠道。
+本版本不改变运行时行为、数据格式与命令行接口，也不改变 Packet schema。
+从 v0.3.0 升级可直接覆盖安装。CLI 与 Desktop 继续是两个独立安装渠道。
 
 CLI 也发布到公共 npm registry：
 
@@ -128,7 +128,7 @@ agentmesh cli detect --json
 ### 从 GitHub Release 安装
 
 ```bash
-npm install -g https://github.com/jinhx128/agentmesh/releases/download/v0.3.0/agentmesh-0.3.0.tgz
+npm install -g https://github.com/jinhx128/agentmesh/releases/download/v0.3.1/agentmesh-0.3.1.tgz
 agentmesh --help
 agentmesh --version
 agentmesh doctor --json
@@ -137,7 +137,7 @@ agentmesh doctor --json
 如果已经下载了 tarball：
 
 ```bash
-npm install -g ./agentmesh-0.3.0.tgz
+npm install -g ./agentmesh-0.3.1.tgz
 agentmesh --help
 agentmesh --version
 agentmesh doctor --json
@@ -188,10 +188,10 @@ clone 或安装 Release tarball。
 从 Release 下载：
 
 ```text
-AgentMesh_0.3.0_aarch64.dmg
+AgentMesh_0.3.1_aarch64.dmg
 ```
 
-打开 DMG，把 `AgentMesh.app` 拖到 Applications。因为 v0.3.0 的 DMG 未签名且未 notarize，macOS
+打开 DMG，把 `AgentMesh.app` 拖到 Applications。因为 v0.3.1 的 DMG 未签名且未 notarize，macOS
 可能提示无法验证开发者。可以右键应用选择 Open，或在 System Settings / Privacy &
 Security 里允许打开。
 
@@ -261,7 +261,7 @@ agentmesh skill verify --target antigravity --json
 agentmesh skill export --format markdown > agentmesh-skill.md
 ```
 
-Release 里的 `agentmesh-skill-0.3.0.md` 是同一份可单独下载的 markdown。Skill 安装到用户
+Release 里的 `agentmesh-skill-0.3.1.md` 是同一份可单独下载的 markdown。Skill 安装到用户
 主目录下的全局路径，一次安装对所有项目生效。手动安装时，
 Codex、Cursor、Antigravity CLI 和 OpenCode 使用：
 
@@ -418,7 +418,7 @@ AgentMesh 的运行语义：
 
 - `preset-first UX`：如果已有 preset，可以直接使用 `agentmesh run <preset-id> --task "..."`。
 - `decide checkpoint`：workflow 中的 decide stage 可以作为中途决策点，也可以作为最终决策点。
-- `current packet schema is active`：v0.3.0 只按当前 packet schema 创建和推进 run。
+- `current packet schema is active`：v0.3.1 只按当前 packet schema 创建和推进 run。
 - `legacy packet migration is unsupported`：旧 packet 不自动迁移；需要按当前 schema 重新创建 run。
 - `[default_stage_agents]`、`[fallback]` 和 `[failure_policy]` 是项目配置里的运行策略入口。
 - Agent id 使用短内部 id，例如 `a-12d58754`，命令和配置都以 id 作为稳定引用。
@@ -431,7 +431,7 @@ agentmesh run <preset-id> --task "实现一个可验证的小修复" --title "�
 
 `run`、`flow run` 和被记录的 `call` 都支持可选的 `--title <title>`。用户未指定时，主控 Agent 应根据任务生成 4–24 字的中文标题并传入；若最终仍未传入，Runtime 会使用 `工作区名-摘要`，没有摘要时使用 `工作区名-HH:mm:ss`。标题只用于展示，不改变 run/call 技术 ID、目录或关联键。
 
-v0.3.0 包含这些内置 workflow：
+v0.3.1 包含这些内置 workflow：
 
 - `Verified Delivery`：plan、execute、verify、review、decide
 - `Guided Delivery`：plan、execute、review、decide
