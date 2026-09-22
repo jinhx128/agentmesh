@@ -321,9 +321,10 @@ fn parse_mac_system_proxy(output: &str) -> HashMap<String, String> {
             if trimmed.starts_with('}') {
                 in_exceptions = false;
             } else if let Some((_, host)) = trimmed.split_once(" : ") {
-                let host = host.trim();
-                if !host.is_empty() {
-                    exceptions.push(host.to_string());
+                if let Some(normalized) = normalize_proxy_exception(host) {
+                    if !exceptions.contains(&normalized) {
+                        exceptions.push(normalized);
+                    }
                 }
             }
             continue;
@@ -340,6 +341,32 @@ fn parse_mac_system_proxy(output: &str) -> HashMap<String, String> {
         settings.insert("__exceptions__".to_string(), exceptions.join(","));
     }
     settings
+}
+
+/// Rewrites one macOS exception entry into the spelling NO_PROXY parsers agree on.
+///
+/// macOS writes host patterns as `*.example.com` and adds the `<local>` token, neither of
+/// which every HTTP client understands. The bare `example.com` form is the one accepted
+/// across the clients the sidecar and agents run on, and it already covers subdomains.
+/// Returns None for entries that carry no NO_PROXY meaning.
+fn normalize_proxy_exception(entry: &str) -> Option<String> {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Tokens such as `<local>` describe a macOS-only rule with no NO_PROXY equivalent.
+    if trimmed.starts_with('<') && trimmed.ends_with('>') {
+        return None;
+    }
+    // A lone `*` already means "bypass everything" to NO_PROXY parsers.
+    if trimmed == "*" {
+        return Some(trimmed.to_string());
+    }
+    let host = trimmed
+        .strip_prefix("*.")
+        .or_else(|| trimmed.strip_prefix('.'))
+        .unwrap_or(trimmed);
+    (!host.is_empty()).then(|| host.to_string())
 }
 
 /// SOCKS is skipped on purpose: Node's env proxy support only understands HTTP proxies.
@@ -461,6 +488,7 @@ fn generate_launch_token() -> Result<String, getrandom::Error> {
 #[cfg(test)]
 mod tests {
     use super::{
+        parse_mac_system_proxy,
         read_desktop_preferences,
         sidecar_launch_config_from_args,
         write_desktop_preferences,
@@ -500,6 +528,7 @@ mod tests {
             read_desktop_preferences(&path).expect("missing preferences should use defaults"),
             DesktopPreferences {
                 auto_check_updates: true,
+                auto_check_cli: true,
             },
         );
         let _ = remove_dir_all(dir);
@@ -512,10 +541,12 @@ mod tests {
         let path = dir.join("preferences.json");
         write(&path, r#"{"auto_check_updates":false}"#)
             .expect("seed desktop preferences");
+        // A file written before auto_check_cli existed still reads, defaulting that field on.
         assert_eq!(
             read_desktop_preferences(&path).expect("read disabled preference"),
             DesktopPreferences {
                 auto_check_updates: false,
+                auto_check_cli: true,
             },
         );
 
@@ -523,6 +554,7 @@ mod tests {
             &path,
             &DesktopPreferences {
                 auto_check_updates: true,
+                auto_check_cli: false,
             },
         )
         .expect("persist enabled preference");
@@ -530,6 +562,7 @@ mod tests {
             read_desktop_preferences(&path).expect("read persisted preference"),
             DesktopPreferences {
                 auto_check_updates: true,
+                auto_check_cli: false,
             },
         );
         let _ = remove_dir_all(dir);
@@ -546,6 +579,54 @@ mod tests {
             .expect_err("corrupt preferences must not be accepted");
         assert!(error.contains("desktop preferences are invalid"), "{error}");
         let _ = remove_dir_all(dir);
+    }
+
+    #[test]
+    fn proxy_exceptions_are_rewritten_to_the_portable_no_proxy_spelling() {
+        let settings = parse_mac_system_proxy(
+            "<dictionary> {\n  \
+               ExceptionsList : <array> {\n    \
+                 0 : 127.0.0.1\n    \
+                 1 : 192.168.0.0/16\n    \
+                 2 : localhost\n    \
+                 3 : *.local\n    \
+                 4 : *.internal.example.com\n    \
+                 5 : <local>\n    \
+                 6 : .legacy.example.com\n    \
+                 7 : internal.example.com\n  \
+               }\n  \
+               HTTPEnable : 1\n  \
+               HTTPProxy : 127.0.0.1\n  \
+               HTTPPort : 7897\n\
+             }\n",
+        );
+
+        // `*.host` and `.host` collapse to the bare host, `<local>` is dropped, and the
+        // duplicate that entry 4 collapses into is not repeated.
+        assert_eq!(
+            settings.get("__exceptions__").map(String::as_str),
+            Some("127.0.0.1,192.168.0.0/16,localhost,local,internal.example.com,legacy.example.com"),
+        );
+        assert_eq!(settings.get("HTTPEnable").map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn proxy_exception_wildcard_entry_keeps_bypassing_every_host() {
+        let settings = parse_mac_system_proxy(
+            "ExceptionsList : <array> {\n  0 : *\n}\nHTTPEnable : 1\n",
+        );
+
+        assert_eq!(settings.get("__exceptions__").map(String::as_str), Some("*"));
+    }
+
+    #[test]
+    fn proxy_exceptions_without_portable_meaning_are_omitted() {
+        let settings = parse_mac_system_proxy(
+            "ExceptionsList : <array> {\n  0 : <local>\n}\nHTTPEnable : 1\n",
+        );
+
+        assert_eq!(settings.get("__exceptions__"), None);
+        assert_eq!(settings.get("HTTPEnable").map(String::as_str), Some("1"));
     }
 
     fn test_dir(label: &str) -> PathBuf {

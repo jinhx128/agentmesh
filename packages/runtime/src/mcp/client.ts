@@ -219,7 +219,7 @@ async function connectSdkMcpClient(
   initializeTimeoutMs: number,
 ): Promise<SdkMcpSession> {
   const connectStartedAt = Date.now();
-  const client = new Client({ name: "agentmesh", version: "0.3.2" }, { capabilities: {} });
+  const client = new Client({ name: "agentmesh", version: "0.3.3" }, { capabilities: {} });
   let rejectProtocolError: (error: Error) => void = () => {};
   const protocolError = new Promise<never>((_, reject) => {
     rejectProtocolError = reject;
