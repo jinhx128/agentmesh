@@ -47,8 +47,8 @@ test("agent process environment inherits base env and macOS system proxy", () =>
   assert.equal(env.https_proxy, "http://127.0.0.1:7897");
   assert.equal(env.ALL_PROXY, "socks5://127.0.0.1:7897");
   assert.equal(env.all_proxy, "socks5://127.0.0.1:7897");
-  assert.equal(env.NO_PROXY, "127.0.0.1,localhost,*.local");
-  assert.equal(env.no_proxy, "127.0.0.1,localhost,*.local");
+  assert.equal(env.NO_PROXY, "127.0.0.1,localhost,local");
+  assert.equal(env.no_proxy, "127.0.0.1,localhost,local");
 });
 
 test("agent process environment drops undefined base entries", () => {
@@ -164,6 +164,78 @@ test("agent configured env can clear inherited proxy aliases", () => {
   assert.equal(env.HTTPS_PROXY, "");
   assert.equal(env.https_proxy, "");
   assert.equal(env.HTTP_PROXY, "http://127.0.0.1:7897");
+});
+
+test("macOS proxy exceptions are rewritten to the portable NO_PROXY spelling", () => {
+  const env = buildAgentProcessEnv(undefined, {
+    baseEnv: {},
+    platform: "darwin",
+    macProxyOutput: `
+<dictionary> {
+  ExceptionsList : <array> {
+    0 : 127.0.0.1
+    1 : 192.168.0.0/16
+    2 : localhost
+    3 : *.local
+    4 : *.internal.example.com
+    5 : <local>
+    6 : .legacy.example.com
+    7 : internal.example.com
+  }
+  HTTPEnable : 1
+  HTTPProxy : 127.0.0.1
+  HTTPPort : 7897
+}
+`,
+  });
+
+  // `*.host` and `.host` collapse to the bare host, `<local>` is dropped, and the duplicate
+  // that entry 4 collapses into is not repeated.
+  assert.equal(
+    env.NO_PROXY,
+    "127.0.0.1,192.168.0.0/16,localhost,local,internal.example.com,legacy.example.com",
+  );
+  assert.equal(env.no_proxy, env.NO_PROXY);
+});
+
+test("macOS proxy exception wildcard entry keeps bypassing every host", () => {
+  const env = buildAgentProcessEnv(undefined, {
+    baseEnv: {},
+    platform: "darwin",
+    macProxyOutput: `
+<dictionary> {
+  ExceptionsList : <array> {
+    0 : *
+  }
+  HTTPEnable : 1
+  HTTPProxy : 127.0.0.1
+  HTTPPort : 7897
+}
+`,
+  });
+
+  assert.equal(env.NO_PROXY, "*");
+});
+
+test("macOS proxy exceptions with no portable meaning leave NO_PROXY unset", () => {
+  const env = buildAgentProcessEnv(undefined, {
+    baseEnv: {},
+    platform: "darwin",
+    macProxyOutput: `
+<dictionary> {
+  ExceptionsList : <array> {
+    0 : <local>
+  }
+  HTTPEnable : 1
+  HTTPProxy : 127.0.0.1
+  HTTPPort : 7897
+}
+`,
+  });
+
+  assert.equal(env.HTTP_PROXY, "http://127.0.0.1:7897");
+  assert.equal(env.NO_PROXY, undefined);
+  assert.equal(env.no_proxy, undefined);
 });
 
 test("macOS system proxy parser ignores unrelated scutil keys", () => {

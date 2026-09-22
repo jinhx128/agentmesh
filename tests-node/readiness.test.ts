@@ -1513,7 +1513,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
   const markdown = agentmeshSkillMarkdown();
   for (const expected of [
     "## Version Metadata",
-    "AgentMesh CLI version: 0.3.1",
+    "AgentMesh CLI version: 0.3.2",
     "Packet schema version: 2",
     "Workflow recipe schema version: 1",
     "agentmesh version --json",
@@ -1539,7 +1539,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     encoding: "utf-8",
   });
   assert.equal(showResult.status, 0, showResult.stderr);
-  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.3\.1/);
+  assert.match(showResult.stdout, /AgentMesh CLI version: 0\.3\.2/);
   assert.match(showResult.stdout, /Packet schema version: 2/);
   assert.match(showResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1549,7 +1549,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     { cwd: workspace, encoding: "utf-8" },
   );
   assert.equal(exportResult.status, 0, exportResult.stderr);
-  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.3\.1/);
+  assert.match(exportResult.stdout, /AgentMesh CLI version: 0\.3\.2/);
   assert.match(exportResult.stdout, /Packet schema version: 2/);
   assert.match(exportResult.stdout, /Workflow recipe schema version: 1/);
 
@@ -1563,7 +1563,7 @@ test("skill output declares AgentMesh protocol version metadata", () => {
     claudeGlobalSkillPath(home),
     "utf-8",
   );
-  assert.match(installedSkill, /AgentMesh CLI version: 0\.3\.1/);
+  assert.match(installedSkill, /AgentMesh CLI version: 0\.3\.2/);
   assert.match(installedSkill, /Packet schema version: 2/);
   assert.match(installedSkill, /Workflow recipe schema version: 1/);
 });

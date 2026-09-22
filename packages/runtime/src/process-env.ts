@@ -153,10 +153,38 @@ function parseMacProxyExceptions(output: string): string[] {
     }
     const match = line.match(/^\s*\d+\s*:\s*(.+?)\s*$/);
     if (inExceptions && match) {
-      entries.push(match[1]);
+      const normalized = normalizeProxyException(match[1]);
+      if (normalized !== undefined && !entries.includes(normalized)) {
+        entries.push(normalized);
+      }
     }
   }
   return entries;
+}
+
+/**
+ * Rewrite one macOS exception entry into the spelling NO_PROXY parsers agree on.
+ *
+ * macOS writes host patterns as `*.example.com` and adds the `<local>` token, neither of
+ * which every agent CLI understands: the bare `example.com` form is the only one accepted
+ * across the Rust, Bun and Node HTTP clients the adapters run on, and it already covers
+ * subdomains in all of them. Returns undefined for entries that carry no NO_PROXY meaning.
+ */
+function normalizeProxyException(entry: string): string | undefined {
+  const trimmed = entry.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  // Tokens such as `<local>` describe a macOS-only rule with no NO_PROXY equivalent.
+  if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
+    return undefined;
+  }
+  // A lone `*` already means "bypass everything" to NO_PROXY parsers.
+  if (trimmed === "*") {
+    return trimmed;
+  }
+  const host = trimmed.replace(/^\*?\./, "");
+  return host.length > 0 ? host : undefined;
 }
 
 function mirrorProxyAliases(env: NodeJS.ProcessEnv): void {
