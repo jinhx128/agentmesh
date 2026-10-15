@@ -404,6 +404,13 @@ button:not(:disabled),
   text-align: left;
 }
 
+/* The delete button is absolutely positioned over the item's top-right corner. Mantine
+   compiles the Button's `px` prop into an inline padding-inline, which no stylesheet rule
+   can override, so the title reserves the icon's width itself and truncates before it. */
+.studio-activity-item-shell .studio-nav-item-title {
+  padding-right: 22px;
+}
+
 .studio-activity-item-meta {
   min-height: 20px;
 }
@@ -417,7 +424,6 @@ button:not(:disabled),
 }
 
 .studio-activity-item-shell .studio-nav-item {
-  padding-right: 36px;
   border: 1px solid var(--studio-border);
   border-radius: var(--studio-radius-control);
   background: #f8fafb;

@@ -175,6 +175,7 @@ import {
   AgentEditForm,
   AgentLifecyclePanel,
   loadAgentModelOptionCache,
+  modelOptionLabel,
   suggestAgentLabel,
   type AgentLifecyclePanelProps,
   type AgentLifecycleState,
@@ -2581,6 +2582,7 @@ test("Safe actions, settings, integrations, agent lifecycle and manual use Manti
     suggestAgentLabel("cursor-agent", "cursor-small", "none"),
     "Cursor Cursor Small",
   );
+  assert.equal(modelOptionLabel("zz-claude-opus-5-5[1M]"), "Claude Opus 5.5");
   assert.equal(
     buildWorkflowTomlFromManualFields({
       name: "Manual Flow",

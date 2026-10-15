@@ -3,6 +3,8 @@ import {
   existsSync,
   readFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
 import type { AgentConfig } from "../adapters.js";
 import { resolveProviderTool, type ProviderToolDiscoveryOptions } from "./provider-tools.js";
@@ -53,6 +55,8 @@ export type AdapterModelDiscoveryHook =
 
 export interface AdapterModelDiscoveryOptions {
   runCli?: boolean;
+  /** Overrides the adapter's local model configuration path. Intended for embedding and tests. */
+  modelConfigPath?: string;
   commandRunner?: (command: string[]) => {
     status: number | null;
     stdout: string;
@@ -258,16 +262,14 @@ function discoverCliModels(
   const result = options.commandRunner
     ? options.commandRunner(hook.command)
     : spawnModelDiscoveryCommand(command, options.timeoutMs);
-  if (result.status !== 0) {
-    return [];
-  }
-  if (hook.parser === "codex-json") {
-    return parseCodexModelCatalog(result.stdout);
-  }
-  if (hook.parser === "antigravity-lines") {
-    return parseAntigravityModelCatalog(result.stdout);
-  }
-  return parseModelDiscoveryOutput(result.stdout);
+  const cliModels = result.status !== 0
+    ? []
+    : hook.parser === "codex-json"
+      ? parseCodexModelCatalog(result.stdout)
+      : hook.parser === "antigravity-lines"
+        ? parseAntigravityModelCatalog(result.stdout)
+        : parseModelDiscoveryOutput(result.stdout);
+  return uniqueSorted([...cliModels, ...discoverConfiguredModels(hook.adapterId, options)]);
 }
 
 function spawnModelDiscoveryCommand(
@@ -348,10 +350,130 @@ function discoverExecutableStringModels(
     : spawnModelDiscoveryCommand(stringsCommand, options.timeoutMs);
   const executableText = result.status === 0 ? result.stdout : readTextFile(commandPath);
   const executableModels = executableText ? extractExecutableModelIds(hook.adapterId, executableText) : [];
-  if (hook.adapterId !== "antigravity-cli") {
-    return executableModels;
+  if (hook.adapterId === "claude-code-cli") {
+    return uniqueSorted([...executableModels, ...discoverConfiguredModels(hook.adapterId, options)]);
   }
   return executableModels;
+}
+
+const CLAUDE_MODEL_ENV_KEYS = [
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+] as const;
+
+function discoverConfiguredModels(adapterId: string, options: AdapterModelDiscoveryOptions): string[] {
+  // An injected runner represents a fully controlled discovery fixture. Only merge host
+  // configuration when the caller also supplies the fixture's explicit config path.
+  if (options.commandRunner && !options.modelConfigPath) {
+    return [];
+  }
+  if (adapterId === "claude-code-cli") {
+    return discoverConfiguredClaudeModels(options);
+  }
+  const configPath = options.modelConfigPath ?? defaultModelConfigPath(adapterId);
+  const configText = readTextFile(configPath);
+  if (!configText) return [];
+  try {
+    if (adapterId === "codex-cli") return discoverConfiguredCodexModels(configPath, configText);
+    const config = JSON.parse(configText) as Record<string, unknown>;
+    if (adapterId === "cursor-agent") return discoverConfiguredCursorModels(config);
+    if (adapterId === "opencode-cli") return discoverConfiguredOpenCodeModels(config);
+    if (adapterId === "antigravity-cli") return discoverConfiguredAntigravityModels(config);
+  } catch {
+    return [];
+  }
+  return [];
+}
+
+function discoverConfiguredCodexModels(configPath: string, configText: string): string[] {
+  const model = configText.match(/^model\s*=\s*["']([^"']+)["']/m)?.[1];
+  const catalogPath = configText.match(/^model_catalog_json\s*=\s*["']([^"']+)["']/m)?.[1];
+  const catalogModels = catalogPath
+    ? parseCodexModelCatalog(readTextFile(path.resolve(path.dirname(configPath), catalogPath)) ?? "")
+    : [];
+  return uniqueSorted([...(model && isModelId(model) ? [model] : []), ...catalogModels]);
+}
+
+function discoverConfiguredCursorModels(config: Record<string, unknown>): string[] {
+  const ids = [
+    nestedString(config, ["model", "modelId"]),
+    nestedString(config, ["selectedModel", "modelId"]),
+    ...Object.keys(asRecord(config.modelParameters) ?? {}),
+  ];
+  return ids.filter((value): value is string => Boolean(value && isModelId(value)));
+}
+
+function discoverConfiguredOpenCodeModels(config: Record<string, unknown>): string[] {
+  const disabled = new Set(asStringArray(config.disabled_providers));
+  const providers = asRecord(config.provider) ?? {};
+  return Object.entries(providers).flatMap(([provider, raw]) => {
+    if (disabled.has(provider)) return [];
+    const models = asRecord(asRecord(raw)?.models) ?? {};
+    return Object.keys(models).filter(isModelId).map((model) => `${provider}/${model}`);
+  });
+}
+
+function discoverConfiguredAntigravityModels(config: Record<string, unknown>): string[] {
+  const model = nestedString(config, ["model"]);
+  return model && isAntigravityConfiguredModel(model) ? [model] : [];
+}
+
+function discoverConfiguredClaudeModels(options: AdapterModelDiscoveryOptions): string[] {
+  const settingsPath = options.modelConfigPath ?? path.join(homedir(), ".claude", "settings.json");
+  const settingsText = readTextFile(settingsPath);
+  if (!settingsText) {
+    return [];
+  }
+  try {
+    const settings = JSON.parse(settingsText) as { env?: unknown };
+    const env = settings.env;
+    if (!env || typeof env !== "object" || Array.isArray(env)) {
+      return [];
+    }
+    return CLAUDE_MODEL_ENV_KEYS.flatMap((key) => {
+      const value = (env as Record<string, unknown>)[key];
+      return typeof value === "string" && isConfiguredClaudeModelId(value) ? [value.trim()] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function defaultModelConfigPath(adapterId: string): string {
+  switch (adapterId) {
+    case "codex-cli": return path.join(homedir(), ".codex", "config.toml");
+    case "cursor-agent": return path.join(homedir(), ".cursor", "cli-config.json");
+    case "opencode-cli": return path.join(homedir(), ".config", "opencode", "opencode.json");
+    case "antigravity-cli": return path.join(homedir(), ".gemini", "antigravity-cli", "settings.json");
+    default: return "";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function nestedString(value: unknown, keys: string[]): string | undefined {
+  let current: unknown = value;
+  for (const key of keys) current = asRecord(current)?.[key];
+  return typeof current === "string" ? current.trim() : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function isAntigravityConfiguredModel(value: string): boolean {
+  return /^(?:Gemini|Claude|GPT-OSS)\s+[A-Za-z0-9 .-]+(?:\s+\((?:Current|High|Medium|Low|Thinking|None)\))?$/i.test(value.trim());
+}
+
+function isConfiguredClaudeModelId(value: string): boolean {
+  const withoutVariant = value.trim().replace(/\[[^\]]+\]$/, "");
+  return /^(?:[a-z0-9._-]+-)?claude-(?:opus|sonnet|haiku)-[a-z0-9._-]+$/i.test(withoutVariant);
 }
 
 function extractExecutableModelIds(adapterId: string, text: string): string[] {

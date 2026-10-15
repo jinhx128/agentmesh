@@ -166,6 +166,90 @@ test("model discovery hydrates claude from the installed CLI binary catalog", ()
   assert.equal(claude.models.includes("claude-desktop-settings"), false);
 });
 
+test("model discovery merges configured Claude models without rewriting their invocation IDs", () => {
+  const settingsDirectory = mkdtempSync(path.join(tmpdir(), "agentmesh-claude-models-"));
+  const settingsPath = path.join(settingsDirectory, "settings.json");
+  test.after(() => rmSync(settingsDirectory, { recursive: true, force: true }));
+  writeFileSync(settingsPath, JSON.stringify({
+    env: {
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "zz-claude-opus-5-5[1M]",
+      ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: "zz-claude-opus-5-5",
+      ANTHROPIC_AUTH_TOKEN: "not-a-model",
+    },
+  }));
+
+  const claude = discoverAdapterModels("claude", {
+    runCli: true,
+    modelConfigPath: settingsPath,
+    commandPathResolver: (command) => command === "claude" ? "/tmp/fake-claude" : undefined,
+    commandRunner: () => ({
+      status: 0,
+      stdout: "claude-opus-5",
+      stderr: "",
+    }),
+  });
+
+  assert.equal(claude.status, "discovered");
+  assert.ok(claude.models.includes("claude-opus-5"));
+  assert.ok(claude.models.includes("zz-claude-opus-5-5[1M]"));
+  assert.equal(claude.models.includes("zz-claude-opus-5-5"), false);
+  assert.equal(claude.models.includes("not-a-model"), false);
+});
+
+test("model discovery merges local model settings for every CLI adapter", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "agentmesh-model-configs-"));
+  test.after(() => rmSync(directory, { recursive: true, force: true }));
+  const fixtures: Array<[string, string, string, string]> = [
+    ["codex", "codex.toml", 'model = "gpt-6-astra-custom"', "gpt-6-astra-custom"],
+    ["cursor", "cursor.json", JSON.stringify({ model: { modelId: "composer-2.5-custom" } }), "composer-2.5-custom"],
+    ["opencode", "opencode.json", JSON.stringify({ provider: { local: { models: { "glm-5.2-custom": {} } } } }), "local/glm-5.2-custom"],
+    ["antigravity", "agy.json", JSON.stringify({ model: "Claude Opus 5.5 (Thinking)" }), "Claude Opus 5.5 (Thinking)"],
+  ];
+  for (const [adapter, file, content, expected] of fixtures) {
+    const discovery = discoverAdapterModels(adapter, {
+      runCli: true,
+      modelConfigPath: path.join(directory, file),
+      commandRunner: () => ({ status: 1, stdout: "", stderr: "not available" }),
+    });
+    writeFileSync(path.join(directory, file), content);
+    const loaded = discoverAdapterModels(adapter, {
+      runCli: true,
+      modelConfigPath: path.join(directory, file),
+      commandRunner: () => ({ status: 1, stdout: "", stderr: "not available" }),
+    });
+    assert.equal(discovery.status, "unsupported");
+    assert.equal(loaded.status, "discovered");
+    assert.ok(loaded.models.includes(expected));
+  }
+});
+
+test("Codex model discovery reads a configured local model catalog when the CLI is unavailable", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "agentmesh-codex-catalog-"));
+  test.after(() => rmSync(directory, { recursive: true, force: true }));
+  const configPath = path.join(directory, "config.toml");
+  writeFileSync(configPath, [
+    'model = "gpt-6-astra"',
+    'model_catalog_json = "custom-models.json"',
+  ].join("\n"));
+  writeFileSync(path.join(directory, "custom-models.json"), JSON.stringify({
+    models: [
+      { slug: "gpt-6.1-sol", visibility: "list" },
+      { slug: "hidden-model", visibility: "hidden" },
+    ],
+  }));
+
+  const discovery = discoverAdapterModels("codex", {
+    runCli: true,
+    modelConfigPath: configPath,
+    commandRunner: () => ({ status: 1, stdout: "", stderr: "not available" }),
+  });
+
+  assert.equal(discovery.status, "discovered");
+  assert.ok(discovery.models.includes("gpt-6-astra"));
+  assert.ok(discovery.models.includes("gpt-6.1-sol"));
+  assert.equal(discovery.models.includes("hidden-model"), false);
+});
+
 test("model discovery hydrates antigravity from the CLI model catalog", () => {
   const antigravity = discoverAdapterModels("antigravity", {
     runCli: true,

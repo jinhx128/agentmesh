@@ -805,7 +805,14 @@ function agentModelSelectData(
       ? [...modelOptions, currentModel]
       : modelOptions,
   );
-  return values.map((value) => ({ value, label: value }));
+  return values.map((value) => ({ value, label: modelOptionLabel(value) }));
+}
+
+export function modelOptionLabel(model: string): string {
+  const withoutVariant = model.trim().replace(/\[[^\]]+\]$/, "");
+  const segment = withoutVariant.split("/").filter(Boolean).at(-1) ?? withoutVariant;
+  const claudeModel = segment.match(/(claude-(?:opus|sonnet|haiku)-.+)$/i)?.[1];
+  return modelDisplayName(claudeModel ?? segment);
 }
 
 function modelOptionsFromPayload(payload: StudioAgentModelListPayload): string[] {
