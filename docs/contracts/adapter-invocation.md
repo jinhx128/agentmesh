@@ -106,9 +106,26 @@ Async invocation behavior:
 ## Process Environment
 
 Every worker subprocess launched through AgentMesh inherits the host process
-environment after dropping undefined entries. Agent-specific `env =
+environment after dropping undefined entries and isolating host authentication.
+Independent workers do not inherit `CLAUDECODE`,
+`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, or `CLAUDE_CODE_HOST_AUTH_ENV_VAR`.
+Only for the Claude adapter, when the inherited
+`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` is `1` and neither inherited
+`ANTHROPIC_API_KEY` nor `ANTHROPIC_AUTH_TOKEN` is nonblank, AgentMesh removes
+`ANTHROPIC_BASE_URL` so standalone Claude can use its own provider settings.
+Inherited credentials and model settings are retained, and other adapters
+(including `command` and OpenCode) retain all `ANTHROPIC_*` variables.
+The host marker alone cannot establish the origin of every provider variable.
+If a credential-free endpoint must be kept alongside that marker (for example,
+when using a credential helper), specify its URL in the agent's explicit `env`.
+This applies to calls, readiness probes, CLI version detection and CLI model
+discovery. Configuration paths and safety settings are preserved.
+
+Agent-specific `env =
 ["KEY=value"]` entries are parsed during adapter invocation preparation and
 override inherited values. Keys must be shell-compatible identifiers.
+On Windows, host isolation and explicit overrides match environment variable
+names case-insensitively; overrides replace all inherited case variants.
 
 On macOS, AgentMesh also reads `scutil --proxy` once per process and maps the
 system HTTP, HTTPS, SOCKS, and exception settings into standard proxy

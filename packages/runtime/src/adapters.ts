@@ -265,7 +265,7 @@ export function runAgentCallWithTiming(options: {
   const captureStdout = prepared.captureStdout;
   const spawnStartedAt = Date.now();
   const result = spawnSync(command[0], command.slice(1), {
-    env: buildAgentProcessEnv(prepared.env),
+    env: buildAgentProcessEnv(prepared.env, { adapterId: prepared.adapterId }),
     input: stdin,
     encoding: "utf-8",
     timeout: options.timeoutSecs ? options.timeoutSecs * 1000 : undefined,
@@ -350,7 +350,7 @@ export async function runAgentCallAsync(options: {
     env: buildAgentProcessEnv({
       ...prepared.env,
       ...(options.idempotencyKey ? { AGENTMESH_INTERNAL_IDEMPOTENCY_KEY: options.idempotencyKey } : {}),
-    }),
+    }, { adapterId: prepared.adapterId }),
     stdio:
       stdin === undefined
         ? ["inherit", "pipe", "pipe"]

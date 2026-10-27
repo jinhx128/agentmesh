@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 import type { AgentConfig } from "../adapters.js";
+import { buildAgentProcessEnv } from "../process-env.js";
 import { resolveProviderTool, type ProviderToolDiscoveryOptions, type ProviderToolResolutionSource } from "./provider-tools.js";
 import { lookupRuntimeAdapter } from "./registry.js";
 
@@ -69,7 +70,7 @@ function detectProviderCli(
     enabled: options.enabled ?? true,
   });
   const versionProbe = resolution.path
-    ? providerCliVersion(resolution.path, options.versionTimeoutMs)
+    ? providerCliVersion(resolution.path, adapter.id, options.versionTimeoutMs)
     : { version: "missing", diagnostics: [] };
   const diagnostics = [...resolution.diagnostics, ...versionProbe.diagnostics];
   const diagnostic = diagnostics.find((entry) => !isSuccessDiagnostic(entry));
@@ -94,11 +95,12 @@ function isSuccessDiagnostic(entry: string): boolean {
   return /^(?:configured provider path|PATH provider command|app preference provider path|well-known provider path|login-shell probe provider path) found: /.test(entry);
 }
 
-function providerCliVersion(commandPath: string, timeoutMs = 5_000): {
+function providerCliVersion(commandPath: string, adapterId: string, timeoutMs = 5_000): {
   version: string;
   diagnostics: string[];
 } {
   const result = spawnSync(commandPath, ["--version"], {
+    env: buildAgentProcessEnv(undefined, { adapterId }),
     encoding: "utf-8",
     timeout: timeoutMs,
   });

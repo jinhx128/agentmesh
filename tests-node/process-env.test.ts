@@ -62,6 +62,157 @@ test("agent process environment drops undefined base entries", () => {
   assert.equal(Object.hasOwn(env, "http_proxy"), false);
 });
 
+test("Claude drops host authentication and unauthenticated host routing only", () => {
+  const baseEnv = {
+    PATH: "/bin",
+    HOME: "/home/user",
+    CLAUDECODE: "1",
+    CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+    CLAUDE_CODE_HOST_AUTH_ENV_VAR: "DESKTOP_GATEWAY_TOKEN",
+    ANTHROPIC_BASE_URL: "https://desktop-gateway.invalid",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "user-model",
+    ANTHROPIC_MODEL: "user-model",
+    CLAUDE_CONFIG_DIR: "/home/user/custom-claude",
+    CLAUDE_CODE_SAFE_MODE: "1",
+    OPENAI_API_KEY: "user-openai-key",
+    CURSOR_API_KEY: "user-cursor-key",
+    GEMINI_API_KEY: "user-gemini-key",
+    OPENCODE_CONFIG: "/home/user/opencode.json",
+  };
+  const options = { baseEnv, platform: "linux" as const, adapterId: "claude-code-cli" };
+  const env = buildAgentProcessEnv(undefined, options);
+
+  for (const key of Object.keys(baseEnv)) {
+    if (key === "CLAUDECODE" || key === "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
+      || key === "CLAUDE_CODE_HOST_AUTH_ENV_VAR" || key === "ANTHROPIC_BASE_URL") {
+      assert.equal(Object.hasOwn(env, key), false, `${key} must not reach an independent agent`);
+    } else {
+      assert.equal(env[key], baseEnv[key as keyof typeof baseEnv]);
+    }
+  }
+  assert.equal(baseEnv.CLAUDECODE, "1", "must not mutate the parent environment");
+  assert.equal(baseEnv.ANTHROPIC_BASE_URL, "https://desktop-gateway.invalid");
+});
+
+test("host managed marker does not erase independently configured provider credentials", () => {
+  for (const credential of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
+    const options = {
+      adapterId: "claude-code-cli",
+      platform: "linux" as const,
+      baseEnv: {
+        CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+        [credential]: "user-credential",
+        ANTHROPIC_BASE_URL: "https://user-provider.invalid",
+        ANTHROPIC_MODEL: "user-model",
+      },
+    };
+    const env = buildAgentProcessEnv(undefined, options);
+    assert.equal(env[credential], "user-credential");
+    assert.equal(env.ANTHROPIC_BASE_URL, "https://user-provider.invalid");
+    assert.equal(env.ANTHROPIC_MODEL, "user-model");
+    assert.equal(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST, undefined);
+  }
+});
+
+test("non-Claude adapters preserve inherited Anthropic configuration even without credentials", () => {
+  for (const adapterId of [undefined, "command", "codex-cli", "cursor-agent", "opencode-cli", "antigravity-cli"]) {
+    const options = {
+      adapterId, platform: "linux" as const,
+      baseEnv: {
+        CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+        ANTHROPIC_BASE_URL: "https://user-provider.invalid",
+        ANTHROPIC_MODEL: "user-model",
+      },
+    };
+    const env = buildAgentProcessEnv(undefined, options);
+    assert.equal(env.ANTHROPIC_BASE_URL, options.baseEnv.ANTHROPIC_BASE_URL, adapterId);
+    assert.equal(env.ANTHROPIC_MODEL, "user-model", adapterId);
+  }
+});
+
+test("Windows host isolation handles case-insensitive names without changing unrelated casing", () => {
+  const options = {
+    adapterId: "claude-code-cli", platform: "win32" as const,
+    baseEnv: {
+      Claude_Code_Provider_Managed_By_Host: "1",
+      claude_code_host_auth_env_var: "HOST_TOKEN",
+      claudecode: "1",
+      anthropic_base_url: "https://desktop-gateway.invalid",
+      Path: "C:\\Windows",
+    },
+  };
+  assert.deepEqual(buildAgentProcessEnv(undefined, options), { Path: "C:\\Windows" });
+  const authenticated = buildAgentProcessEnv(undefined, {
+    ...options, baseEnv: { ...options.baseEnv, anthropic_api_key: "user-key" },
+  });
+  assert.equal(authenticated.anthropic_api_key, "user-key");
+  assert.equal(authenticated.anthropic_base_url, options.baseEnv.anthropic_base_url);
+});
+
+test("Windows explicit env replaces all inherited case variants", () => {
+  const env = buildAgentProcessEnv({ ANTHROPIC_API_KEY: "explicit-key", Path: "C:\\agent" }, {
+    platform: "win32",
+    baseEnv: { anthropic_api_key: "inherited-key", Anthropic_Api_Key: "duplicate", PATH: "C:\\host" },
+  });
+  assert.deepEqual(env, { ANTHROPIC_API_KEY: "explicit-key", Path: "C:\\agent" });
+});
+
+test("POSIX environment names remain case-sensitive", () => {
+  const options = {
+    adapterId: "claude-code-cli", platform: "linux" as const,
+    baseEnv: { claude_code_provider_managed_by_host: "1", anthropic_base_url: "user-route", claudecode: "1" },
+  };
+  assert.deepEqual(buildAgentProcessEnv(undefined, options), options.baseEnv);
+});
+
+test("terminal provider credentials survive without a host-managed provider", () => {
+  for (const managedFlag of [undefined, "0", ""]) {
+    const env = buildAgentProcessEnv(undefined, {
+      baseEnv: {
+        CLAUDECODE: "1",
+        CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: managedFlag,
+        ANTHROPIC_BASE_URL: "https://user-provider.invalid",
+        ANTHROPIC_API_KEY: "user-key",
+        ANTHROPIC_AUTH_TOKEN: "user-token",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "user-model",
+      },
+      platform: "linux",
+    });
+    assert.equal(env.CLAUDECODE, undefined);
+    assert.equal(env.ANTHROPIC_BASE_URL, "https://user-provider.invalid");
+    assert.equal(env.ANTHROPIC_API_KEY, "user-key");
+    assert.equal(env.ANTHROPIC_AUTH_TOKEN, "user-token");
+    assert.equal(env.ANTHROPIC_DEFAULT_OPUS_MODEL, "user-model");
+  }
+});
+
+test("independent agents do not inherit a host auth reference even without the managed flag", () => {
+  const env = buildAgentProcessEnv(undefined, {
+    baseEnv: { CLAUDE_CODE_HOST_AUTH_ENV_VAR: "DESKTOP_GATEWAY_TOKEN" },
+    platform: "linux",
+  });
+  assert.equal(Object.hasOwn(env, "CLAUDE_CODE_HOST_AUTH_ENV_VAR"), false);
+});
+
+test("explicit agent configuration wins after host environment isolation", () => {
+  const overrides = {
+    ANTHROPIC_BASE_URL: "https://agent-provider.invalid",
+    ANTHROPIC_AUTH_TOKEN: "agent-token",
+    ANTHROPIC_MODEL: "agent-model",
+    CLAUDE_CODE_HOST_AUTH_ENV_VAR: "AGENT_TOKEN",
+  };
+  const env = buildAgentProcessEnv(overrides, {
+    baseEnv: {
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+      ANTHROPIC_BASE_URL: "https://desktop-gateway.invalid",
+      ANTHROPIC_AUTH_TOKEN: "host-token",
+    },
+    platform: "linux",
+  });
+  for (const [key, value] of Object.entries(overrides)) assert.equal(env[key], value);
+  assert.equal(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST, undefined);
+});
+
 test("agent configured env overrides inherited system env", () => {
   const env = buildAgentProcessEnv(
     {

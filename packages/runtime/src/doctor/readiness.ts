@@ -294,7 +294,7 @@ function availabilityStatus(
     };
   }
   let result = spawnSync(command[0], command.slice(1), {
-    env: buildAgentProcessEnv(env),
+    env: buildAgentProcessEnv(env, { adapterId }),
     input: stdin,
     encoding: "utf-8",
     timeout: timeoutSecs * 1000,
@@ -308,7 +308,7 @@ function availabilityStatus(
         args: [...effectiveAgent.args, "--sandbox", "read-only", "--ephemeral"],
       }, { prompt: `${DOCTOR_AUTH_PROMPT} Do not access files or run commands.` });
       result = spawnSync(prepared.command[0], prepared.command.slice(1), {
-        env: buildAgentProcessEnv(prepared.env),
+        env: buildAgentProcessEnv(prepared.env, { adapterId: prepared.adapterId }),
         input: prepared.stdin,
         encoding: "utf-8",
         timeout: timeoutSecs * 1000,
@@ -424,6 +424,7 @@ function doctorHelpProbe(
     [agent.command, ...agent.args, "--help"],
     DOCTOR_HELP_TIMEOUT_SECS,
     probeEnv.env,
+    lookupRuntimeAdapter(agent.adapter).id,
   );
 }
 
@@ -445,7 +446,7 @@ function doctorVersionProbe(
   if (probeEnv.error) {
     return `failed (${probeEnv.error})`;
   }
-  return runProbe([agent.command, "--version"], DOCTOR_VERSION_TIMEOUT_SECS, probeEnv.env);
+  return runProbe([agent.command, "--version"], DOCTOR_VERSION_TIMEOUT_SECS, probeEnv.env, lookupRuntimeAdapter(agent.adapter).id);
 }
 
 function probeEnvironment(agent: AgentConfig): {
@@ -459,9 +460,9 @@ function probeEnvironment(agent: AgentConfig): {
   }
 }
 
-function runProbe(command: string[], timeoutSecs: number, env?: Record<string, string>): string {
+function runProbe(command: string[], timeoutSecs: number, env?: Record<string, string>, adapterId?: string): string {
   const result = spawnSync(command[0], command.slice(1), {
-    env: buildAgentProcessEnv(env),
+    env: buildAgentProcessEnv(env, { adapterId }),
     encoding: "utf-8",
     timeout: timeoutSecs * 1000,
   });

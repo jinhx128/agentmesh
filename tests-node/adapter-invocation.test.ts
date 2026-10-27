@@ -12,6 +12,7 @@ import {
   type AdapterInvocationAgent,
 } from "../packages/runtime/src/adapters/invocation.js";
 import { defineAdapterPlugin } from "../packages/runtime/src/adapters/plugin.js";
+import { probeAgentReadiness } from "../packages/runtime/src/doctor/readiness.js";
 import {
   AgentCallError,
   runAgentCallAsync,
@@ -717,6 +718,74 @@ test("async agent invocation carries opaque idempotency metadata only through th
   });
   assert.equal(result.exitCode, 0);
   assert.equal(readFileSync(outputFile, "utf-8"), "run-42:review:backup:2");
+});
+
+test("all built-in CLI calls and readiness probes isolate host auth and preserve explicit env", async () => {
+  const workspace = makeWorkspace();
+  const inherited = {
+    CLAUDECODE: "1",
+    CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+    CLAUDE_CODE_HOST_AUTH_ENV_VAR: "DESKTOP_GATEWAY_TOKEN",
+    ANTHROPIC_BASE_URL: "https://desktop-gateway.invalid",
+    ANTHROPIC_AUTH_TOKEN: "user-token",
+    ANTHROPIC_API_KEY: "",
+    CURSOR_API_KEY: "user-cursor-key",
+  };
+  const previous = Object.fromEntries(Object.keys(inherited).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, inherited);
+  try {
+    const command = path.join(workspace, "provider.cjs");
+    const writeProbe = (route: string | undefined, token: string | undefined) => writeFileSync(command, [
+      `#!${process.execPath}`,
+      "const assert = require('node:assert/strict');",
+      "assert.equal(process.env.CLAUDECODE, undefined);",
+      "assert.equal(process.env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST, undefined);",
+      "assert.equal(process.env.CLAUDE_CODE_HOST_AUTH_ENV_VAR, undefined);",
+      `assert.equal(process.env.ANTHROPIC_BASE_URL, ${JSON.stringify(route)});`,
+      `assert.equal(process.env.ANTHROPIC_AUTH_TOKEN, ${JSON.stringify(token)});`,
+      "assert.equal(process.env.CURSOR_API_KEY, 'user-cursor-key');",
+      "console.log('OK');",
+    ].join("\n"), { mode: 0o755 });
+
+    for (const adapter of ["command", "claude-code-cli", "codex-cli", "cursor-agent", "opencode-cli", "antigravity-cli"]) {
+      for (const mode of ["explicit", "inherited-key", "inherited-no-key"]) {
+        if (mode === "inherited-no-key") delete process.env.ANTHROPIC_AUTH_TOKEN;
+        else process.env.ANTHROPIC_AUTH_TOKEN = inherited.ANTHROPIC_AUTH_TOKEN;
+        const env = mode === "explicit"
+          ? ["ANTHROPIC_BASE_URL=https://agent-provider.invalid", "ANTHROPIC_AUTH_TOKEN=agent-token"]
+          : [];
+        writeProbe(
+          mode === "explicit" ? "https://agent-provider.invalid"
+            : adapter === "claude-code-cli" && mode === "inherited-no-key" ? undefined : inherited.ANTHROPIC_BASE_URL,
+          mode === "explicit" ? "agent-token" : process.env.ANTHROPIC_AUTH_TOKEN,
+        );
+        const agent = {
+          id: "isolated", label: "Isolated", adapter, command,
+          args: lookupRuntimeAdapter(adapter).args, env, capabilities: [], model: "model-a",
+        };
+        const configPath = path.join(workspace, "agentmesh.toml");
+        writeFileSync(configPath, [
+          "schema_version = 1", "[agents.isolated]",
+          `adapter = ${JSON.stringify(adapter)}`, `command = ${JSON.stringify(command)}`,
+          `args = ${JSON.stringify(agent.args)}`, `env = ${JSON.stringify(env)}`,
+          'model = "model-a"',
+        ].join("\n"));
+        const outputFile = path.join(workspace, "output.txt");
+        const options = { configPath, agentName: "isolated", prompt: "OK", outputFile, timeoutSecs: 5 };
+        assert.equal(runAgentCallWithTiming(options).exitCode, 0, `${adapter} ${mode} sync`);
+        assert.equal(readFileSync(outputFile, "utf8").trim(), "OK");
+        assert.equal((await runAgentCallAsync(options)).exitCode, 0, `${adapter} ${mode} async`);
+        const readiness = probeAgentReadiness(agent, { probeAuth: true, probeTimeoutSecs: 5 });
+        assert.equal(readiness.ok, true, `${adapter} ${mode}: ${JSON.stringify(readiness)}`);
+      }
+    }
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("async OpenCode session invocation uses the caller workspace for --dir", async () => {

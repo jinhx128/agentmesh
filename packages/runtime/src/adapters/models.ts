@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import type { AgentConfig } from "../adapters.js";
+import { buildAgentProcessEnv } from "../process-env.js";
 import { resolveProviderTool, type ProviderToolDiscoveryOptions } from "./provider-tools.js";
 import { lookupRuntimeAdapter, normalizeRuntimeAdapterId } from "./registry.js";
 
@@ -261,7 +262,7 @@ function discoverCliModels(
   const command = modelDiscoveryCommand(hook, options);
   const result = options.commandRunner
     ? options.commandRunner(hook.command)
-    : spawnModelDiscoveryCommand(command, options.timeoutMs);
+    : spawnModelDiscoveryCommand(command, options.timeoutMs, hook.adapterId);
   const cliModels = result.status !== 0
     ? []
     : hook.parser === "codex-json"
@@ -275,8 +276,10 @@ function discoverCliModels(
 function spawnModelDiscoveryCommand(
   command: string[],
   timeoutMs = 15_000,
+  adapterId?: string,
 ): { status: number | null; stdout: string; stderr: string; error?: Error } {
   const result = spawnSync(command[0], command.slice(1), {
+    env: buildAgentProcessEnv(undefined, { adapterId }),
     encoding: "utf8",
     timeout: timeoutMs,
     windowsHide: true,
@@ -347,7 +350,7 @@ function discoverExecutableStringModels(
   const stringsCommand = ["strings", commandPath];
   const result = options.commandRunner
     ? options.commandRunner(stringsCommand)
-    : spawnModelDiscoveryCommand(stringsCommand, options.timeoutMs);
+    : spawnModelDiscoveryCommand(stringsCommand, options.timeoutMs, hook.adapterId);
   const executableText = result.status === 0 ? result.stdout : readTextFile(commandPath);
   const executableModels = executableText ? extractExecutableModelIds(hook.adapterId, executableText) : [];
   if (hook.adapterId === "claude-code-cli") {
@@ -510,7 +513,7 @@ function resolveCommandPath(
     return providerResolved;
   }
   const lookupCommand = process.platform === "win32" ? ["where", command] : ["which", command];
-  const result = spawnModelDiscoveryCommand(lookupCommand, options.timeoutMs);
+  const result = spawnModelDiscoveryCommand(lookupCommand, options.timeoutMs, adapterId);
   if (result.status !== 0) {
     return undefined;
   }

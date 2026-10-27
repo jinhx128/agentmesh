@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 export interface AgentProcessEnvOptions {
+  adapterId?: string;
   baseEnv?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   macProxyOutput?: string;
@@ -29,12 +30,47 @@ export function buildAgentProcessEnv(
   options: AgentProcessEnvOptions = {},
 ): NodeJS.ProcessEnv {
   const env = cloneDefinedEnv(options.baseEnv ?? process.env);
+  const platform = options.platform ?? process.platform;
+  isolateHostAuthentication(env, options.adapterId, platform);
   applyMacSystemProxyEnv(env, options);
   if (overrides) {
-    Object.assign(env, overrides);
+    for (const [key, value] of Object.entries(overrides)) {
+      if (platform === "win32") {
+        for (const inheritedKey of Object.keys(env)) {
+          if (inheritedKey.toUpperCase() === key.toUpperCase()) delete env[inheritedKey];
+        }
+      }
+      env[key] = value;
+    }
   }
   mirrorProxyAliases(env);
   return env;
+}
+
+function isolateHostAuthentication(
+  env: NodeJS.ProcessEnv,
+  adapterId: string | undefined,
+  platform: NodeJS.Platform,
+): void {
+  const entries = Object.entries(env).map(([key, value]) => ({
+    key, name: platform === "win32" ? key.toUpperCase() : key, value,
+  }));
+  const managed = entries.some(({ name, value }) => name === "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST" && value === "1");
+  const hasCredentials = entries.some(({ name, value }) =>
+    (name === "ANTHROPIC_API_KEY" || name === "ANTHROPIC_AUTH_TOKEN") && Boolean(value?.trim())
+  );
+  // A host marker does not establish ownership of every ANTHROPIC_* variable.
+  // Keep credentials, model settings, and other adapters' routes. Only standalone
+  // Claude without inherited credentials falls back from the host auth bridge
+  // to its own settings. Explicit agent env is applied after this step.
+  const resetClaudeRoute = adapterId === "claude-code-cli" && managed && !hasCredentials;
+  for (const { key, name } of entries) {
+    if (name === "CLAUDECODE" || name === "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
+      || name === "CLAUDE_CODE_HOST_AUTH_ENV_VAR"
+      || (resetClaudeRoute && name === "ANTHROPIC_BASE_URL")) {
+      delete env[key];
+    }
+  }
 }
 
 function cloneDefinedEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
